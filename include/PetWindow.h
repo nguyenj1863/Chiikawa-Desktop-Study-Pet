@@ -17,6 +17,7 @@ class StudyTimer;
 class TimerBubble;
 class SettingsPanel;
 class SystemTrayManager;
+class CompletionToast;
 
 /**
  * Frameless translucent desktop pet window.
@@ -71,7 +72,7 @@ private:
     [[nodiscard]] bool isSavedPositionSafe(const QPoint& pos) const;
     void updateHitMask();
     void showGear();
-    void flashCompletionBanner();
+    void showCompletionToast();
     void playCompletionFeedback();
 
     std::unique_ptr<AppSettings> m_settings;
@@ -82,15 +83,12 @@ private:
     std::unique_ptr<TimerBubble> m_bubble;
     std::unique_ptr<SettingsPanel> m_settingsPanel;
     std::unique_ptr<SystemTrayManager> m_tray;
+    std::unique_ptr<CompletionToast> m_completionToast;
 
     QPushButton* m_gearButton = nullptr;
     QGraphicsOpacityEffect* m_gearOpacity = nullptr;
     QPropertyAnimation* m_gearFade = nullptr;
     QTimer m_gearHideTimer;
-
-    QWidget* m_completionBanner = nullptr;
-    QLabel* m_completionLabel = nullptr;
-    QTimer m_completionHideTimer;
 
     bool m_dragging = false;
     bool m_dragMoved = false;

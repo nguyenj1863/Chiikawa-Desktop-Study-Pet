@@ -30,6 +30,7 @@ set(CHIICAWA_SOURCES
     src/MovementController.cpp
     src/StudyTimer.cpp
     src/TimerBubble.cpp
+    src/CompletionToast.cpp
     src/SettingsPanel.cpp
     src/SystemTrayManager.cpp
     src/StartupManager.cpp
@@ -43,6 +44,7 @@ set(CHIICAWA_HEADERS
     include/MovementController.h
     include/StudyTimer.h
     include/TimerBubble.h
+    include/CompletionToast.h
     include/SettingsPanel.h
     include/SystemTrayManager.h
     include/StartupManager.h

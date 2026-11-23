@@ -2,6 +2,7 @@
 
 #include "AnimationManager.h"
 #include "AppSettings.h"
+#include "CompletionToast.h"
 #include "MovementController.h"
 #include "SettingsPanel.h"
 #include "StudyTimer.h"
@@ -53,6 +54,12 @@ PetWindow::PetWindow(QWidget* parent)
 
     m_bubble = std::make_unique<TimerBubble>(nullptr);
     m_settingsPanel = std::make_unique<SettingsPanel>(m_settings.get(), m_timer.get(), nullptr);
+    m_completionToast = std::make_unique<CompletionToast>(nullptr);
+    connect(m_completionToast.get(), &CompletionToast::startAgainRequested, this, [this]() {
+        m_completionHandled = false;
+        m_timer->configure(std::chrono::seconds{m_settings->lastTimerSeconds()});
+        m_timer->start();
+    });
 
     m_tray = std::make_unique<SystemTrayManager>(m_timer.get(), this);
     m_tray->show();
@@ -96,13 +103,6 @@ PetWindow::PetWindow(QWidget* parent)
     connect(&m_singleClickTimer, &QTimer::timeout, this, [this]() {
         if (m_animations) {
             m_animations->playRandom(true);
-        }
-    });
-
-    m_completionHideTimer.setSingleShot(true);
-    connect(&m_completionHideTimer, &QTimer::timeout, this, [this]() {
-        if (m_completionBanner) {
-            m_completionBanner->hide();
         }
     });
 
@@ -165,25 +165,6 @@ void PetWindow::setupUi()
     m_gearButton->hide();
     connect(m_gearButton, &QPushButton::clicked, this, &PetWindow::onGearClicked);
 
-    m_completionBanner = new QWidget(nullptr, Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-    m_completionBanner->setAttribute(Qt::WA_TranslucentBackground);
-    m_completionBanner->setAttribute(Qt::WA_ShowWithoutActivating);
-    m_completionBanner->setFocusPolicy(Qt::NoFocus);
-    auto* bannerLayout = new QHBoxLayout(m_completionBanner);
-    bannerLayout->setContentsMargins(14, 10, 14, 10);
-    m_completionLabel = new QLabel(QStringLiteral("Study session complete!"), m_completionBanner);
-    m_completionLabel->setStyleSheet(QStringLiteral(
-        "QLabel {"
-        "  color: #5c4a3a;"
-        "  background: rgba(255, 250, 242, 235);"
-        "  border: 1px solid rgba(220, 200, 180, 180);"
-        "  border-radius: 12px;"
-        "  padding: 8px 14px;"
-        "  font-weight: 600;"
-        "  font-size: 13px;"
-        "}"));
-    bannerLayout->addWidget(m_completionLabel);
-    m_completionBanner->hide();
 }
 
 QPoint PetWindow::defaultBottomRight() const
@@ -274,6 +255,9 @@ void PetWindow::hidePet()
     hide();
     if (m_bubble) {
         m_bubble->hide();
+    }
+    if (m_completionToast) {
+        m_completionToast->dismiss();
     }
 }
 
@@ -483,24 +467,13 @@ void PetWindow::playCompletionFeedback()
 #endif
 }
 
-void PetWindow::flashCompletionBanner()
+void PetWindow::showCompletionToast()
 {
-    if (!m_completionBanner) {
+    if (!m_completionToast) {
         return;
     }
-    m_completionLabel->setText(QStringLiteral("Study session complete!"));
-    m_completionBanner->adjustSize();
-    const QRect pet = frameGeometry();
-    QPoint pos(pet.center().x() - m_completionBanner->width() / 2, pet.top() - m_completionBanner->height() - 12);
-    if (QScreen* screen = QGuiApplication::screenAt(pet.center())) {
-        const QRect avail = screen->availableGeometry();
-        pos.setX(std::clamp(pos.x(), avail.left(), avail.right() - m_completionBanner->width() + 1));
-        pos.setY(std::clamp(pos.y(), avail.top(), avail.bottom() - m_completionBanner->height() + 1));
-    }
-    m_completionBanner->move(pos);
-    m_completionBanner->show();
-    m_completionBanner->raise();
-    m_completionHideTimer.start(5000);
+    // Re-show replaces any lingering toast so completion stays single-shot visually
+    m_completionToast->showNear(frameGeometry());
 }
 
 void PetWindow::onTimerCompleted()
@@ -513,7 +486,7 @@ void PetWindow::onTimerCompleted()
     if (m_animations) {
         m_animations->playCelebration();
     }
-    flashCompletionBanner();
+    showCompletionToast();
     playCompletionFeedback();
     if (m_tray) {
         m_tray->notify(QStringLiteral("Chiikawa Study Pet"),
@@ -606,6 +579,9 @@ void PetWindow::hideEvent(QHideEvent* event)
     }
     if (m_bubble) {
         m_bubble->hide();
+    }
+    if (m_completionToast) {
+        m_completionToast->dismiss();
     }
 }
 
