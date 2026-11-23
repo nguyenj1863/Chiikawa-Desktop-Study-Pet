@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <file alias="assets/chiikawa_fire.gif">../assets/chiikawa_fire.gif</file>
+        <file alias="assets/chiikawa_skip.gif">../assets/chiikawa_skip.gif</file>
+        <file alias="assets/chiikawa_stomp.gif">../assets/chiikawa_stomp.gif</file>
+        <file alias="assets/chiikawa_twirl.gif">../assets/chiikawa_twirl.gif</file>
+    </qresource>
+</RCC>
