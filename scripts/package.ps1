@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Build a portable ChiikawaStudyPet-Windows-x64.zip for GitHub Releases.
 #>
@@ -54,6 +54,17 @@ if ($LASTEXITCODE -ne 0) { throw "windeployqt failed" }
 # Drop compiler/debug leftovers if any slipped in
 Get-ChildItem $AppDir -Recurse -Include *.pdb,*.ilk,*.exp,*.lib,*.obj |
     Remove-Item -Force -ErrorAction SilentlyContinue
+
+# Optional bulky files not required for Qt Widgets desktop pets
+@(
+    "dxcompiler.dll",
+    "dxil.dll",
+    "vc_redist.x64.exe",
+    "opengl32sw.dll"
+) | ForEach-Object {
+    $p = Join-Path $AppDir $_
+    if (Test-Path $p) { Remove-Item -Force $p }
+}
 
 # Soft-check required runtime pieces
 $required = @(
