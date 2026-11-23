@@ -11,6 +11,8 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QEnterEvent>
+#include <QHideEvent>
+#include <QShowEvent>
 #include <QGuiApplication>
 #include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
@@ -591,4 +593,30 @@ void PetWindow::closeEvent(QCloseEvent* event)
     // Closing the pet window hides it; use tray Exit to quit
     event->ignore();
     hidePet();
+}
+
+void PetWindow::hideEvent(QHideEvent* event)
+{
+    QWidget::hideEvent(event);
+    if (m_movement) {
+        m_movement->pause();
+    }
+    if (m_animations) {
+        m_animations->setAutoSwitchEnabled(false);
+    }
+    if (m_bubble) {
+        m_bubble->hide();
+    }
+}
+
+void PetWindow::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    if (m_animations && m_settings) {
+        m_animations->setAutoSwitchEnabled(m_settings->autoAnimationEnabled());
+    }
+    if (m_movement && m_settings && m_settings->movementEnabled()
+        && !(m_settingsPanel && m_settingsPanel->isVisible())) {
+        m_movement->resume();
+    }
 }

@@ -51,6 +51,8 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
     void closeEvent(QCloseEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
+    void showEvent(QShowEvent* event) override;
 
 private slots:
     void onTimerRemaining(std::chrono::milliseconds remaining);

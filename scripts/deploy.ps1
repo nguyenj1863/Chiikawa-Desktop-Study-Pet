@@ -21,7 +21,8 @@ if ($QtPrefix) {
     if (Test-Path $p) { $windeploy = $p }
 }
 if (-not $windeploy) {
-    $windeploy = (Get-Command windeployqt -ErrorAction SilentlyContinue)?.Source
+    $cmd = Get-Command windeployqt -ErrorAction SilentlyContinue
+    if ($cmd) { $windeploy = $cmd.Source }
 }
 if (-not $windeploy) { throw "windeployqt not found. Set -QtPrefix to your Qt kit." }
 Write-Host "Deploying $ExePath"
