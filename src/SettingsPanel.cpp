@@ -361,15 +361,10 @@ void SettingsPanel::onApplyPetSettings()
     const bool wantStartup = m_startupCheck->isChecked();
     m_settings->setLaunchOnStartup(wantStartup);
     if (wantStartup) {
-        const QString exePath = QCoreApplication::applicationFilePath();
-        if (StartupManager::isStableExecutablePath(exePath)) {
-            StartupManager::enable(exePath);
-        } else {
-            // Still allow enabling for current session path, but prefer stable installs
-            StartupManager::enable(exePath);
-        }
+        // Allow build-tree paths for local testing; prefer deployed installs for daily use
+        (void)StartupManager::enable(QCoreApplication::applicationFilePath());
     } else {
-        StartupManager::disable();
+        (void)StartupManager::disable();
     }
 
     m_settings->save();

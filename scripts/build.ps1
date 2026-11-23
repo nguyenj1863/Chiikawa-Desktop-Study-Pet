@@ -69,7 +69,26 @@ if ($Clean -and (Test-Path $BuildDir)) {
     Remove-Item -Recurse -Force $BuildDir
 }
 
-$configureArgs = @("-S", $Root, "-B", $BuildDir, "-G", "Visual Studio 17 2022", "-A", "x64")
+# Prefer the VS generator when vswhere reports a complete install; otherwise Ninja/NMake
+$generator = @("-G", "Visual Studio 17 2022", "-A", "x64")
+$vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+$vsReady = $false
+if (Test-Path $vswhere) {
+    $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+    if ($vsPath) { $vsReady = $true }
+}
+if (-not $vsReady) {
+    if (Get-Command ninja -ErrorAction SilentlyContinue) {
+        $generator = @("-G", "Ninja", "-DCMAKE_BUILD_TYPE=$Config")
+    } elseif (Test-Path (Join-Path $QtPrefix "bin\ninja.exe")) {
+        $env:Path = "$(Join-Path $QtPrefix 'bin');$env:Path"
+        $generator = @("-G", "Ninja", "-DCMAKE_BUILD_TYPE=$Config")
+    } else {
+        $generator = @("-G", "NMake Makefiles", "-DCMAKE_BUILD_TYPE=$Config")
+    }
+}
+
+$configureArgs = @("-S", $Root, "-B", $BuildDir) + $generator
 if ($QtPrefix) {
     $configureArgs += "-DCMAKE_PREFIX_PATH=$QtPrefix"
 }

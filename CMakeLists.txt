@@ -76,16 +76,19 @@ endfunction()
 chiikawa_add_test(test_study_timer
     tests/test_study_timer.cpp
     src/StudyTimer.cpp
+    include/StudyTimer.h
 )
 
 chiikawa_add_test(test_app_settings
     tests/test_app_settings.cpp
     src/AppSettings.cpp
+    include/AppSettings.h
 )
 
 chiikawa_add_test(test_animation_manager
     tests/test_animation_manager.cpp
     src/AnimationManager.cpp
+    include/AnimationManager.h
     resources/resources.qrc
 )
 
