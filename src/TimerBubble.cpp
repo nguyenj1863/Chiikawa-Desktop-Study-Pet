@@ -4,6 +4,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QScreen>
+#include <algorithm>
 
 TimerBubble::TimerBubble(QWidget* parent)
     : QWidget(parent, Qt::ToolTip | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)

@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QPoint>
 #include <QTimer>
+#include <chrono>
 #include <memory>
 
 class QLabel;

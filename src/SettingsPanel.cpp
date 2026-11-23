@@ -20,6 +20,7 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QVBoxLayout>
+#include <algorithm>
 
 SettingsPanel::SettingsPanel(AppSettings* settings, StudyTimer* timer, QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)

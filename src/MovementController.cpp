@@ -3,6 +3,7 @@
 #include <QGuiApplication>
 #include <QScreen>
 #include <QWidget>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 

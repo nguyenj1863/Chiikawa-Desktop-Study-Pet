@@ -333,6 +333,7 @@ void PetWindow::mousePressEvent(QMouseEvent* event)
     if (event->button() == Qt::LeftButton) {
         m_dragging = true;
         m_dragMoved = false;
+        m_singleClickTimer.stop();
         m_dragOffset = event->globalPosition().toPoint() - frameGeometry().topLeft();
         if (m_movement) {
             m_movement->pause();
