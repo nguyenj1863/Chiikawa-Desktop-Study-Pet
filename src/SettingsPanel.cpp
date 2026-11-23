@@ -8,6 +8,7 @@
 #include <QCoreApplication>
 #include <chrono>
 #include <QCloseEvent>
+#include <QFrame>
 #include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -16,6 +17,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QScreen>
 #include <QSlider>
 #include <QSpinBox>
@@ -46,27 +48,47 @@ SettingsPanel::SettingsPanel(AppSettings* settings, StudyTimer* timer, QWidget* 
 
 void SettingsPanel::buildUi()
 {
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(18, 18, 18, 18);
-    root->setSpacing(12);
+    auto* shell = new QVBoxLayout(this);
+    shell->setContentsMargins(18, 18, 18, 18);
+    shell->setSpacing(10);
 
+    auto* titleRow = new QHBoxLayout();
     auto* title = new QLabel(QStringLiteral("Settings"), this);
     title->setObjectName(QStringLiteral("title"));
-    root->addWidget(title);
+    auto* quitTopBtn = new QPushButton(QStringLiteral("Quit"), this);
+    quitTopBtn->setObjectName(QStringLiteral("danger"));
+    quitTopBtn->setToolTip(QStringLiteral("Stop Chiikawa and exit the app"));
+    quitTopBtn->setFixedWidth(64);
+    connect(quitTopBtn, &QPushButton::clicked, this, &SettingsPanel::exitApplicationRequested);
+    titleRow->addWidget(title, 1);
+    titleRow->addWidget(quitTopBtn);
+    shell->addLayout(titleRow);
+
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setStyleSheet(QStringLiteral("QScrollArea { background: transparent; }"));
+
+    auto* content = new QWidget(scroll);
+    content->setStyleSheet(QStringLiteral("background: transparent;"));
+    auto* root = new QVBoxLayout(content);
+    root->setContentsMargins(0, 0, 4, 0);
+    root->setSpacing(12);
 
     // --- Timer ---
-    auto* timerHeader = new QLabel(QStringLiteral("Study Timer"), this);
+    auto* timerHeader = new QLabel(QStringLiteral("Study Timer"), content);
     timerHeader->setObjectName(QStringLiteral("section"));
     root->addWidget(timerHeader);
 
     auto* timeRow = new QHBoxLayout();
-    m_hours = new QSpinBox(this);
+    m_hours = new QSpinBox(content);
     m_hours->setRange(0, 23);
     m_hours->setSuffix(QStringLiteral(" h"));
-    m_minutes = new QSpinBox(this);
+    m_minutes = new QSpinBox(content);
     m_minutes->setRange(0, 59);
     m_minutes->setSuffix(QStringLiteral(" m"));
-    m_seconds = new QSpinBox(this);
+    m_seconds = new QSpinBox(content);
     m_seconds->setRange(0, 59);
     m_seconds->setSuffix(QStringLiteral(" s"));
     timeRow->addWidget(m_hours);
@@ -75,9 +97,9 @@ void SettingsPanel::buildUi()
     root->addLayout(timeRow);
 
     auto* presets = new QHBoxLayout();
-    auto* p25 = new QPushButton(QStringLiteral("25 min"), this);
-    auto* p45 = new QPushButton(QStringLiteral("45 min"), this);
-    auto* p60 = new QPushButton(QStringLiteral("60 min"), this);
+    auto* p25 = new QPushButton(QStringLiteral("25 min"), content);
+    auto* p45 = new QPushButton(QStringLiteral("45 min"), content);
+    auto* p60 = new QPushButton(QStringLiteral("60 min"), content);
     connect(p25, &QPushButton::clicked, this, &SettingsPanel::onPreset25);
     connect(p45, &QPushButton::clicked, this, &SettingsPanel::onPreset45);
     connect(p60, &QPushButton::clicked, this, &SettingsPanel::onPreset60);
@@ -87,10 +109,10 @@ void SettingsPanel::buildUi()
     root->addLayout(presets);
 
     auto* controls = new QHBoxLayout();
-    m_startBtn = new QPushButton(QStringLiteral("Start"), this);
-    m_pauseBtn = new QPushButton(QStringLiteral("Pause"), this);
-    m_resetBtn = new QPushButton(QStringLiteral("Reset"), this);
-    m_cancelBtn = new QPushButton(QStringLiteral("Cancel"), this);
+    m_startBtn = new QPushButton(QStringLiteral("Start"), content);
+    m_pauseBtn = new QPushButton(QStringLiteral("Pause"), content);
+    m_resetBtn = new QPushButton(QStringLiteral("Reset"), content);
+    m_cancelBtn = new QPushButton(QStringLiteral("Cancel"), content);
     connect(m_startBtn, &QPushButton::clicked, this, &SettingsPanel::onStart);
     connect(m_pauseBtn, &QPushButton::clicked, this, &SettingsPanel::onPauseResume);
     connect(m_resetBtn, &QPushButton::clicked, this, &SettingsPanel::onReset);
@@ -102,15 +124,15 @@ void SettingsPanel::buildUi()
     root->addLayout(controls);
 
     // --- Pet ---
-    auto* petHeader = new QLabel(QStringLiteral("Pet"), this);
+    auto* petHeader = new QLabel(QStringLiteral("Pet"), content);
     petHeader->setObjectName(QStringLiteral("section"));
     root->addWidget(petHeader);
 
     auto* sizeRow = new QHBoxLayout();
-    sizeRow->addWidget(new QLabel(QStringLiteral("Size"), this));
-    m_sizeSlider = new QSlider(Qt::Horizontal, this);
+    sizeRow->addWidget(new QLabel(QStringLiteral("Size"), content));
+    m_sizeSlider = new QSlider(Qt::Horizontal, content);
     m_sizeSlider->setRange(AppSettings::kMinPetSize, AppSettings::kMaxPetSize);
-    m_sizeValue = new QLabel(this);
+    m_sizeValue = new QLabel(content);
     sizeRow->addWidget(m_sizeSlider, 1);
     sizeRow->addWidget(m_sizeValue);
     root->addLayout(sizeRow);
@@ -119,10 +141,10 @@ void SettingsPanel::buildUi()
     });
 
     auto* speedRow = new QHBoxLayout();
-    speedRow->addWidget(new QLabel(QStringLiteral("Speed"), this));
-    m_speedSlider = new QSlider(Qt::Horizontal, this);
+    speedRow->addWidget(new QLabel(QStringLiteral("Speed"), content));
+    m_speedSlider = new QSlider(Qt::Horizontal, content);
     m_speedSlider->setRange(25, 300); // 0.25x – 3.00x * 100
-    m_speedValue = new QLabel(this);
+    m_speedValue = new QLabel(content);
     speedRow->addWidget(m_speedSlider, 1);
     speedRow->addWidget(m_speedValue);
     root->addLayout(speedRow);
@@ -130,36 +152,38 @@ void SettingsPanel::buildUi()
         m_speedValue->setText(QStringLiteral("%1x").arg(v / 100.0, 0, 'f', 2));
     });
 
-    m_moveCheck = new QCheckBox(QStringLiteral("Autonomous movement"), this);
-    m_animCheck = new QCheckBox(QStringLiteral("Random animations"), this);
-    m_topCheck = new QCheckBox(QStringLiteral("Always on top"), this);
-    m_startupCheck = new QCheckBox(QStringLiteral("Launch on Windows startup"), this);
-    m_soundCheck = new QCheckBox(QStringLiteral("Completion sound"), this);
+    m_moveCheck = new QCheckBox(QStringLiteral("Autonomous movement"), content);
+    m_animCheck = new QCheckBox(QStringLiteral("Random animations"), content);
+    m_topCheck = new QCheckBox(QStringLiteral("Always on top"), content);
+    m_startupCheck = new QCheckBox(QStringLiteral("Launch on Windows startup"), content);
+    m_soundCheck = new QCheckBox(QStringLiteral("Completion sound"), content);
     root->addWidget(m_moveCheck);
     root->addWidget(m_animCheck);
     root->addWidget(m_topCheck);
     root->addWidget(m_startupCheck);
     root->addWidget(m_soundCheck);
 
-    auto* applyBtn = new QPushButton(QStringLiteral("Apply Pet Settings"), this);
+    auto* applyBtn = new QPushButton(QStringLiteral("Apply Pet Settings"), content);
     applyBtn->setObjectName(QStringLiteral("primary"));
     connect(applyBtn, &QPushButton::clicked, this, &SettingsPanel::onApplyPetSettings);
     root->addWidget(applyBtn);
 
     // --- App ---
-    auto* appHeader = new QLabel(QStringLiteral("Application"), this);
+    auto* appHeader = new QLabel(QStringLiteral("Application"), content);
     appHeader->setObjectName(QStringLiteral("section"));
     root->addWidget(appHeader);
 
-    auto* appRow = new QHBoxLayout();
-    auto* closeBtn = new QPushButton(QStringLiteral("Close Settings"), this);
-    auto* exitBtn = new QPushButton(QStringLiteral("Exit App"), this);
-    exitBtn->setObjectName(QStringLiteral("danger"));
+    auto* closeBtn = new QPushButton(QStringLiteral("Close Settings"), content);
+    auto* quitBtn = new QPushButton(QStringLiteral("Quit Chiikawa"), content);
+    quitBtn->setObjectName(QStringLiteral("danger"));
     connect(closeBtn, &QPushButton::clicked, this, &SettingsPanel::onClosePanel);
-    connect(exitBtn, &QPushButton::clicked, this, &SettingsPanel::exitApplicationRequested);
-    appRow->addWidget(closeBtn);
-    appRow->addWidget(exitBtn);
-    root->addLayout(appRow);
+    connect(quitBtn, &QPushButton::clicked, this, &SettingsPanel::exitApplicationRequested);
+    root->addWidget(closeBtn);
+    root->addWidget(quitBtn);
+    root->addStretch(1);
+
+    scroll->setWidget(content);
+    shell->addWidget(scroll, 1);
 }
 
 void SettingsPanel::applyStyle()
@@ -255,6 +279,13 @@ void SettingsPanel::showNear(const QRect& petGlobalGeometry)
 {
     syncFromSettings();
     syncFromTimer();
+
+    QScreen* screen = QGuiApplication::screenAt(petGlobalGeometry.center());
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    const int maxH = screen ? std::max(320, screen->availableGeometry().height() - 48) : 560;
+    setFixedHeight(std::min(560, maxH));
     adjustSize();
 
     QPoint pos(petGlobalGeometry.right() + 12, petGlobalGeometry.top());

@@ -107,7 +107,11 @@ PetWindow::PetWindow(QWidget* parent)
     });
 
     placeInitialPosition();
-    resize(m_settings->petSize(), m_settings->petSize());
+    const int initialSize = m_settings->petSize();
+    setFixedSize(initialSize, initialSize);
+    if (m_petLabel) {
+        m_petLabel->setFixedSize(initialSize, initialSize);
+    }
     applySettings();
 }
 
@@ -141,6 +145,8 @@ void PetWindow::setupUi()
     m_petLabel = new QLabel(this);
     m_petLabel->setAlignment(Qt::AlignCenter);
     m_petLabel->setAttribute(Qt::WA_TranslucentBackground);
+    // Let PetWindow receive clicks/drags; the label is display-only.
+    m_petLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_petLabel->setStyleSheet(QStringLiteral("background: transparent;"));
     layout->addWidget(m_petLabel);
 
@@ -202,7 +208,10 @@ void PetWindow::placeInitialPosition()
 void PetWindow::applySettings()
 {
     const int size = m_settings->petSize();
-    resize(size, size);
+    setFixedSize(size, size);
+    if (m_petLabel) {
+        m_petLabel->setFixedSize(size, size);
+    }
     if (m_animations) {
         m_animations->setTargetSize(size);
         m_animations->setAutoSwitchEnabled(m_settings->autoAnimationEnabled());
@@ -512,43 +521,8 @@ bool PetWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr*
     if (eventType == "windows_generic_MSG" || eventType == "windows_dispatcher_MSG") {
         auto* msg = static_cast<MSG*>(message);
         if (msg->message == WM_NCHITTEST) {
-            // Alpha-aware hit testing: transparent pixels let clicks pass through
-            const qreal dpr = devicePixelRatioF();
-            const int x = static_cast<int>(static_cast<short>(LOWORD(msg->lParam)));
-            const int y = static_cast<int>(static_cast<short>(HIWORD(msg->lParam)));
-            const QPoint local = mapFromGlobal(QPoint(x, y));
-
-            if (!rect().contains(local)) {
-                *result = HTTRANSPARENT;
-                return true;
-            }
-
-            if (m_gearButton && m_gearButton->isVisible() && m_gearButton->geometry().contains(local)) {
-                *result = HTCLIENT;
-                return true;
-            }
-
-            if (m_petLabel) {
-                const QPixmap px = m_petLabel->pixmap();
-                if (!px.isNull()) {
-                    const QSize labelSize = m_petLabel->size();
-                    const QPixmap scaled = px.scaled(labelSize * dpr, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                    const int ox = (labelSize.width() - scaled.width() / dpr) / 2;
-                    const int oy = (labelSize.height() - scaled.height() / dpr) / 2;
-                    const QPoint inLabel = local - m_petLabel->pos();
-                    const int pxX = static_cast<int>((inLabel.x() - ox) * dpr);
-                    const int pxY = static_cast<int>((inLabel.y() - oy) * dpr);
-                    if (pxX < 0 || pxY < 0 || pxX >= scaled.width() || pxY >= scaled.height()) {
-                        *result = HTTRANSPARENT;
-                        return true;
-                    }
-                    const QImage img = scaled.toImage();
-                    if (qAlpha(img.pixel(pxX, pxY)) < 20) {
-                        *result = HTTRANSPARENT;
-                        return true;
-                    }
-                }
-            }
+            // Accept the whole pet HWND as clickable. Per-pixel / DPI-mismatched
+            // hit testing previously returned HTTRANSPARENT and ate all clicks.
             *result = HTCLIENT;
             return true;
         }

@@ -61,6 +61,7 @@ private slots:
 private:
     void scheduleNextAutoSwitch();
     void updateDisplayedFrame();
+    void applyScaledSize(QMovie* movie);
     [[nodiscard]] AnimationId pickRandom(bool avoidCurrent);
     [[nodiscard]] QMovie* currentMovie() const;
 

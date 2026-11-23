@@ -85,6 +85,7 @@ bool AnimationManager::loadAll()
         }
         connect(movie, &QMovie::frameChanged, this, &AnimationManager::onFrameChanged);
         m_movies.insert(i, movie);
+        applyScaledSize(movie);
     }
 
     m_ready = !m_movies.isEmpty();
@@ -97,13 +98,21 @@ bool AnimationManager::loadAll()
     return m_ready && ok;
 }
 
+void AnimationManager::applyScaledSize(QMovie* movie)
+{
+    if (!movie) {
+        return;
+    }
+    movie->setScaledSize(QSize(m_targetSize, m_targetSize));
+}
+
 void AnimationManager::setTargetSize(int size)
 {
     m_targetSize = std::max(32, size);
-    if (auto* movie = currentMovie()) {
-        movie->setScaledSize(QSize(m_targetSize, m_targetSize));
-        updateDisplayedFrame();
+    for (auto it = m_movies.begin(); it != m_movies.end(); ++it) {
+        applyScaledSize(it.value());
     }
+    updateDisplayedFrame();
 }
 
 void AnimationManager::setMirrored(bool mirrored)
@@ -124,6 +133,13 @@ void AnimationManager::updateDisplayedFrame()
     QPixmap frame = movie->currentPixmap();
     if (frame.isNull()) {
         return;
+    }
+    // QMovie can return native-resolution frames even after setScaledSize.
+    // Always normalize so the pet stays a consistent size.
+    if (frame.height() != m_targetSize || frame.width() != m_targetSize) {
+        frame = frame.scaled(QSize(m_targetSize, m_targetSize),
+                             Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
     }
     if (m_mirrored) {
         frame = frame.transformed(QTransform().scale(-1, 1));
@@ -156,7 +172,7 @@ void AnimationManager::play(AnimationId id, bool mirrored)
 
     // Drive display ourselves so mirroring works without QMovie fighting setPixmap
     m_label->setMovie(nullptr);
-    movie->setScaledSize(QSize(m_targetSize, m_targetSize));
+    applyScaledSize(movie);
 
     if (movie->state() != QMovie::Running) {
         movie->start();

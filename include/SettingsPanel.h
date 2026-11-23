@@ -12,7 +12,7 @@ class QLabel;
 
 /**
  * Compact floating settings panel with pastel minimalist styling.
- * Closing this panel does not quit the desktop pet.
+ * Closing this panel hides settings only; use Quit to stop the app.
  */
 class SettingsPanel : public QWidget {
     Q_OBJECT
