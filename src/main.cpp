@@ -1,6 +1,6 @@
+#include "PetWindow.h"
+
 #include <QApplication>
-#include <QLabel>
-#include <QMovie>
 
 int main(int argc, char* argv[])
 {
@@ -11,19 +11,10 @@ int main(int argc, char* argv[])
     app.setOrganizationName(QStringLiteral("ChiikawaStudyPet"));
     app.setApplicationName(QStringLiteral("DesktopPet"));
     app.setApplicationVersion(QStringLiteral("1.0.0"));
-    app.setQuitOnLastWindowClosed(true);
+    app.setQuitOnLastWindowClosed(false);
 
-    QLabel label;
-    label.setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
-    label.setAttribute(Qt::WA_TranslucentBackground);
-    label.resize(120, 120);
-
-    auto* movie = new QMovie(QStringLiteral(":/assets/chiikawa_skip.gif"), QByteArray(), &label);
-    movie->setCacheMode(QMovie::CacheAll);
-    movie->setScaledSize(QSize(120, 120));
-    label.setMovie(movie);
-    movie->start();
-    label.show();
+    PetWindow pet;
+    pet.show();
 
     return app.exec();
 }
