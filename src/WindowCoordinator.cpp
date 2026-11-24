@@ -111,6 +111,22 @@ void WindowCoordinator::realignSettings()
     attachSettings();
 }
 
+void WindowCoordinator::repositionAfterSettingsResize()
+{
+    if (m_syncing || !m_pet || !m_settings || !m_settings->isVisible()) {
+        return;
+    }
+    QScopedValueRollback<bool> guard(m_syncing, true);
+
+    const QRect petRect = m_pet->frameGeometry();
+    const QRect bounds = availableGeometryFor(petRect.center());
+    const QPoint clamped = clampTopLeft(m_settings->pos(), m_settings->size(), bounds);
+    if (clamped != m_settings->pos()) {
+        m_settings->move(clamped);
+    }
+    m_relativeOffset = m_settings->pos() - petRect.topLeft();
+}
+
 void WindowCoordinator::movePetTo(const QPoint& desiredPetTopLeft)
 {
     if (m_syncing || !m_pet) {
