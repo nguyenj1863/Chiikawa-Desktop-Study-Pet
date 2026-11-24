@@ -1,6 +1,8 @@
 #include "AppSettings.h"
+#include "SettingsDefaults.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QSettings>
 #include <QTest>
 
@@ -13,6 +15,8 @@ private slots:
     void clampsSpeed();
     void persistsAndReloads();
     void validatesTimerDuration();
+    void persistsDesktopAndAlarmPreferences();
+    void restoreDefaultsPreservesActiveSessionsAndAlarms();
 
 private:
     void clearSettings();
@@ -70,6 +74,7 @@ void TestAppSettings::persistsAndReloads()
         QCOMPARE(s.movementEnabled(), false);
         QCOMPARE(s.autoAnimationEnabled(), false);
         QCOMPARE(s.alwaysOnTop(), false);
+        QCOMPARE(s.desktopOnlyMode(), true);
         QCOMPARE(s.lastPosition(), QPoint(42, 84));
         QVERIFY(s.hasSavedPosition());
         QCOMPARE(s.lastTimerSeconds(), 45 * 60);
@@ -85,6 +90,89 @@ void TestAppSettings::validatesTimerDuration()
     QCOMPARE(s.lastTimerSeconds(), 1);
     s.setLastTimerSeconds(999999);
     QCOMPARE(s.lastTimerSeconds(), 24 * 60 * 60);
+}
+
+void TestAppSettings::persistsDesktopAndAlarmPreferences()
+{
+    clearSettings();
+    const qint64 snoozeUtcMs = QDateTime(QDate(2026, 11, 24), QTime(17, 35, 0)).toMSecsSinceEpoch();
+    {
+        AppSettings s;
+        s.setDesktopOnlyMode(true);
+        s.setAlarmSoundId(QStringLiteral("tiny_bell"));
+        s.setAlarmVolume(0.65);
+        s.setAlarmNotificationEnabled(false);
+        s.setSnoozeMinutes(15);
+        s.setAlarmConfigured(true);
+        s.setAlarmEnabled(true);
+        s.setAlarmTime(QTime(17, 30));
+        s.setSnoozeTargetUtcMs(snoozeUtcMs);
+        s.save();
+    }
+    {
+        AppSettings s;
+        QCOMPARE(s.desktopOnlyMode(), true);
+        QCOMPARE(s.alarmSoundId(), QStringLiteral("tiny_bell"));
+        QVERIFY(qAbs(s.alarmVolume() - 0.65) < 0.001);
+        QCOMPARE(s.alarmNotificationEnabled(), false);
+        QCOMPARE(s.snoozeMinutes(), 15);
+        QCOMPARE(s.hasAlarmConfigured(), true);
+        QCOMPARE(s.alarmEnabled(), true);
+        QCOMPARE(s.alarmTime(), QTime(17, 30));
+        QCOMPARE(s.snoozeTargetUtcMs(), snoozeUtcMs);
+
+        // Snooze clamping snaps to 5 / 10 / 15
+        s.setSnoozeMinutes(99);
+        QCOMPARE(s.snoozeMinutes(), 15);
+        s.setSnoozeMinutes(1);
+        QCOMPARE(s.snoozeMinutes(), 5);
+    }
+    clearSettings();
+}
+
+void TestAppSettings::restoreDefaultsPreservesActiveSessionsAndAlarms()
+{
+    clearSettings();
+    const qint64 snoozeUtcMs = QDateTime(QDate(2026, 11, 24), QTime(17, 35, 0)).toMSecsSinceEpoch();
+    AppSettings s;
+    s.setPetSize(210);
+    s.setMovementSpeed(2.2);
+    s.setMovementEnabled(false);
+    s.setAutoAnimationEnabled(false);
+    s.setDesktopOnlyMode(true);
+    s.setSoundEnabled(false);
+    s.setAlarmSoundId(QStringLiteral("cozy_pop"));
+    s.setAlarmVolume(0.8);
+    s.setAlarmNotificationEnabled(false);
+    s.setSnoozeMinutes(15);
+    s.setLastPosition(QPoint(300, 200));
+    s.setAlarmConfigured(true);
+    s.setAlarmEnabled(true);
+    s.setAlarmTime(QTime(17, 30));
+    s.setSnoozeTargetUtcMs(snoozeUtcMs);
+    s.save();
+
+    s.restoreDefaults();
+
+    // Preferences reset to centralized defaults
+    QCOMPARE(s.petSize(), SettingsDefaults::kPetSize);
+    QCOMPARE(s.movementSpeed(), SettingsDefaults::kMoveSpeed);
+    QCOMPARE(s.movementEnabled(), SettingsDefaults::kMovementEnabled);
+    QCOMPARE(s.autoAnimationEnabled(), SettingsDefaults::kAutoAnimationEnabled);
+    QCOMPARE(s.desktopOnlyMode(), SettingsDefaults::kDesktopOnlyMode);
+    QCOMPARE(s.soundEnabled(), SettingsDefaults::kSoundEnabled);
+    QCOMPARE(s.alarmSoundId(), SettingsDefaults::defaultAlarmSoundId());
+    QVERIFY(qAbs(s.alarmVolume() - SettingsDefaults::kAlarmVolume) < 0.001);
+    QCOMPARE(s.alarmNotificationEnabled(), SettingsDefaults::kAlarmNotificationEnabled);
+    QCOMPARE(s.snoozeMinutes(), SettingsDefaults::kSnoozeMinutes);
+
+    // Active alarm, pending snooze, and saved position must be preserved
+    QCOMPARE(s.alarmEnabled(), true);
+    QCOMPARE(s.alarmTime(), QTime(17, 30));
+    QCOMPARE(s.snoozeTargetUtcMs(), snoozeUtcMs);
+    QCOMPARE(s.lastPosition(), QPoint(300, 200));
+
+    clearSettings();
 }
 
 QTEST_MAIN(TestAppSettings)
