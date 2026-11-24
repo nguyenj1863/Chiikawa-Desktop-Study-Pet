@@ -7,6 +7,7 @@
 #include "AppSettings.h"
 #include "CompletionToast.h"
 #include "MovementController.h"
+#include "OnboardingWindow.h"
 #include "SettingsPanel.h"
 #include "StudyTimer.h"
 #include "SystemTrayManager.h"
@@ -67,6 +68,12 @@ PetWindow::PetWindow(QWidget* parent)
     m_coordinator = std::make_unique<WindowCoordinator>(this, m_settingsPanel.get(), this);
     m_completionToast = std::make_unique<CompletionToast>(nullptr);
     m_alarmNotification = std::make_unique<AlarmNotification>(nullptr);
+    m_onboardingWindow = std::make_unique<OnboardingWindow>(m_uiSound.get(), nullptr);
+
+    connect(m_onboardingWindow.get(), &OnboardingWindow::onboardingCompleted,
+            this, &PetWindow::onOnboardingFinished);
+    connect(m_onboardingWindow.get(), &OnboardingWindow::onboardingSkipped,
+            this, &PetWindow::onOnboardingFinished);
 
     connect(m_completionToast.get(), &CompletionToast::buttonActivated, this, [this]() {
         if (m_uiSound) {
@@ -113,10 +120,13 @@ PetWindow::PetWindow(QWidget* parent)
 
     connect(m_settingsPanel.get(), &SettingsPanel::settingsApplied,
             this, &PetWindow::applySettings);
+    connect(m_settingsPanel.get(), &SettingsPanel::showTutorialRequested,
+            this, &PetWindow::showTutorialReplay);
     connect(m_settingsPanel.get(), &SettingsPanel::exitApplicationRequested,
             this, &PetWindow::exitApplication);
     connect(m_settingsPanel.get(), &SettingsPanel::closedByUser, this, [this]() {
-        if (m_settings->movementEnabled()) {
+        const bool onboardingActive = m_onboardingWindow && m_onboardingWindow->isVisible();
+        if (isVisible() && m_settings->movementEnabled() && !onboardingActive) {
             m_movement->resume();
         }
     });
@@ -157,6 +167,10 @@ PetWindow::PetWindow(QWidget* parent)
     connect(m_tray.get(), &SystemTrayManager::openSettingsRequested, this, [this, playTrayClick]() {
         playTrayClick();
         openSettings();
+    });
+    connect(m_tray.get(), &SystemTrayManager::showTutorialRequested, this, [this, playTrayClick]() {
+        playTrayClick();
+        showTutorialReplay();
     });
     connect(m_tray.get(), &SystemTrayManager::exitRequested, this, [this, playTrayClick]() {
         playTrayClick();
@@ -289,12 +303,15 @@ void PetWindow::applySettings()
     if (m_movement) {
         m_movement->setSpeedMultiplier(m_settings->movementSpeed());
         m_movement->setEnabled(m_settings->movementEnabled());
-        if (!m_settingsPanel->isVisible() && !m_dragging) {
+        const bool onboardingActive = m_onboardingWindow && m_onboardingWindow->isVisible();
+        if (isVisible() && !m_settingsPanel->isVisible() && !m_dragging && !onboardingActive) {
             if (m_settings->movementEnabled()) {
                 m_movement->resume();
             } else {
                 m_movement->pause();
             }
+        } else {
+            m_movement->pause();
         }
     }
 
@@ -332,6 +349,56 @@ void PetWindow::updateHitMask()
     // Approximate opaque hit area: full widget. Fine-grained alpha hit-testing
     // is handled in nativeEvent on Windows when a pixmap is available.
     clearMask();
+}
+
+void PetWindow::startApplication()
+{
+    if (m_settings && !m_settings->onboardingCompleted() && m_onboardingWindow) {
+        // Keep the desktop pet hidden during first-launch onboarding
+        if (m_movement) {
+            m_movement->pause();
+        }
+        m_onboardingWindow->openOnboarding(false);
+        return;
+    }
+    showPet();
+}
+
+void PetWindow::showTutorialReplay()
+{
+    if (!m_onboardingWindow) {
+        return;
+    }
+    if (m_onboardingWindow->isVisible()) {
+        m_onboardingWindow->raise();
+        m_onboardingWindow->activateWindow();
+        return;
+    }
+    if (m_settingsPanel && m_settingsPanel->isVisible()) {
+        m_settingsPanel->hide();
+    }
+    if (m_movement) {
+        m_movement->pause();
+    }
+    m_onboardingWindow->openOnboarding(true);
+}
+
+void PetWindow::onOnboardingFinished(bool wasReplay)
+{
+    if (!wasReplay) {
+        if (m_settings) {
+            m_settings->setOnboardingCompleted(true);
+            m_settings->save();
+        }
+        showPet();
+        return;
+    }
+
+    // Replay closed: preserve saved onboarding state, timers, alarms, and pet position
+    if (isVisible() && m_movement && m_settings && m_settings->movementEnabled()
+        && !(m_settingsPanel && m_settingsPanel->isVisible())) {
+        m_movement->resume();
+    }
 }
 
 void PetWindow::showPet()
@@ -410,6 +477,9 @@ void PetWindow::exitApplication()
     }
     if (m_settingsPanel) {
         m_settingsPanel->hide();
+    }
+    if (m_onboardingWindow) {
+        m_onboardingWindow->hide();
     }
     if (m_alarmNotification) {
         m_alarmNotification->closeNotification();
@@ -616,7 +686,14 @@ void PetWindow::onAlarmTriggered(const QTime& scheduledTime, bool fromSnooze)
         m_soundManager->playAlarmSequence();
     }
     if (m_alarmNotification && m_settings->alarmNotificationEnabled()) {
-        m_alarmNotification->showAlarm(frameGeometry(),
+        QRect anchor = frameGeometry();
+        if (!isVisible()) {
+            if (QScreen* primary = QGuiApplication::primaryScreen()) {
+                const QRect avail = primary->availableGeometry();
+                anchor = QRect(avail.center().x() - 60, avail.center().y() - 60, 120, 120);
+            }
+        }
+        m_alarmNotification->showAlarm(anchor,
                                        scheduledTime,
                                        m_settings->snoozeMinutes(),
                                        fromSnooze);
@@ -746,8 +823,10 @@ void PetWindow::showEvent(QShowEvent* event)
     if (m_animations && m_settings) {
         m_animations->setAutoSwitchEnabled(m_settings->autoAnimationEnabled());
     }
+    const bool onboardingActive = m_onboardingWindow && m_onboardingWindow->isVisible();
     if (m_movement && m_settings && m_settings->movementEnabled()
-        && !(m_settingsPanel && m_settingsPanel->isVisible())) {
+        && !(m_settingsPanel && m_settingsPanel->isVisible())
+        && !onboardingActive) {
         m_movement->resume();
     }
 }

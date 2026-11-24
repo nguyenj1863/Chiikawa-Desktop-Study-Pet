@@ -20,7 +20,7 @@ int main(int argc, char* argv[])
     WindowsIdentity::initialize();
 
     PetWindow pet;
-    pet.show();
+    pet.startApplication();
 
     return app.exec();
 }

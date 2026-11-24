@@ -30,6 +30,7 @@ signals:
     void startTimerRequested();
     void pauseResumeTimerRequested();
     void openSettingsRequested();
+    void showTutorialRequested();
     void exitRequested();
 
 private:

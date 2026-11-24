@@ -22,6 +22,7 @@ class WindowCoordinator;
 class AlarmScheduler;
 class AlarmSoundManager;
 class AlarmNotification;
+class OnboardingWindow;
 class UISoundManager;
 
 #include "DesktopLayerHelper.h"
@@ -39,11 +40,18 @@ public:
 
     [[nodiscard]] StudyTimer* studyTimer() const { return m_timer.get(); }
     [[nodiscard]] AppSettings* appSettings() const { return m_settings.get(); }
+    [[nodiscard]] AlarmScheduler* alarmScheduler() const { return m_alarmScheduler.get(); }
+    [[nodiscard]] MovementController* movementController() const { return m_movement.get(); }
+    [[nodiscard]] OnboardingWindow* onboardingWindow() const { return m_onboardingWindow.get(); }
+
+    /** Entry point after construction: shows first-launch onboarding or reveals the pet directly. */
+    void startApplication();
 
 public slots:
     void showPet();
     void hidePet();
     void openSettings();
+    void showTutorialReplay();
     void applySettings();
     void startTimerFromTray();
     void pauseResumeFromTray();
@@ -73,6 +81,7 @@ private slots:
     void hideGear();
     void onGearClicked();
     void updateHoverBubble();
+    void onOnboardingFinished(bool wasReplay);
 
 private:
     void setupWindowFlags();
@@ -99,6 +108,7 @@ private:
     std::unique_ptr<SystemTrayManager> m_tray;
     std::unique_ptr<CompletionToast> m_completionToast;
     std::unique_ptr<AlarmNotification> m_alarmNotification;
+    std::unique_ptr<OnboardingWindow> m_onboardingWindow;
     DesktopLayerHelper m_desktopLayer;
 
     QPushButton* m_gearButton = nullptr;

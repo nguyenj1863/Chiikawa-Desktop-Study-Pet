@@ -64,6 +64,7 @@ public:
 
 signals:
     void settingsApplied();
+    void showTutorialRequested();
     void exitApplicationRequested();
     void dragRequested(const QPoint& desiredTopLeft);
     void dragFinished();

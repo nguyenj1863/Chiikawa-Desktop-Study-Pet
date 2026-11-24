@@ -55,6 +55,9 @@ void SystemTrayManager::buildMenu()
     auto* settings = m_menu->addAction(QStringLiteral("Open Settings"));
     connect(settings, &QAction::triggered, this, &SystemTrayManager::openSettingsRequested);
 
+    auto* tutorial = m_menu->addAction(QStringLiteral("Show Tutorial"));
+    connect(tutorial, &QAction::triggered, this, &SystemTrayManager::showTutorialRequested);
+
     m_menu->addSeparator();
 
     auto* exitAct = m_menu->addAction(QStringLiteral("Exit"));

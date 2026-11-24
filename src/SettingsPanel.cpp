@@ -630,9 +630,23 @@ void SettingsPanel::buildUi()
     root->addWidget(m_petSection);
 
     // =========================================================================
-    // FOOTER: Single Exit Application action
+    // FOOTER: Show Tutorial + Exit Application
     // =========================================================================
     root->addWidget(makeDivider(m_contentWidget));
+
+    auto* tutorialBtn = new QPushButton(
+        PixelTheme::icon(PixelIcon::Help, PixelTheme::kSecondaryText, 12),
+        QStringLiteral(" Show Tutorial"), m_contentWidget);
+    tutorialBtn->setObjectName(QStringLiteral("subtle"));
+    tutorialBtn->setProperty("actionId", QStringLiteral("showTutorial"));
+    tutorialBtn->setIconSize(QSize(12, 12));
+    tutorialBtn->setCursor(Qt::PointingHandCursor);
+    tutorialBtn->setToolTip(QStringLiteral("Replay the quick visual tutorial"));
+    connect(tutorialBtn, &QPushButton::clicked, this, [this]() {
+        playUiClick();
+        emit showTutorialRequested();
+    });
+    root->addWidget(tutorialBtn);
 
     auto* exitBtn = new QPushButton(
         PixelTheme::icon(PixelIcon::Exit, PixelTheme::kDangerText, 12),
