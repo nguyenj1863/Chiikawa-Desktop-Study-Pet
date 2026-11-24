@@ -41,6 +41,7 @@ public:
     /** Queries the OS reduced-motion preference (false if animations are enabled). */
     [[nodiscard]] static bool systemPrefersReducedMotion();
 
+    [[nodiscard]] double cycleDurationMs() const;
     [[nodiscard]] QSize sizeHint() const override;
     [[nodiscard]] QSize minimumSizeHint() const override;
 
@@ -58,7 +59,6 @@ private:
     void ensureMoviesLoaded();
     void updateMoviePlayback();
     [[nodiscard]] double cycleProgress() const;
-    [[nodiscard]] double cycleDurationMs() const;
     [[nodiscard]] QRect stageRect() const;
     [[nodiscard]] QPointF clampDragPos(const QPointF& pos) const;
 
