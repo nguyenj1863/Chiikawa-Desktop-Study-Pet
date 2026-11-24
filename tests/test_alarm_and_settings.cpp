@@ -498,10 +498,13 @@ void TestAlarmAndSettings::collapsibleHeadersAndCompactSettingsLayout()
     section.show();
     QApplication::processEvents();
 
-    // Header height must comfortably fit both title and summary without clipping/overlap
+    // Compact single-line header must fit title and inline summary without vertical clipping or overlap
     const int headerH = section.headerWidget()->sizeHint().height();
-    const int minNeeded = section.titleLabel()->sizeHint().height() + section.summaryLabel()->sizeHint().height();
-    QVERIFY2(headerH >= minNeeded, "Collapsed section header must be tall enough for both title and summary");
+    const int minNeeded = std::max(section.titleLabel()->sizeHint().height(),
+                                   section.summaryLabel()->sizeHint().height());
+    QVERIFY2(headerH >= minNeeded, "Collapsed section header must be tall enough for title and inline summary");
+    QVERIFY2(headerH <= 36, "Collapsed section header must stay compact on a single row");
+    QVERIFY(!section.titleLabel()->geometry().intersects(section.summaryLabel()->geometry()));
 
     section.setExpanded(true, false);
     QCOMPARE(section.isExpanded(), true);
@@ -687,6 +690,11 @@ void TestAlarmAndSettings::redesignedTimerAndAlarmControls()
     panel.show();
     QTest::qWait(20);
 
+    const int collapsedHeight = panel.height();
+    qInfo() << "SettingsPanel dimensions: width=" << panel.width() << "collapsedHeight=" << collapsedHeight;
+    QCOMPARE(panel.width(), SettingsPanel::kPanelWidth);
+    QVERIFY2(collapsedHeight <= 345, qPrintable(QStringLiteral("Collapsed height too tall: %1").arg(collapsedHeight)));
+
     // Find Edit pencil button and verify size + state tooltips across Idle, Running, Paused
     QPushButton* editBtn = nullptr;
     for (QPushButton* btn : panel.findChildren<QPushButton*>()) {
@@ -734,6 +742,55 @@ void TestAlarmAndSettings::redesignedTimerAndAlarmControls()
     panel.syncFromTimer();
     QCOMPARE(editBtn->isEnabled(), true);
     QCOMPARE(editBtn->toolTip(), QStringLiteral("Edit custom duration"));
+
+    // Study timer up/down buttons have a distinct pastel shade so they stand out
+    QVERIFY(qss.contains(QStringLiteral("background: #F4D5C7;")));
+
+    // Sticky footer keeps Exit Application inside panel bounds (never clipped off-screen)
+    QPushButton* exitBtn = nullptr;
+    for (QPushButton* btn : panel.findChildren<QPushButton*>()) {
+        if (btn->objectName() == QStringLiteral("danger")) {
+            exitBtn = btn;
+            break;
+        }
+    }
+    QVERIFY(exitBtn != nullptr);
+    QVERIFY(exitBtn->isVisible());
+    const QPoint exitBottom = exitBtn->mapTo(&panel, QPoint(0, exitBtn->height()));
+    QVERIFY(exitBottom.y() <= panel.height());
+
+    // Compact collapsed height sits comfortably beside the pet (and matches pre-edit height after reset)
+    QCOMPARE(panel.width(), SettingsPanel::kPanelWidth);
+    QCOMPARE(panel.height(), collapsedHeight);
+
+    // Type-to-select on Alarm dropdowns (hour, minute, AM/PM) works both closed and when popup is open
+    const auto timeCombos = panel.findChildren<QComboBox*>(QStringLiteral("timeSelect"));
+    QCOMPARE(timeCombos.size(), 3);
+    QComboBox* hourCombo = timeCombos[0];
+    QComboBox* minCombo = timeCombos[1];
+    QComboBox* periodCombo = timeCombos[2];
+
+    // Type "1" then "2" in hour dropdown -> selects 12
+    QKeyEvent key1(QEvent::KeyPress, Qt::Key_1, Qt::NoModifier, QStringLiteral("1"));
+    QKeyEvent key2(QEvent::KeyPress, Qt::Key_2, Qt::NoModifier, QStringLiteral("2"));
+    QApplication::sendEvent(hourCombo, &key1);
+    QApplication::sendEvent(hourCombo, &key2);
+    QCOMPARE(hourCombo->currentData().toInt(), 12);
+
+    // Type "4" then "5" in minute dropdown -> selects 45
+    QKeyEvent key4(QEvent::KeyPress, Qt::Key_4, Qt::NoModifier, QStringLiteral("4"));
+    QKeyEvent key5(QEvent::KeyPress, Qt::Key_5, Qt::NoModifier, QStringLiteral("5"));
+    QApplication::sendEvent(minCombo, &key4);
+    QApplication::sendEvent(minCombo, &key5);
+    QCOMPARE(minCombo->currentData().toInt(), 45);
+
+    // Type "p" then "a" in AM/PM dropdown -> selects PM then AM
+    QKeyEvent keyP(QEvent::KeyPress, Qt::Key_P, Qt::NoModifier, QStringLiteral("p"));
+    QKeyEvent keyA(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, QStringLiteral("a"));
+    QApplication::sendEvent(periodCombo, &keyP);
+    QCOMPARE(periodCombo->currentText(), QStringLiteral("PM"));
+    QApplication::sendEvent(periodCombo, &keyA);
+    QCOMPARE(periodCombo->currentText(), QStringLiteral("AM"));
 }
 
 QTEST_MAIN(TestAlarmAndSettings)

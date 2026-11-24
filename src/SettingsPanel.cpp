@@ -19,11 +19,13 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMouseEvent>
@@ -65,9 +67,41 @@ public:
         : QComboBox(parent)
         , m_scrollArea(scrollArea)
     {
+        if (view()) {
+            view()->installEventFilter(this);
+        }
+    }
+
+    void showPopup() override
+    {
+        if (view()) {
+            view()->removeEventFilter(this);
+            view()->installEventFilter(this);
+        }
+        m_typeBuffer.clear();
+        QComboBox::showPopup();
     }
 
 protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched == view() && event->type() == QEvent::KeyPress) {
+            auto* keyEvent = static_cast<QKeyEvent*>(event);
+            if (handleTypeToSelect(keyEvent)) {
+                return true;
+            }
+        }
+        return QComboBox::eventFilter(watched, event);
+    }
+
+    void keyPressEvent(QKeyEvent* event) override
+    {
+        if (handleTypeToSelect(event)) {
+            return;
+        }
+        QComboBox::keyPressEvent(event);
+    }
+
     void wheelEvent(QWheelEvent* event) override
     {
         // Yield wheel scrolling to the settings scroll area when it is scrollable and this combo is unfocused
@@ -95,7 +129,106 @@ protected:
     }
 
 private:
+    static constexpr qint64 kTypeTimeoutMs = 850;
+
+    int findNumericMatch(const QString& digits) const
+    {
+        if (digits.isEmpty()) {
+            return -1;
+        }
+        bool ok = false;
+        const int target = digits.toInt(&ok);
+        if (!ok) {
+            return -1;
+        }
+        // Exact integer match against item data (handles "4" -> 04, "04" -> 04, "12" -> 12, "45" -> 45)
+        for (int i = 0; i < count(); ++i) {
+            if (itemData(i).toInt() == target) {
+                return i;
+            }
+        }
+        // Prefix fallback (e.g. typing "4" in 12h hours or minutes)
+        for (int i = 0; i < count(); ++i) {
+            if (itemText(i).startsWith(digits, Qt::CaseInsensitive)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    void selectMatchedIndex(int idx)
+    {
+        if (idx < 0 || idx >= count()) {
+            return;
+        }
+        setCurrentIndex(idx);
+        if (view() && view()->isVisible()) {
+            const QModelIndex modelIdx = model()->index(idx, modelColumn(), rootModelIndex());
+            view()->setCurrentIndex(modelIdx);
+            view()->scrollTo(modelIdx, QAbstractItemView::PositionAtCenter);
+        }
+        emit activated(idx);
+    }
+
+    bool handleTypeToSelect(QKeyEvent* event)
+    {
+        if (!event || (event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
+            return false;
+        }
+
+        // Backspace clears buffer when typing
+        if (event->key() == Qt::Key_Backspace && !m_typeBuffer.isEmpty()) {
+            m_typeBuffer.chop(1);
+            event->accept();
+            return true;
+        }
+
+        const QString text = event->text();
+        if (text.size() != 1) {
+            return false;
+        }
+        const QChar ch = text.at(0);
+
+        // Letter typing (e.g., 'A' -> AM, 'P' -> PM)
+        if (ch.isLetter()) {
+            const QString upper = text.toUpper();
+            for (int i = 0; i < count(); ++i) {
+                if (itemText(i).startsWith(upper, Qt::CaseInsensitive)) {
+                    m_typeBuffer.clear();
+                    selectMatchedIndex(i);
+                    event->accept();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Digit typing (e.g., "04", "4", "12", "45")
+        if (ch.isDigit()) {
+            if (!m_typeTimer.isValid() || m_typeTimer.elapsed() > kTypeTimeoutMs || m_typeBuffer.size() >= 2) {
+                m_typeBuffer.clear();
+            }
+            m_typeTimer.restart();
+            m_typeBuffer.append(ch);
+
+            int idx = findNumericMatch(m_typeBuffer);
+            if (idx < 0 && m_typeBuffer.size() > 1) {
+                // Start fresh with just the newest digit (e.g., typed "99" -> match "09")
+                m_typeBuffer = QString(ch);
+                idx = findNumericMatch(m_typeBuffer);
+            }
+            if (idx >= 0) {
+                selectMatchedIndex(idx);
+                event->accept();
+                return true;
+            }
+        }
+        return false;
+    }
+
     QScrollArea* m_scrollArea = nullptr;
+    QString m_typeBuffer;
+    QElapsedTimer m_typeTimer;
 };
 
 void styleTimeCombo(QComboBox* combo)
@@ -204,10 +337,10 @@ void SettingsPanel::playUiClick()
 void SettingsPanel::buildUi()
 {
     auto* shell = new QVBoxLayout(this);
-    shell->setContentsMargins(14, 12, 14, 12);
-    shell->setSpacing(6);
+    shell->setContentsMargins(10, 8, 10, 8);
+    shell->setSpacing(5);
 
-    // --- Header (draggable) ---
+    // --- Header (draggable, sticky outside scroll area) ---
     m_headerWidget = new QWidget(this);
     m_headerWidget->setObjectName(QStringLiteral("header"));
     m_headerWidget->setCursor(Qt::OpenHandCursor);
@@ -220,7 +353,7 @@ void SettingsPanel::buildUi()
     auto* title = new QLabel(QStringLiteral("Settings"), m_headerWidget);
     title->setObjectName(QStringLiteral("title"));
 
-    auto* closeBtn = new PixelIconButton(PixelIcon::Close, 24, 11, false, m_headerWidget);
+    auto* closeBtn = new PixelIconButton(PixelIcon::Close, 22, 10, false, m_headerWidget);
     closeBtn->setToolTip(QStringLiteral("Close settings"));
     closeBtn->setAccessibleName(QStringLiteral("Close settings"));
     connect(closeBtn, &QPushButton::clicked, this, &SettingsPanel::onClosePanel);
@@ -229,7 +362,7 @@ void SettingsPanel::buildUi()
     titleRow->addWidget(closeBtn);
     shell->addWidget(m_headerWidget);
 
-    // --- Body scroll area (vertical scrollbar shown only if screen height is genuinely too small) ---
+    // --- Body scroll area (vertical scrollbar shown only if expanded content exceeds ~82% screen height) ---
     m_scrollArea = new QScrollArea(this);
     m_scrollArea->setObjectName(QStringLiteral("bodyScroll"));
     m_scrollArea->setWidgetResizable(true);
@@ -244,7 +377,7 @@ void SettingsPanel::buildUi()
 
     auto* root = new QVBoxLayout(m_contentWidget);
     root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(7);
+    root->setSpacing(5);
 
     // =========================================================================
     // SECTION 1: STUDY TIMER (Expanded by default)
@@ -253,8 +386,8 @@ void SettingsPanel::buildUi()
     timerCard->setObjectName(QStringLiteral("timerCard"));
     timerCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto* timerCardLayout = new QVBoxLayout(timerCard);
-    timerCardLayout->setContentsMargins(10, 8, 10, 10);
-    timerCardLayout->setSpacing(6);
+    timerCardLayout->setContentsMargins(9, 6, 9, 7);
+    timerCardLayout->setSpacing(4);
 
     auto* timerTitleRow = new QHBoxLayout();
     timerTitleRow->setContentsMargins(0, 0, 0, 0);
@@ -299,7 +432,7 @@ void SettingsPanel::buildUi()
         sb->setToolTip(tooltip);
         sb->setMinimumWidth(0);
         sb->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-        sb->setFixedHeight(32);
+        sb->setFixedHeight(30);
     };
 
     auto makeFieldLabel = [this](const QString& caption) -> QLabel* {
@@ -360,15 +493,15 @@ void SettingsPanel::buildUi()
 
     // Dynamic icon controls: Play/Pause + Reset (Cancel removed)
     auto* iconControls = new QHBoxLayout();
-    iconControls->setSpacing(10);
+    iconControls->setSpacing(8);
     iconControls->addStretch(1);
 
-    m_playPauseBtn = new PixelIconButton(PixelIcon::Play, 34, 15, true, timerCard);
+    m_playPauseBtn = new PixelIconButton(PixelIcon::Play, 30, 14, true, timerCard);
     m_playPauseBtn->setToolTip(QStringLiteral("Start timer"));
     m_playPauseBtn->setAccessibleName(QStringLiteral("Start timer"));
     connect(m_playPauseBtn, &QPushButton::clicked, this, &SettingsPanel::onPlayPauseClicked);
 
-    m_resetBtn = new PixelIconButton(PixelIcon::Reset, 34, 15, false, timerCard);
+    m_resetBtn = new PixelIconButton(PixelIcon::Reset, 30, 14, false, timerCard);
     m_resetBtn->setToolTip(QStringLiteral("Reset timer"));
     m_resetBtn->setAccessibleName(QStringLiteral("Reset timer"));
     connect(m_resetBtn, &QPushButton::clicked, this, &SettingsPanel::onResetClicked);
@@ -393,7 +526,7 @@ void SettingsPanel::buildUi()
     });
 
     auto* alarmBody = new QVBoxLayout();
-    alarmBody->setSpacing(6);
+    alarmBody->setSpacing(4);
 
     // Row 1: Bell + "Alarm Time" + compact 12h | 24h toggle
     auto* formatRow = new QHBoxLayout();
@@ -438,7 +571,7 @@ void SettingsPanel::buildUi()
     m_alarmHourCombo = new WheelAwareTimeCombo(m_scrollArea, m_contentWidget);
     styleTimeCombo(m_alarmHourCombo);
     m_alarmHourCombo->setAccessibleName(QStringLiteral("Alarm hour"));
-    m_alarmHourCombo->setToolTip(QStringLiteral("Alarm hour (click or scroll)"));
+    m_alarmHourCombo->setToolTip(QStringLiteral("Alarm hour (click, scroll, or type)"));
 
     auto* colonLbl = new QLabel(QStringLiteral(":"), m_contentWidget);
     colonLbl->setAlignment(Qt::AlignCenter);
@@ -448,7 +581,7 @@ void SettingsPanel::buildUi()
     m_alarmMinuteCombo = new WheelAwareTimeCombo(m_scrollArea, m_contentWidget);
     styleTimeCombo(m_alarmMinuteCombo);
     m_alarmMinuteCombo->setAccessibleName(QStringLiteral("Alarm minute"));
-    m_alarmMinuteCombo->setToolTip(QStringLiteral("Alarm minute (click or scroll)"));
+    m_alarmMinuteCombo->setToolTip(QStringLiteral("Alarm minute (click, scroll, or type)"));
     for (int m = 0; m < 60; ++m) {
         m_alarmMinuteCombo->addItem(QStringLiteral("%1").arg(m, 2, 10, QChar(u'0')), m);
     }
@@ -456,7 +589,7 @@ void SettingsPanel::buildUi()
     m_alarmPeriodCombo = new WheelAwareTimeCombo(m_scrollArea, m_contentWidget);
     styleTimeCombo(m_alarmPeriodCombo);
     m_alarmPeriodCombo->setAccessibleName(QStringLiteral("AM or PM"));
-    m_alarmPeriodCombo->setToolTip(QStringLiteral("AM or PM (click or scroll)"));
+    m_alarmPeriodCombo->setToolTip(QStringLiteral("AM or PM (click, scroll, or type A / P)"));
     m_alarmPeriodCombo->addItem(QStringLiteral("AM"), false);
     m_alarmPeriodCombo->addItem(QStringLiteral("PM"), true);
 
@@ -537,7 +670,7 @@ void SettingsPanel::buildUi()
     connect(m_soundCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
     connect(m_soundCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
 
-    m_previewSoundBtn = new PixelIconButton(PixelIcon::Preview, 28, 13, false, m_contentWidget);
+    m_previewSoundBtn = new PixelIconButton(PixelIcon::Preview, 26, 12, false, m_contentWidget);
     m_previewSoundBtn->setToolTip(QStringLiteral("Preview sound"));
     m_previewSoundBtn->setAccessibleName(QStringLiteral("Preview sound"));
     connect(m_previewSoundBtn, &QPushButton::clicked, this, &SettingsPanel::onPreviewSoundClicked);
@@ -625,7 +758,7 @@ void SettingsPanel::buildUi()
     });
 
     auto* petBody = new QVBoxLayout();
-    petBody->setSpacing(6);
+    petBody->setSpacing(4);
 
     auto* sizeRow = new QHBoxLayout();
     sizeRow->setSpacing(6);
@@ -697,40 +830,54 @@ void SettingsPanel::buildUi()
     m_petSection->setContentLayout(petBody);
     root->addWidget(m_petSection);
 
+    m_scrollArea->setWidget(m_contentWidget);
+    shell->addWidget(m_scrollArea, 1);
+
     // =========================================================================
-    // FOOTER: Show Tutorial + Exit Application
+    // STICKY FOOTER: Show Tutorial + Exit Application (always visible, never clipped)
     // =========================================================================
-    root->addWidget(makeDivider(m_contentWidget));
+    m_footerWidget = new QWidget(this);
+    m_footerWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    auto* footerLayout = new QVBoxLayout(m_footerWidget);
+    footerLayout->setContentsMargins(0, 2, 0, 0);
+    footerLayout->setSpacing(5);
+    footerLayout->addWidget(makeDivider(m_footerWidget));
+
+    auto* footerRow = new QHBoxLayout();
+    footerRow->setContentsMargins(0, 0, 0, 0);
+    footerRow->setSpacing(6);
 
     auto* tutorialBtn = new QPushButton(
         PixelTheme::icon(PixelIcon::Help, PixelTheme::kSecondaryText, 12),
-        QStringLiteral(" Show Tutorial"), m_contentWidget);
+        QStringLiteral(" Tutorial"), m_footerWidget);
     tutorialBtn->setObjectName(QStringLiteral("subtle"));
     tutorialBtn->setProperty("actionId", QStringLiteral("showTutorial"));
     tutorialBtn->setIconSize(QSize(12, 12));
     tutorialBtn->setCursor(Qt::PointingHandCursor);
     tutorialBtn->setToolTip(QStringLiteral("Replay the quick visual tutorial"));
+    tutorialBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(tutorialBtn, &QPushButton::clicked, this, [this]() {
         playUiClick();
         emit showTutorialRequested();
     });
-    root->addWidget(tutorialBtn);
+    footerRow->addWidget(tutorialBtn, 1);
 
     auto* exitBtn = new QPushButton(
         PixelTheme::icon(PixelIcon::Exit, PixelTheme::kDangerText, 12),
-        QStringLiteral(" Exit Application"), m_contentWidget);
+        QStringLiteral(" Exit Application"), m_footerWidget);
     exitBtn->setObjectName(QStringLiteral("danger"));
     exitBtn->setIconSize(QSize(12, 12));
     exitBtn->setCursor(Qt::PointingHandCursor);
     exitBtn->setToolTip(QStringLiteral("Exit Chiikawa"));
+    exitBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(exitBtn, &QPushButton::clicked, this, [this]() {
         playUiClick();
         emit exitApplicationRequested();
     });
-    root->addWidget(exitBtn);
+    footerRow->addWidget(exitBtn, 1);
 
-    m_scrollArea->setWidget(m_contentWidget);
-    shell->addWidget(m_scrollArea, 1);
+    footerLayout->addLayout(footerRow);
+    shell->addWidget(m_footerWidget);
 }
 
 void SettingsPanel::populateHourCombo(bool use24Hour)
@@ -923,6 +1070,13 @@ void SettingsPanel::setDurationEditorVisible(bool visible)
         return;
     }
     m_durationEditor->setVisible(visible);
+    if (QWidget* card = m_durationEditor->parentWidget()) {
+        if (QLayout* cardLayout = card->layout()) {
+            cardLayout->invalidate();
+            cardLayout->activate();
+        }
+        card->updateGeometry();
+    }
     updateLayoutSize();
     emit panelResized();
 }
@@ -1023,7 +1177,7 @@ void SettingsPanel::refreshPetSummary()
 
 void SettingsPanel::updateLayoutSize(const QScreen* screen)
 {
-    if (!m_scrollArea || !m_contentWidget || !m_headerWidget) {
+    if (!m_scrollArea || !m_contentWidget || !m_headerWidget || !m_footerWidget) {
         return;
     }
 
@@ -1035,6 +1189,7 @@ void SettingsPanel::updateLayoutSize(const QScreen* screen)
     }
 
     if (m_contentWidget->layout()) {
+        m_contentWidget->layout()->invalidate();
         m_contentWidget->layout()->activate();
     }
 
@@ -1043,15 +1198,26 @@ void SettingsPanel::updateLayoutSize(const QScreen* screen)
 
     const int headerH = m_headerWidget->sizeHint().height();
     const int contentH = m_contentWidget->sizeHint().height();
-    const int neededH = margins.top() + headerH + spacing + contentH + margins.bottom() + 2;
+    const int footerH = m_footerWidget->sizeHint().height();
+    const int neededH = margins.top() + headerH + spacing + contentH + spacing + footerH + margins.bottom() + 2;
 
-    const int maxH = screen ? std::max(280, screen->availableGeometry().height() - 32) : 640;
+    // Restrict maximum height to ~82% of the monitor's available work area so popup never clips
+    const int maxH = screen
+        ? std::max(280, static_cast<int>(screen->availableGeometry().height() * 0.82))
+        : 600;
 
     if (neededH <= maxH) {
         m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        if (m_contentWidget->layout()) {
+            m_contentWidget->layout()->setContentsMargins(0, 0, 0, 0);
+        }
         setFixedSize(kPanelWidth, neededH);
     } else {
         m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        if (m_contentWidget->layout()) {
+            // Subtle right padding so thin scrollbar never overlaps controls
+            m_contentWidget->layout()->setContentsMargins(0, 0, 4, 0);
+        }
         setFixedSize(kPanelWidth, maxH);
     }
 }
