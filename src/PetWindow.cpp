@@ -11,6 +11,7 @@
 #include "StudyTimer.h"
 #include "SystemTrayManager.h"
 #include "TimerBubble.h"
+#include "UISoundManager.h"
 #include "WindowCoordinator.h"
 
 #include <QApplication>
@@ -42,6 +43,7 @@ PetWindow::PetWindow(QWidget* parent)
     m_settings = std::make_unique<AppSettings>();
     m_timer = std::make_unique<StudyTimer>(this);
     m_soundManager = std::make_unique<AlarmSoundManager>(this);
+    m_uiSound = std::make_unique<UISoundManager>(this);
     m_alarmScheduler = std::make_unique<AlarmScheduler>(
         m_settings.get(), AlarmScheduler::WallClockFn{}, AlarmScheduler::MonotonicClockFn{}, this);
 
@@ -61,11 +63,16 @@ PetWindow::PetWindow(QWidget* parent)
 
     m_bubble = std::make_unique<TimerBubble>(nullptr);
     m_settingsPanel = std::make_unique<SettingsPanel>(
-        m_settings.get(), m_timer.get(), m_alarmScheduler.get(), m_soundManager.get(), nullptr);
+        m_settings.get(), m_timer.get(), m_alarmScheduler.get(), m_soundManager.get(), m_uiSound.get(), nullptr);
     m_coordinator = std::make_unique<WindowCoordinator>(this, m_settingsPanel.get(), this);
     m_completionToast = std::make_unique<CompletionToast>(nullptr);
     m_alarmNotification = std::make_unique<AlarmNotification>(nullptr);
 
+    connect(m_completionToast.get(), &CompletionToast::buttonActivated, this, [this]() {
+        if (m_uiSound) {
+            m_uiSound->playClick();
+        }
+    });
     connect(m_completionToast.get(), &CompletionToast::startAgainRequested, this, [this]() {
         m_completionHandled = false;
         m_timer->configure(std::chrono::seconds{m_settings->lastTimerSeconds()});
@@ -126,12 +133,35 @@ PetWindow::PetWindow(QWidget* parent)
     connect(m_coordinator.get(), &WindowCoordinator::petMoved,
             this, &PetWindow::onPositionMoved);
 
-    connect(m_tray.get(), &SystemTrayManager::showPetRequested, this, &PetWindow::showPet);
-    connect(m_tray.get(), &SystemTrayManager::hidePetRequested, this, &PetWindow::hidePet);
-    connect(m_tray.get(), &SystemTrayManager::startTimerRequested, this, &PetWindow::startTimerFromTray);
-    connect(m_tray.get(), &SystemTrayManager::pauseResumeTimerRequested, this, &PetWindow::pauseResumeFromTray);
-    connect(m_tray.get(), &SystemTrayManager::openSettingsRequested, this, &PetWindow::openSettings);
-    connect(m_tray.get(), &SystemTrayManager::exitRequested, this, &PetWindow::exitApplication);
+    auto playTrayClick = [this]() {
+        if (m_uiSound) {
+            m_uiSound->playClick();
+        }
+    };
+    connect(m_tray.get(), &SystemTrayManager::showPetRequested, this, [this, playTrayClick]() {
+        playTrayClick();
+        showPet();
+    });
+    connect(m_tray.get(), &SystemTrayManager::hidePetRequested, this, [this, playTrayClick]() {
+        playTrayClick();
+        hidePet();
+    });
+    connect(m_tray.get(), &SystemTrayManager::startTimerRequested, this, [this, playTrayClick]() {
+        playTrayClick();
+        startTimerFromTray();
+    });
+    connect(m_tray.get(), &SystemTrayManager::pauseResumeTimerRequested, this, [this, playTrayClick]() {
+        playTrayClick();
+        pauseResumeFromTray();
+    });
+    connect(m_tray.get(), &SystemTrayManager::openSettingsRequested, this, [this, playTrayClick]() {
+        playTrayClick();
+        openSettings();
+    });
+    connect(m_tray.get(), &SystemTrayManager::exitRequested, this, [this, playTrayClick]() {
+        playTrayClick();
+        exitApplication();
+    });
 
     m_gearHideTimer.setSingleShot(true);
     connect(&m_gearHideTimer, &QTimer::timeout, this, &PetWindow::hideGear);
@@ -272,6 +302,9 @@ void PetWindow::applySettings()
         m_soundManager->setEnabled(m_settings->soundEnabled());
         m_soundManager->setSelectedSound(m_settings->alarmSoundId());
         m_soundManager->setVolume(m_settings->alarmVolume());
+    }
+    if (m_uiSound) {
+        m_uiSound->setEnabled(m_settings->buttonSoundsEnabled());
     }
     if (m_alarmNotification) {
         m_alarmNotification->setSnoozeMinutes(m_settings->snoozeMinutes());
@@ -510,6 +543,9 @@ void PetWindow::hideGear()
 
 void PetWindow::onGearClicked()
 {
+    if (m_uiSound) {
+        m_uiSound->playClick();
+    }
     m_gearHideTimer.stop();
     openSettings();
 }
@@ -593,6 +629,9 @@ void PetWindow::onAlarmTriggered(const QTime& scheduledTime, bool fromSnooze)
 
 void PetWindow::onAlarmSnoozed(int minutes)
 {
+    if (m_uiSound) {
+        m_uiSound->playClick();
+    }
     if (m_soundManager) {
         m_soundManager->stop();
     }
@@ -608,6 +647,9 @@ void PetWindow::onAlarmSnoozed(int minutes)
 
 void PetWindow::onAlarmDismissed()
 {
+    if (m_uiSound) {
+        m_uiSound->playClick();
+    }
     if (m_soundManager) {
         m_soundManager->stop();
     }

@@ -8,6 +8,7 @@
 #include "SettingsDefaults.h"
 #include "StartupManager.h"
 #include "StudyTimer.h"
+#include "UISoundManager.h"
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
@@ -112,12 +113,14 @@ SettingsPanel::SettingsPanel(AppSettings* settings,
                              StudyTimer* timer,
                              AlarmScheduler* alarmScheduler,
                              AlarmSoundManager* soundManager,
+                             UISoundManager* uiSound,
                              QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
     , m_settings(settings)
     , m_timer(timer)
     , m_alarmScheduler(alarmScheduler)
     , m_soundManager(soundManager)
+    , m_uiSound(uiSound)
 {
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_ShowWithoutActivating, false);
@@ -147,6 +150,13 @@ SettingsPanel::SettingsPanel(AppSettings* settings,
                 this, &SettingsPanel::syncFromAlarm);
         connect(m_alarmScheduler, &AlarmScheduler::stateChanged,
                 this, [this](AlarmScheduler::State) { syncFromAlarm(); });
+    }
+}
+
+void SettingsPanel::playUiClick()
+{
+    if (m_uiSound) {
+        m_uiSound->playClick();
     }
 }
 
@@ -253,6 +263,9 @@ void SettingsPanel::buildUi()
     connect(m_hours, &QSpinBox::valueChanged, this, &SettingsPanel::onDurationInputsChanged);
     connect(m_minutes, &QSpinBox::valueChanged, this, &SettingsPanel::onDurationInputsChanged);
     connect(m_seconds, &QSpinBox::valueChanged, this, &SettingsPanel::onDurationInputsChanged);
+    connect(m_hours, &QAbstractSpinBox::editingFinished, this, &SettingsPanel::playUiClick);
+    connect(m_minutes, &QAbstractSpinBox::editingFinished, this, &SettingsPanel::playUiClick);
+    connect(m_seconds, &QAbstractSpinBox::editingFinished, this, &SettingsPanel::playUiClick);
 
     editRow->addWidget(m_hours, 1);
     editRow->addWidget(m_minutes, 1);
@@ -303,6 +316,9 @@ void SettingsPanel::buildUi()
     // SECTION 2: ONE-TIME ALARM (Collapsed by default)
     // =========================================================================
     m_alarmSection = new CollapsibleSection(QStringLiteral("Alarm"), false, m_contentWidget);
+    connect(m_alarmSection, &CollapsibleSection::userToggled, this, [this](bool) {
+        playUiClick();
+    });
     connect(m_alarmSection, &CollapsibleSection::heightChanged, this, [this]() {
         updateLayoutSize();
         emit panelResized();
@@ -332,8 +348,14 @@ void SettingsPanel::buildUi()
     }
     m_format12Btn->setToolTip(QStringLiteral("12-hour format"));
     m_format24Btn->setToolTip(QStringLiteral("24-hour format"));
-    connect(m_format12Btn, &QPushButton::clicked, this, [this]() { setUse24Hour(false); });
-    connect(m_format24Btn, &QPushButton::clicked, this, [this]() { setUse24Hour(true); });
+    connect(m_format12Btn, &QPushButton::clicked, this, [this]() {
+        playUiClick();
+        setUse24Hour(false);
+    });
+    connect(m_format24Btn, &QPushButton::clicked, this, [this]() {
+        playUiClick();
+        setUse24Hour(true);
+    });
 
     formatRow->addWidget(bellLbl);
     formatRow->addWidget(alarmTimeLbl, 1);
@@ -376,6 +398,9 @@ void SettingsPanel::buildUi()
     connect(m_alarmHourCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onAlarmSelectorsChanged);
     connect(m_alarmMinuteCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onAlarmSelectorsChanged);
     connect(m_alarmPeriodCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onAlarmSelectorsChanged);
+    connect(m_alarmHourCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
+    connect(m_alarmMinuteCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
+    connect(m_alarmPeriodCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
 
     selectorsRow->addWidget(m_alarmHourCombo, 1);
     selectorsRow->addWidget(colonLbl, 0);
@@ -405,11 +430,27 @@ void SettingsPanel::buildUi()
     m_alarmEnableCheck = new PixelCheckBox(QStringLiteral("Enable alarm"), m_contentWidget);
     m_alarmEnableCheck->setToolTip(QStringLiteral("Trigger once at the selected time"));
     connect(m_alarmEnableCheck, &QCheckBox::toggled, this, &SettingsPanel::onAlarmEnableToggled);
+    connect(m_alarmEnableCheck, &QCheckBox::clicked, this, [this](bool) { playUiClick(); });
     alarmBody->addWidget(m_alarmEnableCheck);
 
     m_soundCheck = new PixelCheckBox(QStringLiteral("Completion & alarm sound"), m_contentWidget);
     connect(m_soundCheck, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
+    connect(m_soundCheck, &QCheckBox::clicked, this, [this](bool) { playUiClick(); });
     alarmBody->addWidget(m_soundCheck);
+
+    m_buttonSoundsCheck = new PixelCheckBox(QStringLiteral("Button Sounds"), m_contentWidget);
+    m_buttonSoundsCheck->setObjectName(QStringLiteral("buttonSoundsCheck"));
+    m_buttonSoundsCheck->setToolTip(QStringLiteral("Play a gentle click sound when pressing controls"));
+    connect(m_buttonSoundsCheck, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
+    connect(m_buttonSoundsCheck, &QCheckBox::clicked, this, [this](bool checked) {
+        if (m_uiSound) {
+            m_uiSound->setEnabled(checked);
+            if (checked) {
+                m_uiSound->playClick();
+            }
+        }
+    });
+    alarmBody->addWidget(m_buttonSoundsCheck);
 
     // Sound selector dropdown + Preview button
     auto* soundRow = new QHBoxLayout();
@@ -426,6 +467,7 @@ void SettingsPanel::buildUi()
         m_soundCombo->view()->setCursor(Qt::PointingHandCursor);
     }
     connect(m_soundCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
+    connect(m_soundCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
 
     m_previewSoundBtn = new PixelIconButton(PixelIcon::Preview, 28, 13, false, m_contentWidget);
     m_previewSoundBtn->setToolTip(QStringLiteral("Preview sound"));
@@ -454,6 +496,7 @@ void SettingsPanel::buildUi()
         m_volumeValue->setText(QStringLiteral("%1%").arg(v));
         onPreferenceChanged();
     });
+    connect(m_volumeSlider, &QSlider::sliderReleased, this, &SettingsPanel::playUiClick);
     volRow->addWidget(volIcon);
     volRow->addWidget(m_volumeSlider, 1);
     volRow->addWidget(m_volumeValue);
@@ -462,6 +505,7 @@ void SettingsPanel::buildUi()
     // Notification toggle
     m_notifyCheck = new PixelCheckBox(QStringLiteral("Show alarm notification"), m_contentWidget);
     connect(m_notifyCheck, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
+    connect(m_notifyCheck, &QCheckBox::clicked, this, [this](bool) { playUiClick(); });
     alarmBody->addWidget(m_notifyCheck);
 
     // Snooze duration selector (5m / 10m / 15m)
@@ -477,6 +521,7 @@ void SettingsPanel::buildUi()
     }
     auto bindSnooze = [this](QPushButton* btn, int mins) {
         connect(btn, &QPushButton::clicked, this, [this, mins]() {
+            playUiClick();
             if (!m_settings) {
                 return;
             }
@@ -503,6 +548,9 @@ void SettingsPanel::buildUi()
     // SECTION 3: PET PREFERENCES (Collapsed by default, auto-persisted)
     // =========================================================================
     m_petSection = new CollapsibleSection(QStringLiteral("Pet Preferences"), false, m_contentWidget);
+    connect(m_petSection, &CollapsibleSection::userToggled, this, [this](bool) {
+        playUiClick();
+    });
     connect(m_petSection, &CollapsibleSection::heightChanged, this, [this]() {
         updateLayoutSize();
         emit panelResized();
@@ -527,6 +575,7 @@ void SettingsPanel::buildUi()
         m_sizeValue->setText(QStringLiteral("%1px").arg(v));
         onPreferenceChanged();
     });
+    connect(m_sizeSlider, &QSlider::sliderReleased, this, &SettingsPanel::playUiClick);
     sizeRow->addWidget(sizeLabel);
     sizeRow->addWidget(m_sizeSlider, 1);
     sizeRow->addWidget(m_sizeValue);
@@ -548,6 +597,7 @@ void SettingsPanel::buildUi()
         m_speedValue->setText(QStringLiteral("%1x").arg(v / 100.0, 0, 'f', 2));
         onPreferenceChanged();
     });
+    connect(m_speedSlider, &QSlider::sliderReleased, this, &SettingsPanel::playUiClick);
     speedRow->addWidget(speedLabel);
     speedRow->addWidget(m_speedSlider, 1);
     speedRow->addWidget(m_speedValue);
@@ -562,6 +612,7 @@ void SettingsPanel::buildUi()
 
     for (QCheckBox* cb : {m_moveCheck, m_animCheck, m_desktopOnlyCheck, m_startupCheck}) {
         connect(cb, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
+        connect(cb, &QCheckBox::clicked, this, [this](bool) { playUiClick(); });
         petBody->addWidget(cb);
     }
 
@@ -590,7 +641,10 @@ void SettingsPanel::buildUi()
     exitBtn->setIconSize(QSize(12, 12));
     exitBtn->setCursor(Qt::PointingHandCursor);
     exitBtn->setToolTip(QStringLiteral("Exit Chiikawa"));
-    connect(exitBtn, &QPushButton::clicked, this, &SettingsPanel::exitApplicationRequested);
+    connect(exitBtn, &QPushButton::clicked, this, [this]() {
+        playUiClick();
+        emit exitApplicationRequested();
+    });
     root->addWidget(exitBtn);
 
     m_scrollArea->setWidget(m_contentWidget);
@@ -680,6 +734,7 @@ void SettingsPanel::syncFromSettings()
     m_startupCheck->setChecked(m_settings->launchOnStartup());
 
     m_soundCheck->setChecked(m_settings->soundEnabled());
+    m_buttonSoundsCheck->setChecked(m_settings->buttonSoundsEnabled());
     const int idx = m_soundCombo->findData(m_settings->alarmSoundId());
     m_soundCombo->setCurrentIndex(idx >= 0 ? idx : 0);
     const int volPct = qRound(m_settings->alarmVolume() * 100.0);
@@ -975,6 +1030,7 @@ void SettingsPanel::onPreset25()
     if (m_timer && m_timer->isActive()) {
         return;
     }
+    playUiClick();
     setDurationInputs(25 * 60);
     if (m_settings) {
         m_settings->setLastTimerSeconds(25 * 60);
@@ -987,6 +1043,7 @@ void SettingsPanel::onPreset45()
     if (m_timer && m_timer->isActive()) {
         return;
     }
+    playUiClick();
     setDurationInputs(45 * 60);
     if (m_settings) {
         m_settings->setLastTimerSeconds(45 * 60);
@@ -999,6 +1056,7 @@ void SettingsPanel::onPreset60()
     if (m_timer && m_timer->isActive()) {
         return;
     }
+    playUiClick();
     setDurationInputs(60 * 60);
     if (m_settings) {
         m_settings->setLastTimerSeconds(60 * 60);
@@ -1011,6 +1069,7 @@ void SettingsPanel::onToggleDurationEditor()
     if (m_timer && m_timer->isActive()) {
         return;
     }
+    playUiClick();
     setDurationEditorVisible(!m_durationEditor->isVisible());
 }
 
@@ -1033,6 +1092,7 @@ void SettingsPanel::onPlayPauseClicked()
     if (!m_timer || !m_settings) {
         return;
     }
+    playUiClick();
     if (m_timer->isRunning()) {
         m_timer->pause();
     } else if (m_timer->isPaused()) {
@@ -1053,6 +1113,7 @@ void SettingsPanel::onResetClicked()
     if (!m_timer) {
         return;
     }
+    playUiClick();
     const int secs = std::max(1, durationFromInputs());
     m_timer->configure(std::chrono::seconds{secs});
     m_timer->reset();
@@ -1064,6 +1125,7 @@ void SettingsPanel::onSaveAlarmClicked()
     if (!m_alarmScheduler) {
         return;
     }
+    playUiClick();
     const QTime chosen = selectedAlarmTime();
     // Explicitly saving activates the one-time alarm
     m_alarmScheduler->configureAlarm(chosen, true);
@@ -1094,6 +1156,7 @@ void SettingsPanel::onAlarmSelectorsChanged()
 
 void SettingsPanel::onPreviewSoundClicked()
 {
+    playUiClick();
     if (!m_soundManager) {
         return;
     }
@@ -1124,6 +1187,7 @@ void SettingsPanel::onPreferenceChanged()
     }
 
     m_settings->setSoundEnabled(m_soundCheck->isChecked());
+    m_settings->setButtonSoundsEnabled(m_buttonSoundsCheck->isChecked());
     m_settings->setAlarmSoundId(m_soundCombo->currentData().toString());
     m_settings->setAlarmVolume(m_volumeSlider->value() / 100.0);
     m_settings->setAlarmNotificationEnabled(m_notifyCheck->isChecked());
@@ -1139,6 +1203,7 @@ void SettingsPanel::onRestoreDefaultsClicked()
     if (!m_settings) {
         return;
     }
+    playUiClick();
     PixelConfirmDialog dlg(
         QStringLiteral("Restore default settings?"),
         QStringLiteral("Pet and sound preferences will reset. Active timers and scheduled alarms stay intact."),
@@ -1146,17 +1211,23 @@ void SettingsPanel::onRestoreDefaultsClicked()
         QStringLiteral("Cancel"),
         this);
 
-    if (dlg.exec() != QDialog::Accepted) {
+    const int res = dlg.exec();
+    playUiClick();
+    if (res != QDialog::Accepted) {
         return;
     }
 
     m_settings->restoreDefaults();
+    if (m_uiSound) {
+        m_uiSound->setEnabled(m_settings->buttonSoundsEnabled());
+    }
     syncFromSettings();
     emit settingsApplied();
 }
 
 void SettingsPanel::onClosePanel()
 {
+    playUiClick();
     hide();
     emit closedByUser();
 }

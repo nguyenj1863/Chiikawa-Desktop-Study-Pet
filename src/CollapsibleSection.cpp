@@ -270,6 +270,7 @@ void CollapsibleSection::setExpanded(bool expanded, bool animate)
 void CollapsibleSection::onHeaderClicked()
 {
     setExpanded(!m_expanded, true);
+    emit userToggled(m_expanded);
 }
 
 void CollapsibleSection::updateChevron()

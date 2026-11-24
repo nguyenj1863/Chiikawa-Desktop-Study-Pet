@@ -31,6 +31,7 @@ public:
 
 signals:
     void toggled(bool expanded);
+    void userToggled(bool expanded);
     void heightChanged();
 
 private slots:

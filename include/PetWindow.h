@@ -22,6 +22,7 @@ class WindowCoordinator;
 class AlarmScheduler;
 class AlarmSoundManager;
 class AlarmNotification;
+class UISoundManager;
 
 #include "DesktopLayerHelper.h"
 
@@ -88,6 +89,7 @@ private:
     std::unique_ptr<StudyTimer> m_timer;
     std::unique_ptr<AlarmScheduler> m_alarmScheduler;
     std::unique_ptr<AlarmSoundManager> m_soundManager;
+    std::unique_ptr<UISoundManager> m_uiSound;
     QLabel* m_petLabel = nullptr;
     std::unique_ptr<AnimationManager> m_animations;
     std::unique_ptr<MovementController> m_movement;

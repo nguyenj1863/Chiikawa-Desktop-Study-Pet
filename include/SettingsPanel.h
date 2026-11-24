@@ -17,6 +17,7 @@ class QScrollArea;
 class QSlider;
 class QSpinBox;
 class StudyTimer;
+class UISoundManager;
 
 /**
  * Compact pixel-art floating settings popup with collapsible sections,
@@ -33,6 +34,7 @@ public:
                   StudyTimer* timer,
                   AlarmScheduler* alarmScheduler,
                   AlarmSoundManager* soundManager,
+                  UISoundManager* uiSound = nullptr,
                   QWidget* parent = nullptr);
 
     void showNear(const QRect& petGlobalGeometry);
@@ -93,6 +95,7 @@ private slots:
     void onClosePanel();
 
 private:
+    void playUiClick();
     void buildUi();
     void populateHourCombo(bool use24Hour);
     void setAlarmSelectorsFromTime(const QTime& time);
@@ -113,6 +116,7 @@ private:
     StudyTimer* m_timer = nullptr;
     AlarmScheduler* m_alarmScheduler = nullptr;
     AlarmSoundManager* m_soundManager = nullptr;
+    UISoundManager* m_uiSound = nullptr;
 
     QWidget* m_headerWidget = nullptr;
     QScrollArea* m_scrollArea = nullptr;
@@ -142,6 +146,7 @@ private:
     QCheckBox* m_alarmEnableCheck = nullptr;
     QPushButton* m_saveAlarmBtn = nullptr;
     QCheckBox* m_soundCheck = nullptr;
+    QCheckBox* m_buttonSoundsCheck = nullptr;
     QComboBox* m_soundCombo = nullptr;
     PixelIconButton* m_previewSoundBtn = nullptr;
     QSlider* m_volumeSlider = nullptr;
