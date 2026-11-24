@@ -34,6 +34,7 @@ set(CHIICAWA_SOURCES
     src/PixelTheme.cpp
     src/CollapsibleSection.cpp
     src/AlarmSoundManager.cpp
+    src/UISoundManager.cpp
     src/AlarmScheduler.cpp
     src/AlarmNotification.cpp
     src/DesktopLayerHelper.cpp
@@ -57,6 +58,7 @@ set(CHIICAWA_HEADERS
     include/PixelTheme.h
     include/CollapsibleSection.h
     include/AlarmSoundManager.h
+    include/UISoundManager.h
     include/AlarmScheduler.h
     include/AlarmNotification.h
     include/DesktopLayerHelper.h
@@ -122,6 +124,8 @@ chiikawa_add_test(test_alarm_and_settings
     include/AlarmScheduler.h
     src/AlarmSoundManager.cpp
     include/AlarmSoundManager.h
+    src/UISoundManager.cpp
+    include/UISoundManager.h
     src/StudyTimer.cpp
     include/StudyTimer.h
     src/PixelTheme.cpp
