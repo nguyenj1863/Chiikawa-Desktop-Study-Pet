@@ -386,6 +386,49 @@ QIcon icon(PixelIcon kind, const QColor& color, int logicalSize)
         return result;
     }
 
+    if (kind == PixelIcon::Edit) {
+        // Crisp, immediately recognizable diagonal pencil: eraser cap + ferrule gap + barrel + pointed tip
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const qreal s = static_cast<qreal>(logicalSize);
+        p.translate(s * 0.5, s * 0.5);
+        p.rotate(-45.0);
+
+        const qreal halfH = std::max<qreal>(1.8, s * 0.135);
+        const qreal eraserX1 = s * 0.23;
+        const qreal eraserX2 = s * 0.42;
+        const qreal bodyX1 = -s * 0.22;
+        const qreal bodyX2 = s * 0.15;
+        const qreal tipX = -s * 0.45;
+
+        p.setPen(Qt::NoPen);
+        p.setBrush(color);
+
+        // Eraser end cap (top-right after -45deg rotation)
+        p.drawRoundedRect(QRectF(eraserX1, -halfH, eraserX2 - eraserX1, halfH * 2.0), 1.0, 1.0);
+
+        // Pencil barrel with clean ferrule separation from eraser
+        p.drawRect(QRectF(bodyX1, -halfH, bodyX2 - bodyX1, halfH * 2.0));
+
+        // Subtle inner highlight groove along barrel so silhouette reads clearly as a pencil
+        p.save();
+        p.setCompositionMode(QPainter::CompositionMode_Clear);
+        p.fillRect(QRectF(bodyX1 + 0.8, -halfH * 0.22, (bodyX2 - bodyX1) - 1.6, halfH * 0.44), Qt::transparent);
+        p.restore();
+
+        // Sharpened cone + distinct lead point (bottom-left after -45deg rotation)
+        QPolygonF cone;
+        cone << QPointF(bodyX1 - 0.8, -halfH)
+             << QPointF(bodyX1 - 0.8, halfH)
+             << QPointF(tipX, 0.0);
+        p.setBrush(color);
+        p.drawPolygon(cone);
+
+        p.end();
+        QIcon result(pm);
+        cache.insert(key, result);
+        return result;
+    }
+
     p.setRenderHint(QPainter::Antialiasing, false);
     p.setPen(Qt::NoPen);
     p.setBrush(color);
@@ -408,6 +451,30 @@ QIcon icon(PixelIcon kind, const QColor& color, int logicalSize)
     QIcon result(pm);
     cache.insert(key, result);
     return result;
+}
+
+void drawDropdownArrow(QPainter& p, const QRectF& area, bool pointingUp, int size)
+{
+    static QPixmap downPm;
+    static QPixmap upPm;
+    if (downPm.isNull()) {
+        downPm = QPixmap(QStringLiteral(":/assets/icons/arrow_down.png"));
+    }
+    if (upPm.isNull()) {
+        upPm = QPixmap(QStringLiteral(":/assets/icons/arrow_up.png"));
+    }
+    const QPixmap& src = pointingUp ? upPm : downPm;
+    if (src.isNull()) {
+        return;
+    }
+    const QRectF target(area.center().x() - size * 0.5,
+                        area.center().y() - size * 0.5,
+                        size,
+                        size);
+    p.save();
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    p.drawPixmap(target, src, QRectF(src.rect()));
+    p.restore();
 }
 
 void paintPixelCard(QPainter& p,
@@ -631,12 +698,12 @@ QString styleSheet()
             background: #FFF9F2;
             border: 2px solid #DDBFB3;
             border-radius: 4px;
-            padding: 2px 3px;
+            padding: 2px 20px 2px 4px;
             color: #654C43;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 700;
-            min-height: 20px;
+            min-height: 26px;
             selection-background-color: #F7C2B5;
             selection-color: #654C43;
         }
@@ -648,15 +715,41 @@ QString styleSheet()
             border-color: #F3A6A0;
             background: #FFFFFF;
         }
-        QSpinBox::up-button, QSpinBox::down-button,
-        QTimeEdit::up-button, QTimeEdit::down-button {
-            width: 14px;
-            border: none;
+        QSpinBox::up-button, QTimeEdit::up-button {
+            subcontrol-origin: border;
+            subcontrol-position: top right;
+            width: 18px;
+            border-left: 2px solid #E8C7B7;
+            border-bottom: 1px solid #E8C7B7;
             background: #FFF0E6;
+            border-top-right-radius: 2px;
+        }
+        QSpinBox::down-button, QTimeEdit::down-button {
+            subcontrol-origin: border;
+            subcontrol-position: bottom right;
+            width: 18px;
+            border-left: 2px solid #E8C7B7;
+            border-top: 1px solid #E8C7B7;
+            background: #FFF0E6;
+            border-bottom-right-radius: 2px;
         }
         QSpinBox::up-button:hover, QSpinBox::down-button:hover,
         QTimeEdit::up-button:hover, QTimeEdit::down-button:hover {
             background: #F7C2B5;
+        }
+        QSpinBox::up-button:pressed, QSpinBox::down-button:pressed,
+        QTimeEdit::up-button:pressed, QTimeEdit::down-button:pressed {
+            background: #F3A6A0;
+        }
+        QSpinBox::up-arrow, QTimeEdit::up-arrow {
+            image: url(:/assets/icons/arrow_up.png);
+            width: 9px;
+            height: 9px;
+        }
+        QSpinBox::down-arrow, QTimeEdit::down-arrow {
+            image: url(:/assets/icons/arrow_down.png);
+            width: 9px;
+            height: 9px;
         }
         QComboBox {
             background: #FFF9F2;
@@ -667,16 +760,16 @@ QString styleSheet()
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 11px;
             font-weight: 600;
-            min-height: 20px;
+            min-height: 22px;
         }
         QComboBox#timeSelect {
-            padding: 3px 18px 3px 6px;
+            padding: 3px 20px 3px 6px;
             font-family: 'Consolas', 'Cascadia Mono', 'Segoe UI', monospace;
             font-size: 12px;
             font-weight: 700;
         }
         QComboBox#timeSelect::drop-down {
-            width: 17px;
+            width: 20px;
         }
         QComboBox:hover {
             border-color: #F3A6A0;
@@ -696,11 +789,9 @@ QString styleSheet()
             background: #F7C2B5;
         }
         QComboBox::down-arrow {
-            width: 0px;
-            height: 0px;
-            border-left: 4px solid transparent;
-            border-right: 4px solid transparent;
-            border-top: 5px solid #654C43;
+            image: url(:/assets/icons/arrow_down.png);
+            width: 10px;
+            height: 10px;
         }
         QComboBox QAbstractItemView {
             background: #FFF9F2;
@@ -817,6 +908,8 @@ QString styleSheet()
             border: 2px solid #DDBFB3;
             border-radius: 4px;
             padding: 0px;
+            min-width: 0px;
+            min-height: 0px;
         }
         QPushButton#iconBtn:hover {
             background: #F7C2B5;
@@ -830,6 +923,8 @@ QString styleSheet()
             border: 2px solid #DC8981;
             border-radius: 4px;
             padding: 0px;
+            min-width: 0px;
+            min-height: 0px;
         }
         QPushButton#iconBtnPrimary:hover {
             background: #EA9891;
@@ -990,6 +1085,7 @@ PixelIconButton::PixelIconButton(PixelIcon iconKind,
                                  QWidget* parent)
     : QPushButton(parent)
     , m_iconKind(iconKind)
+    , m_buttonSize(buttonSize)
     , m_iconSize(iconSize)
     , m_primary(primary)
 {

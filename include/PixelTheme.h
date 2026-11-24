@@ -48,6 +48,12 @@ inline const QColor kDangerText{0x8F, 0x43, 0x40};      // #8F4340
 [[nodiscard]] QIcon icon(PixelIcon kind, const QColor& color = kPrimaryText, int logicalSize = 14);
 
 /**
+ * Draws the shared directional arrow icon (used by real Alarm dropdowns,
+ * Study Timer steppers, and Onboarding previews) centered inside area.
+ */
+void drawDropdownArrow(QPainter& p, const QRectF& area, bool pointingUp = false, int size = 10);
+
+/**
  * Loads bundled SIL OFL fonts (Pixelify Sans & Nunito) once into QFontDatabase.
  */
 void ensureFontsLoaded();
@@ -114,6 +120,9 @@ public:
 
     void setPixelIcon(PixelIcon iconKind);
 
+    [[nodiscard]] QSize sizeHint() const override { return QSize(m_buttonSize, m_buttonSize); }
+    [[nodiscard]] QSize minimumSizeHint() const override { return QSize(m_buttonSize, m_buttonSize); }
+
 protected:
     void changeEvent(QEvent* event) override;
 
@@ -121,6 +130,7 @@ private:
     void refreshIcon();
 
     PixelIcon m_iconKind;
+    int m_buttonSize = 28;
     int m_iconSize = 14;
     bool m_primary = false;
 };

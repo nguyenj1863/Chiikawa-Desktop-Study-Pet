@@ -12,5 +12,7 @@
         <file alias="assets/sounds/soft_pixel_pop.wav">../assets/sounds/soft_pixel_pop.wav</file>
         <file alias="assets/fonts/PixelifySans.ttf">../assets/fonts/PixelifySans.ttf</file>
         <file alias="assets/fonts/Nunito.ttf">../assets/fonts/Nunito.ttf</file>
+        <file alias="assets/icons/arrow_down.png">../assets/icons/arrow_down.png</file>
+        <file alias="assets/icons/arrow_up.png">../assets/icons/arrow_up.png</file>
     </qresource>
 </RCC>
