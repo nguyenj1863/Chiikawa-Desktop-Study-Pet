@@ -18,13 +18,28 @@ Built with **C++20**, **Qt 6**, and questionable time management.
 
 ### 📦 Download Chiikawa
 
-**[⬇️ Download for Windows](https://github.com/nguyenj1863/Study-Pet/releases)**
+Don't want to compile C++ just to have a little character running around your desktop? Fair enough.
 
-Windows 10 / 11 · 64-bit · portable ZIP
+**[⬇️ Download Latest Release (v1.0.0)](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/latest)**
 
-1. Grab the latest ZIP from [Releases](https://github.com/nguyenj1863/Study-Pet/releases)  
+#### Windows (64-bit)
+
+- **[ChiikawaStudyPet-Windows-x64.zip](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.0.0/ChiikawaStudyPet-Windows-x64.zip)** (Windows 10 / 11 · portable ZIP)
+
+1. Download the Windows ZIP  
 2. Extract it  
 3. Double-click `ChiikawaStudyPet.exe`
+
+#### macOS (Apple Silicon & Intel)
+
+- **Apple Silicon (M1 / M2 / M3 / M4):** **[ChiikawaStudyPet-macOS-arm64.dmg](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.0.0/ChiikawaStudyPet-macOS-arm64.dmg)**
+- **Intel Mac (x64):** **[ChiikawaStudyPet-macOS-x64.dmg](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.0.0/ChiikawaStudyPet-macOS-x64.dmg)**
+
+1. Download the DMG for your Mac  
+2. Open it and drag `ChiikawaStudyPet.app` into **Applications**  
+3. On first launch, since the macOS build is not notarized with an Apple Developer ID yet, macOS Gatekeeper may warn about an unidentified developer — use **Right-click → Open** (or **System Settings → Privacy & Security → Open Anyway**)
+
+*Note: Desktop-Only Mode is currently supported on Windows only.*
 
 ---
 
@@ -35,12 +50,13 @@ Windows 10 / 11 · 64-bit · portable ZIP
 - Changes animation when you click him
 - Reveals a settings gear when you double-click
 - Lets you drag him wherever you want
+- Desktop-Only Mode (Windows): keeps him behind your app windows, like a sticker on your wallpaper
 - Hosts a real study countdown (pause / resume / reset and all)
 - Shows remaining time when you hover during a session
 - Twirls and pops a tiny toast when the timer finishes
-- Lives quietly in the Windows system tray
+- Lives quietly in the system tray (Windows) or menu bar (macOS)
 
-No Electron. No browser window. Just a small native Win32 pet that stays out of the way.
+No Electron. No browser window. Just a small native desktop pet that stays out of the way.
 
 ---
 
@@ -83,7 +99,7 @@ I wanted something lightweight enough to leave running all day ~ so this is a re
 
 ## Getting started (for geeks (─‿─))
 
-Ordinary Windows users: skip this section and use the [download link](#-download-chiikawa) above.
+Ordinary users: skip this section and use the [download links](#-download-chiikawa) above.
 
 If you want to build from source:
 
