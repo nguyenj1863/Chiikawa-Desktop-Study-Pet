@@ -96,7 +96,20 @@ function(chiikawa_add_test name source)
     add_executable(${name} ${source} ${ARGN})
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_link_libraries(${name} PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::Test)
+    if(WIN32)
+        add_custom_command(TARGET ${name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:Qt6::Test>"
+                "$<TARGET_FILE_DIR:${name}>"
+            COMMENT "Ensuring Qt6Test.dll is next to ${name}"
+        )
+    endif()
     add_test(NAME ${name} COMMAND ${name})
+    if(WIN32)
+        set_tests_properties(${name} PROPERTIES
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
 endfunction()
 
 chiikawa_add_test(test_study_timer
