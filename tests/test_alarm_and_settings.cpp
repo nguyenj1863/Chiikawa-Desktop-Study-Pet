@@ -3,6 +3,7 @@
 #include "AppSettings.h"
 #include "CollapsibleSection.h"
 #include "CompletionToast.h"
+#include "PixelTheme.h"
 #include "SettingsDefaults.h"
 #include "SettingsPanel.h"
 #include "StudyTimer.h"
@@ -76,6 +77,7 @@ private slots:
     void collapsibleHeadersAndCompactSettingsLayout();
     void completionToastPositioningHoverTimeoutAndActions();
     void uiSoundManagerThrottlingAndUserOnlyPlayback();
+    void redesignedTimerAndAlarmControls();
 };
 
 void TestAlarmAndSettings::init()
@@ -655,6 +657,83 @@ void TestAlarmAndSettings::uiSoundManagerThrottlingAndUserOnlyPlayback()
     auto* btnSoundsCheck = panel.findChild<QCheckBox*>(QStringLiteral("buttonSoundsCheck"));
     QVERIFY(btnSoundsCheck != nullptr);
     QCOMPARE(btnSoundsCheck->isChecked(), true);
+}
+
+void TestAlarmAndSettings::redesignedTimerAndAlarmControls()
+{
+    // Shared directional arrow icon assets load cleanly for Alarm dropdowns, Timer steppers, and Onboarding
+    const QPixmap downArrow(QStringLiteral(":/assets/icons/arrow_down.png"));
+    const QPixmap upArrow(QStringLiteral(":/assets/icons/arrow_up.png"));
+    QVERIFY(!downArrow.isNull());
+    QVERIFY(!upArrow.isNull());
+
+    // Redesigned pencil icon renders crisp non-null artwork in both enabled and disabled colors
+    const QPixmap editEnabled = PixelTheme::icon(PixelIcon::Edit, PixelTheme::kPrimaryText, 16).pixmap(16, 16);
+    const QPixmap editDisabled = PixelTheme::icon(PixelIcon::Edit, PixelTheme::kSecondaryText, 16).pixmap(16, 16);
+    QVERIFY(!editEnabled.isNull());
+    QVERIFY(!editDisabled.isNull());
+
+    // QSS uses shared arrow assets instead of broken CSS border-triangles
+    const QString qss = PixelTheme::styleSheet();
+    QVERIFY(qss.contains(QStringLiteral("url(:/assets/icons/arrow_down.png)")));
+    QVERIFY(qss.contains(QStringLiteral("url(:/assets/icons/arrow_up.png)")));
+    QVERIFY(!qss.contains(QStringLiteral("border-top: 5px solid")));
+
+    AppSettings settings;
+    StudyTimer timer;
+    AlarmScheduler scheduler(&settings);
+    AlarmSoundManager sound;
+    SettingsPanel panel(&settings, &timer, &scheduler, &sound);
+    panel.show();
+    QTest::qWait(20);
+
+    // Find Edit pencil button and verify size + state tooltips across Idle, Running, Paused
+    QPushButton* editBtn = nullptr;
+    for (QPushButton* btn : panel.findChildren<QPushButton*>()) {
+        if (btn->accessibleName() == QStringLiteral("Edit custom duration")) {
+            editBtn = btn;
+            break;
+        }
+    }
+    QVERIFY(editBtn != nullptr);
+    QCOMPARE(editBtn->width(), 28);
+    QCOMPARE(editBtn->height(), 28);
+    QCOMPARE(editBtn->isEnabled(), true);
+    QCOMPARE(editBtn->toolTip(), QStringLiteral("Edit custom duration"));
+
+    // Open duration editor and verify Hours/Minutes/Seconds spinboxes + bounds + compact layout
+    editBtn->click();
+    QTest::qWait(20);
+    const auto spins = panel.findChildren<QSpinBox*>();
+    QCOMPARE(spins.size(), 3);
+    QCOMPARE(spins[0]->maximum(), 23);
+    QCOMPARE(spins[1]->maximum(), 59);
+    QCOMPARE(spins[2]->maximum(), 59);
+    for (QSpinBox* sb : spins) {
+        QVERIFY(sb->isVisible());
+        QVERIFY(sb->height() >= 30);
+    }
+
+    // Running state keeps edit button visible with disabled state & informative tooltip
+    timer.configure(0, 1, 0);
+    timer.start();
+    panel.syncFromTimer();
+    QVERIFY(editBtn->isVisible());
+    QCOMPARE(editBtn->isEnabled(), false);
+    QVERIFY(editBtn->toolTip().contains(QStringLiteral("Pause")));
+
+    // Paused state keeps edit button visible with disabled state & informative tooltip
+    timer.pause();
+    panel.syncFromTimer();
+    QVERIFY(editBtn->isVisible());
+    QCOMPARE(editBtn->isEnabled(), false);
+    QVERIFY(editBtn->toolTip().contains(QStringLiteral("Reset")));
+
+    // Reset restores enabled idle state
+    timer.reset();
+    panel.syncFromTimer();
+    QCOMPARE(editBtn->isEnabled(), true);
+    QCOMPARE(editBtn->toolTip(), QStringLiteral("Edit custom duration"));
 }
 
 QTEST_MAIN(TestAlarmAndSettings)

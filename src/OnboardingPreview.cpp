@@ -843,12 +843,12 @@ void OnboardingPreview::paintStudyTimer(QPainter& p, const QRect& stage, double 
     p.drawText(QRectF(card.left() + 12, card.top() + 9, card.width() - 44, 20),
                Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Study Timer"));
 
-    const QRectF editBtn(card.right() - 30, card.top() + 8, 22, 22);
+    const QRectF editBtn(card.right() - 34, card.top() + 7, 26, 26);
     p.setPen(QPen(PixelTheme::kBorder, 1.5));
     p.setBrush(PixelTheme::kCardBg);
     p.drawRoundedRect(editBtn, 4, 4);
-    const QPixmap editPm = PixelTheme::icon(PixelIcon::Edit, PixelTheme::kPrimaryText, 11).pixmap(11, 11);
-    p.drawPixmap(QPointF(editBtn.center().x() - 5.5, editBtn.center().y() - 5.5), editPm);
+    const QPixmap editPm = PixelTheme::icon(PixelIcon::Edit, PixelTheme::kPrimaryText, 14).pixmap(14, 14);
+    p.drawPixmap(QPointF(editBtn.center().x() - 7.0, editBtn.center().y() - 7.0), editPm);
 
     // Prominent central monospace countdown (matching QPushButton#countdownDisplay)
     QFont monoFont(QStringLiteral("Cascadia Mono"));
@@ -1043,13 +1043,7 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
             p.setPen(QPen(PixelTheme::kSecondaryAccent, 1.5));
             p.drawLine(QPointF(dd.left(), r.top() + 2), QPointF(dd.left(), r.bottom() - 2));
 
-            QPolygonF tri;
-            tri << QPointF(dd.center().x() - 4, dd.center().y() - 2)
-                << QPointF(dd.center().x() + 4, dd.center().y() - 2)
-                << QPointF(dd.center().x(), dd.center().y() + 3);
-            p.setPen(Qt::NoPen);
-            p.setBrush(QColor(0x59, 0x3E, 0x35));
-            p.drawPolygon(tri);
+            PixelTheme::drawDropdownArrow(p, dd, false, 10);
 
             QFont cf(QStringLiteral("Consolas"));
             cf.setPixelSize(16);
