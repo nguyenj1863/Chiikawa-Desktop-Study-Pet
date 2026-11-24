@@ -297,8 +297,30 @@ void PetWindow::pauseResumeFromTray()
 
 void PetWindow::exitApplication()
 {
-    m_settings->setLastPosition(pos());
-    m_settings->save();
+    m_gearHideTimer.stop();
+    m_singleClickTimer.stop();
+    if (m_movement) {
+        m_movement->pause();
+    }
+    if (m_animations) {
+        m_animations->setAutoSwitchEnabled(false);
+    }
+    if (m_timer) {
+        m_timer->cancel();
+    }
+    if (m_settingsPanel) {
+        m_settingsPanel->hide();
+    }
+    if (m_bubble) {
+        m_bubble->hide();
+    }
+    if (m_completionToast) {
+        m_completionToast->hide();
+    }
+    if (m_settings) {
+        m_settings->setLastPosition(pos());
+        m_settings->save();
+    }
     if (m_tray) {
         m_tray->hide();
     }

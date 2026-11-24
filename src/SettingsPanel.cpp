@@ -12,9 +12,11 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QIcon>
 #include <QLabel>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPixmap>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
@@ -132,6 +134,95 @@ void configureClickableButton(QPushButton* button)
     button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 }
 
+class CloseIconButton final : public QPushButton {
+public:
+    explicit CloseIconButton(QWidget* parent = nullptr)
+        : QPushButton(parent)
+    {
+        setFixedSize(28, 28);
+        setCursor(Qt::PointingHandCursor);
+        setToolTip(QStringLiteral("Close settings"));
+        setAccessibleName(QStringLiteral("Close settings"));
+        setFocusPolicy(Qt::StrongFocus);
+        setMouseTracking(true);
+    }
+
+protected:
+    void enterEvent(QEnterEvent* event) override
+    {
+        m_hovered = true;
+        update();
+        QPushButton::enterEvent(event);
+    }
+
+    void leaveEvent(QEvent* event) override
+    {
+        m_hovered = false;
+        update();
+        QPushButton::leaveEvent(event);
+    }
+
+    void paintEvent(QPaintEvent* event) override
+    {
+        Q_UNUSED(event);
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+
+        const QRectF r = QRectF(rect()).adjusted(1.0, 1.0, -1.0, -1.0);
+        const QColor bg = isDown()
+            ? QColor(0xF2, 0xC9, 0xBC)
+            : (m_hovered ? QColor(0xF9, 0xDE, 0xD3) : QColor(0xF6, 0xEC, 0xE4));
+        const QColor border = m_hovered ? QColor(0xE8, 0xB8, 0xA8) : QColor(0xEA, 0xDB, 0xD1);
+
+        p.setBrush(bg);
+        p.setPen(QPen(border, 1.0));
+        p.drawRoundedRect(r, 9.0, 9.0);
+
+        const QColor fg = m_hovered || isDown() ? QColor(0x4A, 0x36, 0x2E) : QColor(0x7E, 0x67, 0x5C);
+        QPen pen(fg, 1.8, Qt::SolidLine, Qt::RoundCap);
+        p.setPen(pen);
+
+        const QPointF c = r.center();
+        const qreal d = 4.6;
+        p.drawLine(QPointF(c.x() - d, c.y() - d), QPointF(c.x() + d, c.y() + d));
+        p.drawLine(QPointF(c.x() + d, c.y() - d), QPointF(c.x() - d, c.y() + d));
+    }
+
+private:
+    bool m_hovered = false;
+};
+
+QIcon createExitIcon()
+{
+    constexpr int px = 28; // 14x14 logical at 2x DPR
+    QPixmap pm(px, px);
+    pm.fill(Qt::transparent);
+    pm.setDevicePixelRatio(2.0);
+
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(QColor(0x8A, 0x3E, 0x3B), 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    p.setPen(pen);
+    p.setBrush(Qt::NoBrush);
+
+    // Door frame on the left
+    QPainterPath door;
+    door.moveTo(6.5, 2.5);
+    door.lineTo(3.2, 2.5);
+    door.quadTo(2.0, 2.5, 2.0, 3.7);
+    door.lineTo(2.0, 10.3);
+    door.quadTo(2.0, 11.5, 3.2, 11.5);
+    door.lineTo(6.5, 11.5);
+    p.drawPath(door);
+
+    // Outward arrow on the right
+    p.drawLine(QPointF(5.5, 7.0), QPointF(11.8, 7.0));
+    p.drawLine(QPointF(9.3, 4.6), QPointF(11.8, 7.0));
+    p.drawLine(QPointF(9.3, 9.4), QPointF(11.8, 7.0));
+
+    return QIcon(pm);
+}
+
 } // namespace
 
 SettingsPanel::SettingsPanel(AppSettings* settings, StudyTimer* timer, QWidget* parent)
@@ -173,15 +264,11 @@ void SettingsPanel::buildUi()
 
     auto* title = new QLabel(QStringLiteral("Settings"), m_headerWidget);
     title->setObjectName(QStringLiteral("title"));
-    auto* quitTopBtn = new QPushButton(QStringLiteral("Quit"), m_headerWidget);
-    quitTopBtn->setObjectName(QStringLiteral("danger"));
-    quitTopBtn->setToolTip(QStringLiteral("Stop Chiikawa and exit the app"));
-    quitTopBtn->setCursor(Qt::PointingHandCursor);
-    quitTopBtn->setFixedWidth(64);
-    connect(quitTopBtn, &QPushButton::clicked, this, &SettingsPanel::exitApplicationRequested);
+    auto* closeBtn = new CloseIconButton(m_headerWidget);
+    connect(closeBtn, &QPushButton::clicked, this, &SettingsPanel::onClosePanel);
 
     titleRow->addWidget(title, 1);
-    titleRow->addWidget(quitTopBtn);
+    titleRow->addWidget(closeBtn);
     shell->addWidget(m_headerWidget);
 
     // --- Scrollable body (scrollbar shown only when screen height is genuinely too small) ---
@@ -339,20 +426,15 @@ void SettingsPanel::buildUi()
     connect(applyBtn, &QPushButton::clicked, this, &SettingsPanel::onApplyPetSettings);
     root->addWidget(applyBtn);
 
-    // --- App ---
-    auto* appHeader = new QLabel(QStringLiteral("Application"), m_contentWidget);
-    appHeader->setObjectName(QStringLiteral("section"));
-    root->addWidget(appHeader);
-
-    auto* closeBtn = new QPushButton(QStringLiteral("Close Settings"), m_contentWidget);
-    auto* quitBtn = new QPushButton(QStringLiteral("Quit Chiikawa"), m_contentWidget);
-    quitBtn->setObjectName(QStringLiteral("danger"));
-    configureClickableButton(closeBtn);
-    configureClickableButton(quitBtn);
-    connect(closeBtn, &QPushButton::clicked, this, &SettingsPanel::onClosePanel);
-    connect(quitBtn, &QPushButton::clicked, this, &SettingsPanel::exitApplicationRequested);
-    root->addWidget(closeBtn);
-    root->addWidget(quitBtn);
+    // --- Footer ---
+    root->addSpacing(4);
+    auto* exitBtn = new QPushButton(createExitIcon(), QStringLiteral(" Exit Chiikawa"), m_contentWidget);
+    exitBtn->setObjectName(QStringLiteral("danger"));
+    exitBtn->setIconSize(QSize(14, 14));
+    exitBtn->setToolTip(QStringLiteral("Exit Chiikawa Study Pet"));
+    configureClickableButton(exitBtn);
+    connect(exitBtn, &QPushButton::clicked, this, &SettingsPanel::exitApplicationRequested);
+    root->addWidget(exitBtn);
 
     m_scrollArea->setWidget(m_contentWidget);
     shell->addWidget(m_scrollArea, 1);
