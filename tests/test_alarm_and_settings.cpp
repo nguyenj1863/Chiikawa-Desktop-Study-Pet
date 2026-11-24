@@ -576,7 +576,10 @@ void TestAlarmAndSettings::completionToastPositioningHoverTimeoutAndActions()
         QVERIFY(toast.rect().contains(btn->geometry()));
     }
 
-    QTest::qWait(260);
+    // Clear any synthetic Enter from offscreen virtual cursor at (0, 0) before measuring countdown
+    QEvent initLeave(QEvent::Leave);
+    QCoreApplication::sendEvent(&toast, &initLeave);
+    QTest::qWait(180);
     QEnterEvent enterEvt(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
     QCoreApplication::sendEvent(&toast, &enterEvt);
     QCOMPARE(toast.isAutoHidePaused(), true);
