@@ -9,8 +9,12 @@ SystemTrayManager::SystemTrayManager(StudyTimer* timer, QObject* parent)
     , m_timer(timer)
 {
     m_tray = new QSystemTrayIcon(this);
-    m_tray->setIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon));
-    m_tray->setToolTip(QStringLiteral("Chiikawa Study Pet"));
+    QIcon trayIcon(QStringLiteral(":/assets/chiikawa.ico"));
+    if (trayIcon.isNull()) {
+        trayIcon = QApplication::style()->standardIcon(QStyle::SP_ComputerIcon);
+    }
+    m_tray->setIcon(trayIcon);
+    m_tray->setToolTip(QStringLiteral("Chiikawa"));
 
     buildMenu();
     m_tray->setContextMenu(m_menu);
