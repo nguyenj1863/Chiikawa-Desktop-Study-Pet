@@ -349,6 +349,43 @@ QIcon icon(PixelIcon kind, const QColor& color, int logicalSize)
         return result;
     }
 
+    if (kind == PixelIcon::Gear) {
+        // Crisp, symmetrical 8-tooth pixel-inspired cog with distinct teeth and clear center hole
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const qreal s = static_cast<qreal>(logicalSize);
+        const qreal cx = s * 0.5;
+        const qreal cy = s * 0.5;
+        const qreal ringR = s * 0.32;
+        const qreal toothOuter = s * 0.46;
+        const qreal toothHalfW = std::max<qreal>(1.15, s * 0.082);
+        const qreal holeR = s * 0.145;
+
+        p.setPen(Qt::NoPen);
+        p.setBrush(color);
+
+        // 8 evenly distributed cog teeth (0, 45, 90, ..., 315 degrees)
+        for (int i = 0; i < 8; ++i) {
+            p.save();
+            p.translate(cx, cy);
+            p.rotate(i * 45.0);
+            const QRectF tooth(-toothHalfW, -toothOuter, toothHalfW * 2.0, toothOuter - ringR + 1.4);
+            p.drawRoundedRect(tooth, 0.9, 0.9);
+            p.restore();
+        }
+
+        // Circular cog body
+        p.drawEllipse(QPointF(cx, cy), ringR, ringR);
+
+        // Punch out crisp circular center hole
+        p.setCompositionMode(QPainter::CompositionMode_Clear);
+        p.drawEllipse(QPointF(cx, cy), holeR, holeR);
+
+        p.end();
+        QIcon result(pm);
+        cache.insert(key, result);
+        return result;
+    }
+
     p.setRenderHint(QPainter::Antialiasing, false);
     p.setPen(Qt::NoPen);
     p.setBrush(color);
@@ -437,9 +474,16 @@ QString styleSheet()
         QLabel#onboardingWelcomeHeading {
             color: #593E35;
             font-family: '%1', 'Segoe UI', sans-serif;
-            font-size: 38px;
+            font-size: 44px;
             font-weight: 500;
             letter-spacing: 0.8px;
+        }
+        QLabel#onboardingAppTitle {
+            color: #D97F78;
+            font-family: '%1', 'Segoe UI', sans-serif;
+            font-size: 24px;
+            font-weight: 500;
+            letter-spacing: 0.6px;
         }
         QLabel#onboardingHeading {
             color: #593E35;
@@ -451,7 +495,7 @@ QString styleSheet()
         QLabel#onboardingBody {
             color: #6F574D;
             font-family: '%2', 'Segoe UI', 'Yu Gothic UI', sans-serif;
-            font-size: 17px;
+            font-size: 16px;
             font-weight: 500;
         }
         QLabel#onboardingProgress {

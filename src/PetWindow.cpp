@@ -237,8 +237,8 @@ void PetWindow::setupUi()
 
     m_gearButton = new QPushButton(this);
     m_gearButton->setFixedSize(30, 30);
-    m_gearButton->setIcon(PixelTheme::icon(PixelIcon::Gear, PixelTheme::kPrimaryText, 16));
-    m_gearButton->setIconSize(QSize(16, 16));
+    m_gearButton->setIcon(PixelTheme::icon(PixelIcon::Gear, PixelTheme::kPrimaryText, 18));
+    m_gearButton->setIconSize(QSize(18, 18));
     m_gearButton->setCursor(Qt::PointingHandCursor);
     m_gearButton->setToolTip(QStringLiteral("Settings"));
     m_gearButton->setAccessibleName(QStringLiteral("Open settings"));
