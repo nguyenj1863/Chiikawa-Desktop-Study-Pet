@@ -5,5 +5,8 @@
         <file alias="assets/chiikawa_skip.gif">../assets/chiikawa_skip.gif</file>
         <file alias="assets/chiikawa_stomp.gif">../assets/chiikawa_stomp.gif</file>
         <file alias="assets/chiikawa_twirl.gif">../assets/chiikawa_twirl.gif</file>
+        <file alias="assets/sounds/soft_chime.wav">../assets/sounds/soft_chime.wav</file>
+        <file alias="assets/sounds/tiny_bell.wav">../assets/sounds/tiny_bell.wav</file>
+        <file alias="assets/sounds/cozy_pop.wav">../assets/sounds/cozy_pop.wav</file>
     </qresource>
 </RCC>
