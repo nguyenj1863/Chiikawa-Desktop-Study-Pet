@@ -32,6 +32,7 @@ inline constexpr double kMaxAlarmVolume = 1.0;
 
 inline constexpr bool kAlarmNotificationEnabled = true;
 inline constexpr int kSnoozeMinutes = 5;
+inline constexpr bool kAlarmUse24Hour = false;
 
 inline QString defaultAlarmSoundId()
 {

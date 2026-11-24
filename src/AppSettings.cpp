@@ -48,7 +48,9 @@ void AppSettings::load()
     m_alarmVolume = settings.value(QStringLiteral("alarm/volume"), SettingsDefaults::kAlarmVolume).toDouble();
     m_alarmNotificationEnabled = settings.value(QStringLiteral("alarm/notificationEnabled"), SettingsDefaults::kAlarmNotificationEnabled).toBool();
     m_snoozeMinutes = settings.value(QStringLiteral("alarm/snoozeMinutes"), SettingsDefaults::kSnoozeMinutes).toInt();
+    m_alarmUse24Hour = settings.value(QStringLiteral("alarm/use24Hour"), SettingsDefaults::kAlarmUse24Hour).toBool();
 
+    const bool migratedOneTime = settings.value(QStringLiteral("alarm/oneTimeMode"), false).toBool();
     m_alarmConfigured = settings.value(QStringLiteral("alarm/configured"), false).toBool();
     m_alarmEnabled = settings.value(QStringLiteral("alarm/enabled"), false).toBool();
     const QString timeStr = settings.value(QStringLiteral("alarm/time")).toString();
@@ -61,6 +63,14 @@ void AppSettings::load()
     m_alarmState = settings.value(QStringLiteral("alarm/state"), 0).toInt();
     m_snoozeTargetUtcMs = settings.value(QStringLiteral("alarm/snoozeTargetUtcMs"), 0).toLongLong();
     m_lastTriggeredOccurrenceUtcMs = settings.value(QStringLiteral("alarm/lastTriggeredOccurrenceUtcMs"), 0).toLongLong();
+
+    // Safely migrate legacy daily-alarm configurations without accidentally activating them
+    if (!migratedOneTime && (m_alarmEnabled || m_alarmNextTriggerUtcMs > 0 || m_snoozeTargetUtcMs > 0)) {
+        m_alarmEnabled = false;
+        m_alarmNextTriggerUtcMs = 0;
+        m_alarmState = 0;
+        m_snoozeTargetUtcMs = 0;
+    }
 
     if (settings.contains(QStringLiteral("pet/posX")) && settings.contains(QStringLiteral("pet/posY"))) {
         m_lastPosition = QPoint(
@@ -92,6 +102,8 @@ void AppSettings::save() const
     settings.setValue(QStringLiteral("alarm/volume"), m_alarmVolume);
     settings.setValue(QStringLiteral("alarm/notificationEnabled"), m_alarmNotificationEnabled);
     settings.setValue(QStringLiteral("alarm/snoozeMinutes"), m_snoozeMinutes);
+    settings.setValue(QStringLiteral("alarm/use24Hour"), m_alarmUse24Hour);
+    settings.setValue(QStringLiteral("alarm/oneTimeMode"), true);
 
     settings.setValue(QStringLiteral("alarm/configured"), m_alarmConfigured);
     settings.setValue(QStringLiteral("alarm/enabled"), m_alarmEnabled);
@@ -125,6 +137,7 @@ void AppSettings::restoreDefaults()
     m_alarmVolume = SettingsDefaults::kAlarmVolume;
     m_alarmNotificationEnabled = SettingsDefaults::kAlarmNotificationEnabled;
     m_snoozeMinutes = SettingsDefaults::kSnoozeMinutes;
+    m_alarmUse24Hour = SettingsDefaults::kAlarmUse24Hour;
     clampValues();
     save();
 }
@@ -201,6 +214,11 @@ void AppSettings::setAlarmNotificationEnabled(bool enabled)
 void AppSettings::setSnoozeMinutes(int minutes)
 {
     m_snoozeMinutes = SettingsDefaults::clampSnoozeMinutes(minutes);
+}
+
+void AppSettings::setAlarmUse24Hour(bool use24Hour)
+{
+    m_alarmUse24Hour = use24Hour;
 }
 
 void AppSettings::setAlarmConfigured(bool configured)

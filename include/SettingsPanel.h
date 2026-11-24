@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QTime>
 #include <QWidget>
 
 class AlarmScheduler;
@@ -15,17 +16,19 @@ class QScreen;
 class QScrollArea;
 class QSlider;
 class QSpinBox;
-class QTimeEdit;
 class StudyTimer;
 
 /**
- * Kawaii pixel-art floating settings popup with collapsible sections,
- * compact icon-driven Study Timer, Clock Alarm, and auto-persisted Pet Preferences.
+ * Compact pixel-art floating settings popup with collapsible sections,
+ * icon-driven Study Timer, one-time Clock Alarm (12h/24h separate selectors),
+ * and auto-persisted Pet Preferences.
  */
 class SettingsPanel : public QWidget {
     Q_OBJECT
 
 public:
+    static constexpr int kPanelWidth = 336;
+
     SettingsPanel(AppSettings* settings,
                   StudyTimer* timer,
                   AlarmScheduler* alarmScheduler,
@@ -38,18 +41,31 @@ public:
     void syncFromSettings();
     void syncFromTimer();
     void syncFromAlarm();
-    void updateLayoutSize(const QScreen* screen = nullptr);
 
-    // Accessors for automated UI tests
-    [[nodiscard]] CollapsibleSection* alarmSection() const { return m_alarmSection; }
-    [[nodiscard]] CollapsibleSection* petSection() const { return m_petSection; }
+    /** Converts separate hour/minute/AM-PM selector values into a QTime. */
+    [[nodiscard]] static QTime composeAlarmTime(int displayHour, int minute, bool isPm, bool use24Hour);
+
+    /** Decomposes a QTime into 12-hour or 24-hour display fields. */
+    struct TimeParts {
+        int displayHour = 12;
+        int minute = 0;
+        bool isPm = false;
+    };
+    [[nodiscard]] static TimeParts decomposeAlarmTime(const QTime& time, bool use24Hour);
+
+    /** Current time selected in the alarm dropdowns. */
+    [[nodiscard]] QTime selectedAlarmTime() const;
+
+    /** Programmatically switches between 12h and 24h display preserving the underlying QTime. */
+    void setUse24Hour(bool use24Hour);
+    [[nodiscard]] bool use24Hour() const { return m_use24Hour; }
 
 signals:
     void settingsApplied();
     void exitApplicationRequested();
-    void closedByUser();
     void dragRequested(const QPoint& desiredTopLeft);
     void dragFinished();
+    void closedByUser();
     void panelResized();
 
 protected:
@@ -57,35 +73,41 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
     void hideEvent(QHideEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
 
 private slots:
-    void onPlayPauseClicked();
-    void onResetClicked();
     void onPreset25();
     void onPreset45();
     void onPreset60();
     void onToggleDurationEditor();
     void onDurationInputsChanged();
+    void onPlayPauseClicked();
+    void onResetClicked();
     void onSaveAlarmClicked();
+    void onAlarmEnableToggled(bool checked);
+    void onAlarmSelectorsChanged();
     void onPreviewSoundClicked();
     void onPreferenceChanged();
     void onRestoreDefaultsClicked();
     void onClosePanel();
-    void refreshTimerUi();
-    void refreshAlarmSummary();
-    void refreshPetSummary();
 
 private:
     void buildUi();
-    void clampToScreen(QPoint& pos) const;
-    [[nodiscard]] int durationFromInputs() const;
+    void populateHourCombo(bool use24Hour);
+    void setAlarmSelectorsFromTime(const QTime& time);
+    void updateTimeFormatButtons();
     void setDurationInputs(int totalSeconds);
+    [[nodiscard]] int durationFromInputs() const;
     void updatePresetChips();
     void updateSnoozeChips();
-    void setDurationEditorVisible(bool visible);
     void setChipActive(QPushButton* btn, bool active);
+    void setDurationEditorVisible(bool visible);
+    void refreshTimerUi();
+    void refreshAlarmSummary();
+    void refreshPetSummary();
+    void updateLayoutSize(const QScreen* screen = nullptr);
+    void clampToScreen(QPoint& pos) const;
 
     AppSettings* m_settings = nullptr;
     StudyTimer* m_timer = nullptr;
@@ -96,7 +118,7 @@ private:
     QScrollArea* m_scrollArea = nullptr;
     QWidget* m_contentWidget = nullptr;
 
-    // Study Timer controls
+    // Study Timer
     QPushButton* m_countdownBtn = nullptr;
     PixelIconButton* m_editDurationBtn = nullptr;
     QWidget* m_durationEditor = nullptr;
@@ -109,9 +131,14 @@ private:
     PixelIconButton* m_playPauseBtn = nullptr;
     PixelIconButton* m_resetBtn = nullptr;
 
-    // Alarm collapsible section
+    // Alarm (Collapsible, collapsed by default)
     CollapsibleSection* m_alarmSection = nullptr;
-    QTimeEdit* m_alarmTimeEdit = nullptr;
+    QComboBox* m_alarmHourCombo = nullptr;
+    QComboBox* m_alarmMinuteCombo = nullptr;
+    QComboBox* m_alarmPeriodCombo = nullptr;
+    QPushButton* m_format12Btn = nullptr;
+    QPushButton* m_format24Btn = nullptr;
+    QLabel* m_alarmScheduleLabel = nullptr;
     QCheckBox* m_alarmEnableCheck = nullptr;
     QPushButton* m_saveAlarmBtn = nullptr;
     QCheckBox* m_soundCheck = nullptr;
@@ -124,17 +151,18 @@ private:
     QPushButton* m_snooze10Btn = nullptr;
     QPushButton* m_snooze15Btn = nullptr;
 
-    // Pet Preferences collapsible section
+    // Pet Preferences (Collapsible, collapsed by default)
     CollapsibleSection* m_petSection = nullptr;
     QSlider* m_sizeSlider = nullptr;
-    QSlider* m_speedSlider = nullptr;
     QLabel* m_sizeValue = nullptr;
+    QSlider* m_speedSlider = nullptr;
     QLabel* m_speedValue = nullptr;
     QCheckBox* m_moveCheck = nullptr;
     QCheckBox* m_animCheck = nullptr;
     QCheckBox* m_desktopOnlyCheck = nullptr;
     QCheckBox* m_startupCheck = nullptr;
 
+    bool m_use24Hour = false;
     bool m_syncingUi = false;
     bool m_dragging = false;
     QPoint m_dragOffset;

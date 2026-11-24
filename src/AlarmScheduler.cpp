@@ -2,21 +2,22 @@
 #include "AppSettings.h"
 #include "SettingsDefaults.h"
 
+#include <QElapsedTimer>
 #include <QTimeZone>
 #include <algorithm>
 #include <chrono>
+#include <limits>
 
 namespace {
 
+constexpr int kWatchdogIntervalMs = 30 * 1000;
+constexpr qint64 kMaxSingleShotMs = 60LL * 60LL * 1000LL; // cap at 1h so clock/DST changes re-sync
+
 qint64 defaultMonotonicMs()
 {
-    const auto now = std::chrono::steady_clock::now().time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
-
-// Cap single QTimer intervals to 12 hours so 32-bit ms overflow never occurs
-constexpr qint64 kMaxTimerIntervalMs = 12LL * 60 * 60 * 1000;
-constexpr int kWatchdogIntervalMs = 30 * 1000;
 
 } // namespace
 
@@ -30,11 +31,12 @@ AlarmScheduler::AlarmScheduler(AppSettings* settings,
     , m_monotonicClock(std::move(monotonicClock))
 {
     m_triggerTimer.setSingleShot(true);
-    m_triggerTimer.setTimerType(Qt::PreciseTimer);
+    m_triggerTimer.setTimerType(Qt::CoarseTimer);
     connect(&m_triggerTimer, &QTimer::timeout, this, &AlarmScheduler::onTimerTimeout);
 
     m_watchdogTimer.setSingleShot(false);
-    m_watchdogTimer.setTimerType(Qt::CoarseTimer);
+    m_watchdogTimer.setTimerType(Qt::VeryCoarseTimer);
+    m_watchdogTimer.setInterval(kWatchdogIntervalMs);
     connect(&m_watchdogTimer, &QTimer::timeout, this, &AlarmScheduler::onWatchdogTimeout);
 }
 
@@ -48,25 +50,46 @@ qint64 AlarmScheduler::nowMonotonicMs() const
     return m_monotonicClock ? m_monotonicClock() : defaultMonotonicMs();
 }
 
-QDateTime AlarmScheduler::computeNextDailyOccurrence(const QTime& localTime, const QDateTime& nowLocal)
+QDateTime AlarmScheduler::computeNextOccurrence(const QTime& localTime, const QDateTime& nowLocal)
 {
     if (!localTime.isValid() || !nowLocal.isValid()) {
         return {};
     }
 
-    // Normalize to HH:mm:00 in local timezone; if the current minute matches or has passed,
-    // schedule tomorrow so enabling an alarm at the current minute never triggers immediately.
     const QTime cleanTime(localTime.hour(), localTime.minute(), 0, 0);
-    const QTimeZone tz = nowLocal.timeZone();
     QDate targetDate = nowLocal.date();
-    QDateTime candidate(targetDate, cleanTime, tz);
+    QDateTime candidate(targetDate, cleanTime, nowLocal.timeZone());
 
-    const QTime nowMinute(nowLocal.time().hour(), nowLocal.time().minute(), 0, 0);
-    if (cleanTime <= nowMinute || candidate <= nowLocal) {
-        targetDate = targetDate.addDays(1);
-        candidate = QDateTime(targetDate, cleanTime, tz);
+    // Resolve current-minute or already-passed times strictly to tomorrow so enabling
+    // an alarm at the current minute never triggers immediately due to truncated seconds.
+    const bool sameMinute = (nowLocal.time().hour() == cleanTime.hour()
+                             && nowLocal.time().minute() == cleanTime.minute());
+    if (sameMinute || candidate <= nowLocal) {
+        candidate = QDateTime(targetDate.addDays(1), cleanTime, nowLocal.timeZone());
     }
     return candidate;
+}
+
+QString AlarmScheduler::formatOccurrence(const QDateTime& occurrence,
+                                         const QDateTime& nowLocal,
+                                         bool use24Hour)
+{
+    if (!occurrence.isValid()) {
+        return QStringLiteral("Not scheduled");
+    }
+
+    const QString timeText = use24Hour
+        ? occurrence.time().toString(QStringLiteral("HH:mm"))
+        : occurrence.time().toString(QStringLiteral("h:mm AP"));
+
+    const qint64 dayDiff = nowLocal.date().daysTo(occurrence.date());
+    if (dayDiff == 0) {
+        return QStringLiteral("Today at %1").arg(timeText);
+    }
+    if (dayDiff == 1) {
+        return QStringLiteral("Tomorrow at %1").arg(timeText);
+    }
+    return QStringLiteral("%1 at %2").arg(occurrence.date().toString(QStringLiteral("MMM d")), timeText);
 }
 
 void AlarmScheduler::restoreFromSettings()
@@ -75,76 +98,76 @@ void AlarmScheduler::restoreFromSettings()
         return;
     }
 
-    m_alarmTime = m_settings->alarmTime();
+    m_alarmTime = m_settings->hasAlarmConfigured() ? m_settings->alarmTime() : QTime{};
     m_enabled = m_settings->alarmEnabled() && m_alarmTime.isValid();
     m_lastTriggeredOccurrenceUtcMs = m_settings->lastTriggeredOccurrenceUtcMs();
 
     const QDateTime now = nowLocal();
+    const State savedState = static_cast<State>(m_settings->alarmState());
+    const qint64 savedSnoozeUtc = m_settings->snoozeTargetUtcMs();
+    const qint64 savedNextUtc = m_settings->alarmNextTriggerUtcMs();
 
-    if (!m_enabled) {
+    // 1. Recover pending snooze first if present
+    if (savedState == State::Snoozed && savedSnoozeUtc > 0) {
+        const QDateTime target = QDateTime::fromMSecsSinceEpoch(savedSnoozeUtc).toTimeZone(now.timeZone());
+        const qint64 overdueSec = target.secsTo(now);
+        if (overdueSec < 0) {
+            m_snoozeTarget = target;
+            m_snoozeMonotonicDeadlineMs = nowMonotonicMs() + now.msecsTo(target);
+            m_nextOccurrence = {};
+            setState(State::Snoozed);
+            armTimers();
+            emit scheduleUpdated();
+            return;
+        }
+        if (overdueSec <= kGraceWindowSeconds && savedSnoozeUtc != m_lastTriggeredOccurrenceUtcMs) {
+            m_snoozeTarget = {};
+            m_snoozeMonotonicDeadlineMs = 0;
+            m_nextOccurrence = {};
+            triggerRinging(true, savedSnoozeUtc);
+            return;
+        }
+        // Pending snooze expired past grace window -> expire this one-time alarm cleanly
+        expireAndDeactivate();
+        return;
+    }
+
+    // 2. Recover scheduled one-time alarm
+    if (!m_enabled || !m_alarmTime.isValid()) {
         m_nextOccurrence = {};
         m_snoozeTarget = {};
         m_snoozeMonotonicDeadlineMs = 0;
         setState(State::Inactive);
+        persistState();
         armTimers();
         emit scheduleUpdated();
         return;
     }
 
-    const int savedState = m_settings->alarmState();
-    const qint64 savedSnoozeUtc = m_settings->snoozeTargetUtcMs();
-    const qint64 savedNextUtc = m_settings->alarmNextTriggerUtcMs();
-
     if (savedNextUtc > 0) {
-        m_nextOccurrence = QDateTime::fromMSecsSinceEpoch(savedNextUtc, now.timeZone());
-    } else {
-        m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, now);
-    }
-
-    // Recover pending snooze across app restart
-    if (savedState == static_cast<int>(State::Snoozed) && savedSnoozeUtc > 0) {
-        const QDateTime snoozeDt = QDateTime::fromMSecsSinceEpoch(savedSnoozeUtc, now.timeZone());
-        const qint64 overdueSec = snoozeDt.secsTo(now);
-        if (snoozeDt > now) {
-            m_snoozeTarget = snoozeDt;
-            const qint64 remainingMs = now.msecsTo(snoozeDt);
-            m_snoozeMonotonicDeadlineMs = nowMonotonicMs() + remainingMs;
-            // Prevent duplicate ringing if snooze overlaps or passes next daily occurrence
-            if (m_nextOccurrence.isValid() && m_nextOccurrence <= m_snoozeTarget) {
-                m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, m_snoozeTarget);
-            }
-            setState(State::Snoozed);
+        const QDateTime savedTarget = QDateTime::fromMSecsSinceEpoch(savedNextUtc).toTimeZone(now.timeZone());
+        if (savedTarget > now) {
+            m_nextOccurrence = savedTarget;
+            setState(State::Scheduled);
             persistState();
             armTimers();
             emit scheduleUpdated();
             return;
         }
+        const qint64 overdueSec = savedTarget.secsTo(now);
         if (overdueSec >= 0 && overdueSec <= kGraceWindowSeconds
-            && savedSnoozeUtc != m_lastTriggeredOccurrenceUtcMs) {
-            m_snoozeTarget = {};
-            m_snoozeMonotonicDeadlineMs = 0;
-            m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, now);
-            triggerRinging(true, savedSnoozeUtc);
+            && savedNextUtc != m_lastTriggeredOccurrenceUtcMs) {
+            m_nextOccurrence = {};
+            triggerRinging(false, savedNextUtc);
             return;
         }
-        // Snooze is stale (> grace window); fall through to regular schedule recovery
-        m_snoozeTarget = {};
-        m_snoozeMonotonicDeadlineMs = 0;
+        // Stale one-time alarm missed past grace window -> expire cleanly
+        expireAndDeactivate();
+        return;
     }
 
-    // Recover regular daily occurrence across app restart
-    if (m_nextOccurrence.isValid() && m_nextOccurrence <= now) {
-        const qint64 overdueSec = m_nextOccurrence.secsTo(now);
-        const qint64 occUtc = m_nextOccurrence.toMSecsSinceEpoch();
-        if (overdueSec <= kGraceWindowSeconds && occUtc != m_lastTriggeredOccurrenceUtcMs) {
-            m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, now);
-            triggerRinging(false, occUtc);
-            return;
-        }
-        // Missed by more than grace window: advance cleanly to next future occurrence
-        m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, now);
-    }
-
+    // Fallback if enabled without a persisted timestamp
+    m_nextOccurrence = computeNextOccurrence(m_alarmTime, now);
     setState(State::Scheduled);
     persistState();
     armTimers();
@@ -163,7 +186,7 @@ void AlarmScheduler::configureAlarm(const QTime& localTime, bool enabled)
     m_snoozeMonotonicDeadlineMs = 0;
 
     if (m_enabled) {
-        m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, nowLocal());
+        m_nextOccurrence = computeNextOccurrence(m_alarmTime, nowLocal());
         setState(State::Scheduled);
     } else {
         m_nextOccurrence = {};
@@ -177,11 +200,11 @@ void AlarmScheduler::configureAlarm(const QTime& localTime, bool enabled)
 
 void AlarmScheduler::setEnabled(bool enabled)
 {
-    if (m_enabled == enabled) {
-        return;
-    }
     if (!m_alarmTime.isValid()) {
         m_enabled = false;
+        m_nextOccurrence = {};
+        m_snoozeTarget = {};
+        m_snoozeMonotonicDeadlineMs = 0;
         setState(State::Inactive);
         persistState();
         armTimers();
@@ -204,13 +227,7 @@ bool AlarmScheduler::snooze(int minutes)
 
     m_snoozeTarget = now.addMSecs(snoozeMs);
     m_snoozeMonotonicDeadlineMs = nowMonotonicMs() + snoozeMs;
-
-    // Ensure next daily occurrence does not overlap this snooze and cause double ringing
-    if (m_enabled && m_alarmTime.isValid()) {
-        if (!m_nextOccurrence.isValid() || m_nextOccurrence <= m_snoozeTarget) {
-            m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, m_snoozeTarget);
-        }
-    }
+    m_nextOccurrence = {}; // one-time alarm: no future daily occurrence
 
     setState(State::Snoozed);
     persistState();
@@ -226,23 +243,12 @@ void AlarmScheduler::dismiss()
         return;
     }
 
+    m_enabled = false;
+    m_nextOccurrence = {};
     m_snoozeTarget = {};
     m_snoozeMonotonicDeadlineMs = 0;
 
-    setState(State::Completed);
-
-    // Preserve recurring daily schedule when alarm remains enabled
-    if (m_enabled && m_alarmTime.isValid()) {
-        const QDateTime now = nowLocal();
-        if (!m_nextOccurrence.isValid() || m_nextOccurrence <= now) {
-            m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, now);
-        }
-        setState(State::Scheduled);
-    } else {
-        m_nextOccurrence = {};
-        setState(State::Inactive);
-    }
-
+    setState(State::Inactive);
     persistState();
     armTimers();
     emit alarmDismissed();
@@ -271,32 +277,20 @@ void AlarmScheduler::checkNow()
             m_snoozeMonotonicDeadlineMs = 0;
 
             if (overdueSec <= kGraceWindowSeconds && snoozeKey != m_lastTriggeredOccurrenceUtcMs) {
-                if (m_enabled && m_alarmTime.isValid()
-                    && (!m_nextOccurrence.isValid() || m_nextOccurrence <= now)) {
-                    m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, now);
-                }
                 triggerRinging(true, snoozeKey);
                 return;
             }
-            // Overdue beyond grace window after long sleep.
-            // If the next daily occurrence itself is due now within grace, fall through to trigger it once.
-            if (m_enabled && m_nextOccurrence.isValid() && now >= m_nextOccurrence
-                && m_nextOccurrence.secsTo(now) <= kGraceWindowSeconds) {
-                setState(State::Scheduled);
-            } else {
-                advancePastAndSchedule(now);
-                return;
-            }
-        } else {
-            armTimers();
+            expireAndDeactivate();
             return;
         }
+        armTimers();
+        return;
     }
 
     if (m_state == State::Scheduled && m_nextOccurrence.isValid()) {
         // Detect backward system clock jump: if target is now > 24h away, recompute cleanly
         if (now.secsTo(m_nextOccurrence) > 24 * 60 * 60 + 60) {
-            m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, now);
+            m_nextOccurrence = computeNextOccurrence(m_alarmTime, now);
             persistState();
             armTimers();
             emit scheduleUpdated();
@@ -306,15 +300,12 @@ void AlarmScheduler::checkNow()
         if (now >= m_nextOccurrence) {
             const qint64 overdueSec = m_nextOccurrence.secsTo(now);
             const qint64 occUtc = m_nextOccurrence.toMSecsSinceEpoch();
-            m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, now);
+            m_nextOccurrence = {};
             if (overdueSec <= kGraceWindowSeconds && occUtc != m_lastTriggeredOccurrenceUtcMs) {
                 triggerRinging(false, occUtc);
                 return;
             }
-            // Missed beyond grace window -> skip stale occurrence
-            persistState();
-            armTimers();
-            emit scheduleUpdated();
+            expireAndDeactivate();
             return;
         }
     }
@@ -322,15 +313,13 @@ void AlarmScheduler::checkNow()
     armTimers();
 }
 
-void AlarmScheduler::advancePastAndSchedule(const QDateTime& now)
+void AlarmScheduler::expireAndDeactivate()
 {
-    if (m_enabled && m_alarmTime.isValid()) {
-        m_nextOccurrence = computeNextDailyOccurrence(m_alarmTime, now);
-        setState(State::Scheduled);
-    } else {
-        m_nextOccurrence = {};
-        setState(State::Inactive);
-    }
+    m_enabled = false;
+    m_nextOccurrence = {};
+    m_snoozeTarget = {};
+    m_snoozeMonotonicDeadlineMs = 0;
+    setState(State::Inactive);
     persistState();
     armTimers();
     emit scheduleUpdated();
@@ -347,6 +336,16 @@ void AlarmScheduler::triggerRinging(bool fromSnooze, qint64 occurrenceKeyUtcMs)
     emit scheduleUpdated();
 }
 
+void AlarmScheduler::onTimerTimeout()
+{
+    checkNow();
+}
+
+void AlarmScheduler::onWatchdogTimeout()
+{
+    checkNow();
+}
+
 void AlarmScheduler::setState(State next)
 {
     if (m_state == next) {
@@ -361,14 +360,14 @@ void AlarmScheduler::persistState()
     if (!m_settings) {
         return;
     }
-    if (m_alarmTime.isValid()) {
-        m_settings->setAlarmTime(m_alarmTime);
-        m_settings->setAlarmConfigured(true);
-    }
+    m_settings->setAlarmConfigured(m_alarmTime.isValid());
     m_settings->setAlarmEnabled(m_enabled);
+    m_settings->setAlarmTime(m_alarmTime);
+    m_settings->setAlarmNextTriggerUtcMs(
+        m_nextOccurrence.isValid() ? m_nextOccurrence.toMSecsSinceEpoch() : 0);
     m_settings->setAlarmState(static_cast<int>(m_state));
-    m_settings->setAlarmNextTriggerUtcMs(m_nextOccurrence.isValid() ? m_nextOccurrence.toMSecsSinceEpoch() : 0);
-    m_settings->setSnoozeTargetUtcMs(m_snoozeTarget.isValid() ? m_snoozeTarget.toMSecsSinceEpoch() : 0);
+    m_settings->setSnoozeTargetUtcMs(
+        m_snoozeTarget.isValid() ? m_snoozeTarget.toMSecsSinceEpoch() : 0);
     m_settings->setLastTriggeredOccurrenceUtcMs(m_lastTriggeredOccurrenceUtcMs);
     m_settings->save();
 }
@@ -377,38 +376,23 @@ void AlarmScheduler::armTimers()
 {
     m_triggerTimer.stop();
 
-    if (m_state != State::Scheduled && m_state != State::Snoozed) {
+    QDateTime target;
+    if (m_state == State::Snoozed && m_snoozeTarget.isValid()) {
+        target = m_snoozeTarget;
+    } else if (m_state == State::Scheduled && m_nextOccurrence.isValid()) {
+        target = m_nextOccurrence;
+    }
+
+    if (!target.isValid()) {
         m_watchdogTimer.stop();
         return;
     }
 
-    const QDateTime now = nowLocal();
-    qint64 waitMs = kMaxTimerIntervalMs;
-
-    if (m_state == State::Snoozed && m_snoozeTarget.isValid()) {
-        const qint64 wallWait = std::max<qint64>(50, now.msecsTo(m_snoozeTarget));
-        if (m_snoozeMonotonicDeadlineMs > 0) {
-            const qint64 monoWait = std::max<qint64>(50, m_snoozeMonotonicDeadlineMs - nowMonotonicMs());
-            waitMs = std::min(wallWait, monoWait);
-        } else {
-            waitMs = wallWait;
-        }
-    } else if (m_state == State::Scheduled && m_nextOccurrence.isValid()) {
-        waitMs = std::max<qint64>(50, now.msecsTo(m_nextOccurrence));
-    }
-
-    m_triggerTimer.start(static_cast<int>(std::min(waitMs, kMaxTimerIntervalMs)));
     if (!m_watchdogTimer.isActive()) {
-        m_watchdogTimer.start(kWatchdogIntervalMs);
+        m_watchdogTimer.start();
     }
-}
 
-void AlarmScheduler::onTimerTimeout()
-{
-    checkNow();
-}
-
-void AlarmScheduler::onWatchdogTimeout()
-{
-    checkNow();
+    const qint64 delayMs = std::max<qint64>(50, nowLocal().msecsTo(target));
+    const int cappedMs = static_cast<int>(std::min<qint64>(delayMs, kMaxSingleShotMs));
+    m_triggerTimer.start(cappedMs);
 }

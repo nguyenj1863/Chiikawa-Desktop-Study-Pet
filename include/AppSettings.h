@@ -77,6 +77,9 @@ public:
     [[nodiscard]] int snoozeMinutes() const { return m_snoozeMinutes; }
     void setSnoozeMinutes(int minutes);
 
+    [[nodiscard]] bool alarmUse24Hour() const { return m_alarmUse24Hour; }
+    void setAlarmUse24Hour(bool use24Hour);
+
     // --- Clock alarm configuration & recovery state ---
     [[nodiscard]] bool hasAlarmConfigured() const { return m_alarmConfigured; }
     void setAlarmConfigured(bool configured);
@@ -117,6 +120,7 @@ private:
     double m_alarmVolume = SettingsDefaults::kAlarmVolume;
     bool m_alarmNotificationEnabled = SettingsDefaults::kAlarmNotificationEnabled;
     int m_snoozeMinutes = SettingsDefaults::kSnoozeMinutes;
+    bool m_alarmUse24Hour = SettingsDefaults::kAlarmUse24Hour;
 
     bool m_alarmConfigured = false;
     bool m_alarmEnabled = false;
