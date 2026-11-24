@@ -83,6 +83,14 @@ foreach ($rel in $required) {
     }
 }
 
+# Include license and third-party notices in the distributable package
+foreach ($doc in @("LICENSE", "THIRD_PARTY_NOTICES.md")) {
+    $docPath = Join-Path $Root $doc
+    if (Test-Path $docPath) {
+        Copy-Item -Force $docPath (Join-Path $AppDir $doc)
+    }
+}
+
 if (Test-Path $ZipPath) {
     Remove-Item -Force $ZipPath
 }
