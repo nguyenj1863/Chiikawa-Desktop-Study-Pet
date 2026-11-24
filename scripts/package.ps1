@@ -66,6 +66,36 @@ Get-ChildItem $AppDir -Recurse -Include *.pdb,*.ilk,*.exp,*.lib,*.obj |
     if (Test-Path $p) { Remove-Item -Force $p }
 }
 
+# Copy app-local MSVC runtime DLLs when available so end users do not need VC++ Redistributable preinstalled
+$crtDlls = @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll")
+$crtSearchDirs = @()
+if ($env:VCToolsRedistDir) {
+    $crtSearchDirs += (Join-Path $env:VCToolsRedistDir "x64\Microsoft.VC143.CRT")
+}
+$vsBase = "C:\Program Files (x86)\Microsoft Visual Studio\2022"
+foreach ($edition in @("BuildTools", "Community", "Professional", "Enterprise")) {
+    $redistRoot = Join-Path $vsBase "$edition\VC\Redist\MSVC"
+    if (Test-Path $redistRoot) {
+        Get-ChildItem $redistRoot -Directory | Sort-Object Name -Descending | ForEach-Object {
+            $crtSearchDirs += (Join-Path $_.FullName "x64\Microsoft.VC143.CRT")
+        }
+    }
+}
+$crtSearchDirs += (Join-Path $env:SystemRoot "System32")
+
+foreach ($dll in $crtDlls) {
+    $dst = Join-Path $AppDir $dll
+    if (-not (Test-Path $dst)) {
+        foreach ($dir in $crtSearchDirs) {
+            $src = Join-Path $dir $dll
+            if (Test-Path $src) {
+                Copy-Item -Force $src $dst
+                break
+            }
+        }
+    }
+}
+
 # Soft-check required runtime pieces
 $required = @(
     "ChiikawaStudyPet.exe",
