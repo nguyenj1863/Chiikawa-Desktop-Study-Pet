@@ -24,11 +24,13 @@ Don't want to compile C++ just to have a little character running around your de
 
 #### Windows (64-bit)
 
-- **[ChiikawaStudyPet-Windows-x64.zip](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.0.0/ChiikawaStudyPet-Windows-x64.zip)** (Windows 10 / 11 · portable ZIP)
+- **Windows Installer (Recommended):** **[ChiikawaStudyPet-Setup-x64.exe](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.0.0/ChiikawaStudyPet-Setup-x64.exe)** (Windows 10 / 11 · per-user installer, no admin required)
+- **Windows Portable (Advanced / optional):** **[ChiikawaStudyPet-Windows-x64.zip](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.0.0/ChiikawaStudyPet-Windows-x64.zip)** (portable ZIP, no install)
 
-1. Download the Windows ZIP  
-2. Extract it  
-3. Double-click `ChiikawaStudyPet.exe`
+1. Download `ChiikawaStudyPet-Setup-x64.exe`  
+2. Run the installer (installs **Chiikawa** to `%LOCALAPPDATA%\Programs\Chiikawa` and adds a Start Menu shortcut)  
+3. Launch **Chiikawa** from the finish screen, Start Menu, or optional desktop shortcut  
+4. On first launch, since the Windows build is not code-signed yet, Microsoft Defender SmartScreen may show *"Windows protected your PC"* — click **More info → Run anyway**
 
 #### macOS (Apple Silicon & Intel)
 
