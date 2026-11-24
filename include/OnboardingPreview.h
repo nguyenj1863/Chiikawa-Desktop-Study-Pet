@@ -63,7 +63,7 @@ private:
     [[nodiscard]] QPointF clampDragPos(const QPointF& pos) const;
 
     void paintStageBackground(QPainter& p, const QRect& stage) const;
-    void paintWelcome(QPainter& p, const QRect& stage) const;
+    void paintWelcome(QPainter& p, const QRect& stage, double t) const;
     void paintInteract(QPainter& p, const QRect& stage, double t) const;
     void paintDrag(QPainter& p, const QRect& stage, double t) const;
     void paintStudyTimer(QPainter& p, const QRect& stage, double t) const;
@@ -71,10 +71,11 @@ private:
     void paintComplete(QPainter& p, const QRect& stage, double t) const;
 
     void drawPetSprite(QPainter& p, const QPointF& center, int size, bool useAltMovie, qreal yBounce = 0.0) const;
+    void drawTwinklingStars(QPainter& p, const QPointF& center, double t) const;
     void drawPixelCursor(QPainter& p, const QPointF& tip, bool pressed) const;
     void drawClickRipple(QPainter& p, const QPointF& center, double progress, bool doubleRing) const;
     void drawPillBadge(QPainter& p, const QPointF& center, const QString& text, bool primary = false) const;
-    void drawScrollWheelHint(QPainter& p, const QPointF& center, double phase) const;
+    void drawScrollBubble(QPainter& p, const QRectF& targetField, const QRect& bounds, double alpha, double phase) const;
 
     Mode m_mode;
     bool m_active = false;

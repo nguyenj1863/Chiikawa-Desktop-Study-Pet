@@ -87,9 +87,14 @@ void TestOnboarding::tutorialNavigationProgressAndInactivePreviewPause()
     // Bundled SIL OFL fonts should load cleanly, keeping Pixelify Sans as display font
     QCOMPARE(PixelTheme::displayFontFamily(), QStringLiteral("Pixelify Sans"));
     QVERIFY(!PixelTheme::bodyFontFamily().isEmpty());
-    QVERIFY(!PixelTheme::icon(PixelIcon::Gear, PixelTheme::kPrimaryText, 16).isNull());
+    QVERIFY(!PixelTheme::icon(PixelIcon::Gear, PixelTheme::kPrimaryText, 18).isNull());
 
-    // Exact creator footer must appear ONLY on the Welcome screen
+    // Welcome screen includes "Study Pet" app title and exact Welcome-only creator footer
+    auto* appTitle = win.findChild<QLabel*>(QStringLiteral("onboardingAppTitle"));
+    QVERIFY(appTitle != nullptr);
+    QCOMPARE(appTitle->text(), QStringLiteral("Study Pet"));
+    QVERIFY(appTitle->isVisible());
+
     auto* footer = win.findChild<QLabel*>(QStringLiteral("onboardingFooter"));
     QVERIFY(footer != nullptr);
     QCOMPARE(footer->text(), QStringLiteral("\u00A9 2026 John Nguyen \u2661"));
@@ -98,9 +103,14 @@ void TestOnboarding::tutorialNavigationProgressAndInactivePreviewPause()
     QVERIFY(win.width() >= 340 && win.width() <= 520);
     QCOMPARE(win.currentPage(), static_cast<int>(OnboardingWindow::Welcome));
 
-    // Step 1 click/double-click demonstration loop is slowed to 10-14 seconds
+    // Welcome twinkling star animation runs when active (unless OS reduced motion is enabled)
+    if (!OnboardingPreview::systemPrefersReducedMotion()) {
+        QVERIFY(win.previewForPage(OnboardingWindow::Welcome)->isAnimationTimerRunning());
+    }
+
+    // Step 1 3-stage click/double-click/gear-click loop is 13-17 seconds
     const double interactDuration = win.previewForPage(OnboardingWindow::Interact)->cycleDurationMs();
-    QVERIFY(interactDuration >= 10000.0 && interactDuration <= 14000.0);
+    QVERIFY(interactDuration >= 13000.0 && interactDuration <= 17000.0);
 
     // Programmatic navigation must not emit click sounds and hides Welcome-only footer
     win.goToPage(OnboardingWindow::Interact, false);

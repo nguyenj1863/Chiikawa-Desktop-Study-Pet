@@ -65,7 +65,7 @@ bool OnboardingPreview::systemPrefersReducedMotion()
 QSize OnboardingPreview::sizeHint() const
 {
     if (m_mode == Mode::Welcome || m_mode == Mode::Complete) {
-        return {452, 178};
+        return {452, 168};
     }
     return {452, 228};
 }
@@ -73,7 +73,7 @@ QSize OnboardingPreview::sizeHint() const
 QSize OnboardingPreview::minimumSizeHint() const
 {
     if (m_mode == Mode::Welcome || m_mode == Mode::Complete) {
-        return {280, 152};
+        return {280, 146};
     }
     return {280, 206};
 }
@@ -120,7 +120,7 @@ void OnboardingPreview::setActive(bool active)
         m_elapsedMs = 0;
         m_userDragging = false;
         m_hasUserPos = false;
-        if (!m_reducedMotion && m_mode != Mode::Welcome) {
+        if (!m_reducedMotion) {
             m_animTimer.start();
         }
         updateMoviePlayback();
@@ -146,7 +146,7 @@ void OnboardingPreview::setReducedMotion(bool reduced)
     if (m_active) {
         if (m_reducedMotion) {
             m_animTimer.stop();
-        } else if (m_mode != Mode::Welcome) {
+        } else {
             m_clock.start();
             m_animTimer.start();
         }
@@ -197,12 +197,12 @@ void OnboardingPreview::onTick()
 double OnboardingPreview::cycleDurationMs() const
 {
     switch (m_mode) {
-    case Mode::Interact:   return 12000.0; // Slower 12s instructional loop with clear pauses
+    case Mode::Interact:   return 15000.0; // 15s 3-stage loop: single-click -> double-click gear -> click gear -> settings
     case Mode::Drag:       return 7000.0;  // Clear 7s approach, grab, drag, settle loop
     case Mode::StudyTimer: return 9000.0;  // 9s real timer card + hover bubble sequence
     case Mode::Alarm:      return 12500.0; // 12.5s scroll-based alarm setup + notification snooze sequence
-    case Mode::Complete:   return 3600.0;
-    case Mode::Welcome:    return 3600.0;
+    case Mode::Complete:   return 3400.0;  // 3.4s gentle star twinkling cycle
+    case Mode::Welcome:    return 3400.0;  // 3.4s gentle star twinkling cycle
     }
     return 8000.0;
 }
@@ -296,7 +296,7 @@ void OnboardingPreview::paintEvent(QPaintEvent* event)
     const double t = cycleProgress();
     switch (m_mode) {
     case Mode::Welcome:
-        paintWelcome(p, stage);
+        paintWelcome(p, stage, t);
         break;
     case Mode::Interact:
         paintInteract(p, stage, t);
@@ -454,9 +454,60 @@ void OnboardingPreview::drawPillBadge(QPainter& p,
     p.restore();
 }
 
-void OnboardingPreview::drawScrollWheelHint(QPainter& p, const QPointF& center, double phase) const
+void OnboardingPreview::drawTwinklingStars(QPainter& p, const QPointF& center, double t) const
 {
+    struct StarSpec {
+        double ox;
+        double oy;
+        double phase;
+        double speed;
+        int maxArm;
+        bool warmTint;
+    };
+    static constexpr StarSpec kStars[] = {
+        {-102.0, -34.0, 0.00, 1.00, 5, false},
+        { 104.0, -28.0, 0.27, 1.20, 5, true},
+        { -88.0,  38.0, 0.54, 0.90, 4, true},
+        {  92.0,  34.0, 0.78, 1.10, 4, false},
+        {-132.0,   4.0, 0.39, 0.85, 3, true},
+        { 132.0,  -2.0, 0.66, 1.15, 3, false},
+    };
+
     p.save();
+    p.setRenderHint(QPainter::Antialiasing, false);
+    for (const auto& s : kStars) {
+        const double wave = m_reducedMotion
+            ? 0.72
+            : 0.5 + 0.5 * std::sin((t * s.speed + s.phase) * 6.2831853);
+        const double opacity = 0.28 + 0.68 * (wave * wave);
+        const int arm = std::max(2, qRound(static_cast<double>(s.maxArm) * (0.72 + 0.28 * wave)));
+        QColor c = s.warmTint ? QColor(0xE8, 0xA8, 0x9A) : PixelTheme::kPrimaryAccent;
+        c.setAlpha(qRound(opacity * 255.0));
+
+        const int sx = qRound(center.x() + s.ox);
+        const int sy = qRound(center.y() + s.oy);
+        p.fillRect(sx - 1, sy - arm, 2, arm * 2, c);
+        p.fillRect(sx - arm, sy - 1, arm * 2, 2, c);
+        // Subtle bright center pixel at peak twinkle
+        if (wave > 0.75) {
+            QColor core(255, 250, 245, qRound((wave - 0.75) * 4.0 * 210.0));
+            p.fillRect(sx - 1, sy - 1, 2, 2, core);
+        }
+    }
+    p.restore();
+}
+
+void OnboardingPreview::drawScrollBubble(QPainter& p,
+                                         const QRectF& targetField,
+                                         const QRect& bounds,
+                                         double alpha,
+                                         double phase) const
+{
+    if (alpha <= 0.01) {
+        return;
+    }
+    p.save();
+    p.setOpacity(alpha);
     p.setRenderHint(QPainter::Antialiasing, true);
 
     QFont f(PixelTheme::bodyFontFamily());
@@ -465,16 +516,43 @@ void OnboardingPreview::drawScrollWheelHint(QPainter& p, const QPointF& center, 
     p.setFont(f);
     const QString label = QStringLiteral("Scroll to change");
     const QFontMetrics fm(f);
-    const int w = 24 + fm.horizontalAdvance(label) + 18;
-    const int h = 26;
-    const QRectF pill(center.x() - w * 0.5, center.y() - h * 0.5, w, h);
+    const double w = 24.0 + fm.horizontalAdvance(label) + 18.0;
+    const double h = 28.0;
+    const double tailH = 6.0;
 
-    p.setPen(QPen(PixelTheme::kBorder, 1.8));
+    // Anchor directly above the active field, clamped cleanly inside preview bounds
+    const double rawX = targetField.center().x() - w * 0.5;
+    const double x = std::clamp(rawX, static_cast<double>(bounds.left() + 8),
+                                static_cast<double>(bounds.right() - 8) - w);
+    const double y = std::max(static_cast<double>(bounds.top() + 6),
+                              targetField.top() - h - tailH - 4.0);
+    const QRectF bubble(x, y, w, h);
+
+    // Subtle soft shadow
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(89, 62, 53, 28));
+    p.drawRoundedRect(bubble.translated(0, 2), 6, 6);
+
+    // Bubble fill + pixel border
+    p.setPen(QPen(PixelTheme::kBorder, 2.0));
     p.setBrush(PixelTheme::kBackground);
-    p.drawRoundedRect(pill, 6, 6);
+    p.drawRoundedRect(bubble, 6, 6);
+
+    // Downward pointer tail aimed at targetField center
+    const double tailX = std::clamp(targetField.center().x(), bubble.left() + 14.0, bubble.right() - 14.0);
+    QPolygonF tail;
+    tail << QPointF(tailX - 5.0, bubble.bottom() - 1.0)
+         << QPointF(tailX + 5.0, bubble.bottom() - 1.0)
+         << QPointF(tailX, bubble.bottom() + tailH);
+    p.setPen(Qt::NoPen);
+    p.setBrush(PixelTheme::kBackground);
+    p.drawPolygon(tail);
+    p.setPen(QPen(PixelTheme::kBorder, 1.8));
+    p.drawLine(QPointF(tailX - 5.0, bubble.bottom()), QPointF(tailX, bubble.bottom() + tailH));
+    p.drawLine(QPointF(tailX + 5.0, bubble.bottom()), QPointF(tailX, bubble.bottom() + tailH));
 
     // Compact pixel mouse body + animated scroll wheel indicator
-    const QRectF mouseRect(pill.left() + 8, pill.center().y() - 8, 12, 16);
+    const QRectF mouseRect(bubble.left() + 8.0, bubble.center().y() - 8.0, 12.0, 16.0);
     p.setPen(QPen(QColor(0x59, 0x3E, 0x35), 1.5));
     p.setBrush(PixelTheme::kCardBg);
     p.drawRoundedRect(mouseRect, 5, 5);
@@ -486,76 +564,74 @@ void OnboardingPreview::drawScrollWheelHint(QPainter& p, const QPointF& center, 
                              mouseRect.top() + 3.5 + wheelOffset, 2.6, 4.5), 1, 1);
 
     p.setPen(QColor(0x59, 0x3E, 0x35));
-    p.drawText(QRectF(mouseRect.right() + 6, pill.top(), pill.width() - 28, pill.height()),
+    p.drawText(QRectF(mouseRect.right() + 6.0, bubble.top(), bubble.width() - 28.0, bubble.height()),
                Qt::AlignLeft | Qt::AlignVCenter, label);
     p.restore();
 }
 
-void OnboardingPreview::paintWelcome(QPainter& p, const QRect& stage) const
+void OnboardingPreview::paintWelcome(QPainter& p, const QRect& stage, double t) const
 {
     const QPointF center(stage.center().x(), stage.center().y() + 2.0);
     p.save();
     p.setRenderHint(QPainter::Antialiasing, true);
-
-    // Warm integrated medallion spotlight with subtle corner pixel stars
     p.setPen(QPen(PixelTheme::kBorder, 2));
     p.setBrush(PixelTheme::kBackground);
-    p.drawEllipse(center, 72, 72);
-
-    const auto drawStar = [&](double ox, double oy, int arm) {
-        const int sx = qRound(center.x() + ox);
-        const int sy = qRound(center.y() + oy);
-        p.fillRect(sx - 1, sy - arm, 2, arm * 2, PixelTheme::kPrimaryAccent);
-        p.fillRect(sx - arm, sy - 1, arm * 2, 2, PixelTheme::kPrimaryAccent);
-    };
-    drawStar(-96, -34, 4);
-    drawStar(98, -28, 4);
-    drawStar(-84, 40, 3);
-    drawStar(88, 36, 3);
+    p.drawEllipse(center, 68, 68);
     p.restore();
 
-    drawPetSprite(p, center, 132, false);
+    drawTwinklingStars(p, center, t);
+    drawPetSprite(p, center, 126, false);
 }
 
 void OnboardingPreview::paintInteract(QPainter& p, const QRect& stage, double t) const
 {
-    // 12-second calm instructional loop:
-    // 0.00-0.09: Initial animation pause (~1.1s)
-    // 0.09-0.17: Cursor approaches Chiikawa; "Single-click" label appears
-    // 0.17-0.21: Brief pause before click
-    // 0.21-0.25: Visible single click + ripple -> animation swaps to twirl + bounce
-    // 0.25-0.44: New animation plays (~2.3s)
-    // 0.44-0.50: Calm pause; cursor pulls back slightly
-    // 0.50-0.58: "Double-click" label appears; cursor approaches + brief pause
-    // 0.585-0.628: Realistic double-click (2 clicks ~160ms apart) + double ripple
-    // 0.63-0.88: Real-styled circular gear + mini settings card stay visible (~3.0s)
-    // 0.88-1.00: Smooth fade-out & reset
+    // 15-second accurate 3-stage instructional loop:
+    // Stage A (0.00 - 0.36): Single-click -> animation swaps + bounce + pause (~2.4s)
+    // Stage B (0.38 - 0.60): Double-click (realistic cadence) -> reveals ONLY redesigned gear + ~1.8s pause
+    // Stage C (0.60 - 0.94): "Click the gear" -> cursor moves to gear -> clicks gear -> Settings panel opens
+    // 0.94 - 1.00: Smooth fade out & reset
 
-    const QPointF petCenter(stage.center().x() - 34.0, stage.center().y() + 18.0);
-    const bool swappedAnim = (t >= 0.22 && t < 0.90);
-    const double bouncePhase = std::clamp((t - 0.22) / 0.08, 0.0, 1.0);
-    const qreal bounce = (t >= 0.22 && t < 0.30) ? std::sin(bouncePhase * 3.14159) * 10.0 : 0.0;
+    const QPointF petCenter(stage.center().x() - 38.0, stage.center().y() + 18.0);
+    const QRectF gearRect(petCenter.x() + 28.0, petCenter.y() - 50.0, 30.0, 30.0);
+
+    const bool swappedAnim = (t >= 0.16 && t < 0.93);
+    const double bouncePhase = std::clamp((t - 0.16) / 0.06, 0.0, 1.0);
+    const qreal bounce = (t >= 0.16 && t < 0.22) ? std::sin(bouncePhase * 3.14159) * 10.0 : 0.0;
 
     drawPetSprite(p, petCenter, 96, swappedAnim, bounce);
 
-    // Gear icon (matching PetWindow's actual circular gear) + mini settings card after double-click
-    const double gearReveal = smoothStep(0.62, 0.67, t) * (1.0 - smoothStep(0.89, 0.95, t));
+    // Stage B: Gear appears ONLY after double-click; stays visible through Stage C
+    const double gearReveal = smoothStep(0.475, 0.51, t) * (1.0 - smoothStep(0.92, 0.97, t));
+    const bool clickingGear = (t >= 0.695 && t < 0.725);
+    const bool hoveringGear = (t >= 0.67 && t < 0.75);
+
     if (gearReveal > 0.01) {
         p.save();
         p.setOpacity(gearReveal);
         p.setRenderHint(QPainter::Antialiasing, true);
 
-        // Exact redesigned pixel-art settings gear button matching PetWindow::m_gearButton
-        const QRectF gearRect(petCenter.x() + 26.0, petCenter.y() - 50.0, 30.0, 30.0);
-        p.setPen(QPen(PixelTheme::kBorder, 2.0));
-        p.setBrush(PixelTheme::kBackground);
+        const QColor btnBg = clickingGear ? PixelTheme::kPrimaryAccent
+                                          : (hoveringGear ? PixelTheme::kHoverAccent : PixelTheme::kBackground);
+        const QColor btnBorder = clickingGear ? QColor(0xDC, 0x89, 0x81)
+                                              : (hoveringGear ? QColor(0xDF, 0x9B, 0x92) : PixelTheme::kBorder);
+        p.setPen(QPen(btnBorder, 2.0));
+        p.setBrush(btnBg);
         p.drawRoundedRect(gearRect, 6, 6);
 
-        const QPixmap gearPm = PixelTheme::icon(PixelIcon::Gear, PixelTheme::kPrimaryText, 16).pixmap(16, 16);
-        p.drawPixmap(QPointF(gearRect.center().x() - 8.0, gearRect.center().y() - 8.0), gearPm);
+        const QPixmap gearPm = PixelTheme::icon(
+            PixelIcon::Gear, clickingGear ? QColor(Qt::white) : PixelTheme::kPrimaryText, 18).pixmap(18, 18);
+        p.drawPixmap(QPointF(gearRect.center().x() - 9.0, gearRect.center().y() - 9.0), gearPm);
+        p.restore();
+    }
 
-        // Compact real-styled settings popup hint beside Chiikawa
-        const QRectF miniPanel(petCenter.x() + 72.0, stage.center().y() - 34.0, 122.0, 102.0);
+    // Stage C: Simulated Settings panel opens ONLY AFTER cursor clicks the gear
+    const double settingsReveal = smoothStep(0.72, 0.76, t) * (1.0 - smoothStep(0.92, 0.97, t));
+    if (settingsReveal > 0.01) {
+        p.save();
+        p.setOpacity(settingsReveal);
+        p.setRenderHint(QPainter::Antialiasing, true);
+
+        const QRectF miniPanel(petCenter.x() + 74.0, stage.center().y() - 34.0, 126.0, 106.0);
         p.setPen(QPen(PixelTheme::kBorder, 2));
         p.setBrush(PixelTheme::kBackground);
         p.drawRoundedRect(miniPanel, 6, 6);
@@ -565,77 +641,92 @@ void OnboardingPreview::paintInteract(QPainter& p, const QRect& stage, double t)
         sf.setBold(true);
         p.setFont(sf);
         p.setPen(QColor(0x59, 0x3E, 0x35));
-        p.drawText(QRectF(miniPanel.left() + 10, miniPanel.top() + 8, 102, 16),
+        p.drawText(QRectF(miniPanel.left() + 10, miniPanel.top() + 8, 106, 16),
                    Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Settings"));
 
         p.setPen(QPen(PixelTheme::kBorder, 1.5));
         p.setBrush(PixelTheme::kCardBg);
-        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 28, 102, 28), 4, 4);
+        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 28, 106, 28), 4, 4);
 
         QFont mono(QStringLiteral("Consolas"));
         mono.setPixelSize(14);
         mono.setBold(true);
         p.setFont(mono);
         p.setPen(QColor(0x59, 0x3E, 0x35));
-        p.drawText(QRectF(miniPanel.left() + 10, miniPanel.top() + 28, 102, 28),
+        p.drawText(QRectF(miniPanel.left() + 10, miniPanel.top() + 28, 106, 28),
                    Qt::AlignCenter, QStringLiteral("25:00"));
 
         p.setPen(Qt::NoPen);
         p.setBrush(PixelTheme::kPrimaryAccent);
-        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 63, 46, 12), 3, 3);
+        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 64, 48, 12), 3, 3);
         p.setBrush(PixelTheme::kSecondaryAccent);
-        p.drawRoundedRect(QRectF(miniPanel.left() + 62, miniPanel.top() + 63, 50, 12), 3, 3);
-        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 81, 102, 12), 3, 3);
+        p.drawRoundedRect(QRectF(miniPanel.left() + 64, miniPanel.top() + 64, 52, 12), 3, 3);
+        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 82, 106, 12), 3, 3);
         p.restore();
     }
 
-    // Top demonstration phase badge (clear, well-spaced, 14px bold)
-    const QPointF badgePos(stage.center().x(), stage.top() + 26.0);
-    if (t >= 0.09 && t < 0.45) {
-        const double alpha = smoothStep(0.09, 0.13, t) * (1.0 - smoothStep(0.41, 0.45, t));
+    // Top demonstration phase badge (distinct label per stage)
+    const QPointF badgePos(stage.center().x(), stage.top() + 24.0);
+    if (t >= 0.07 && t < 0.36) {
+        const double alpha = smoothStep(0.07, 0.10, t) * (1.0 - smoothStep(0.33, 0.36, t));
         p.save();
         p.setOpacity(alpha);
         drawPillBadge(p, badgePos, QStringLiteral("Single-click"), false);
         p.restore();
-    } else if (t >= 0.50 && t < 0.94) {
-        const double alpha = smoothStep(0.50, 0.54, t) * (1.0 - smoothStep(0.89, 0.94, t));
+    } else if (t >= 0.38 && t < 0.59) {
+        const double alpha = smoothStep(0.38, 0.41, t) * (1.0 - smoothStep(0.56, 0.59, t));
         p.save();
         p.setOpacity(alpha);
         drawPillBadge(p, badgePos, QStringLiteral("Double-click"), true);
         p.restore();
+    } else if (t >= 0.60 && t < 0.95) {
+        const double alpha = smoothStep(0.60, 0.63, t) * (1.0 - smoothStep(0.91, 0.95, t));
+        p.save();
+        p.setOpacity(alpha);
+        drawPillBadge(p, badgePos, QStringLiteral("Click the gear"), true);
+        p.restore();
     }
 
-    // Cursor trajectory with deliberate pauses
+    // Cursor trajectory across all 3 stages
     const QPointF restPos(petCenter.x() - 78.0, petCenter.y() + 36.0);
-    const QPointF midPos(petCenter.x() - 36.0, petCenter.y() + 18.0);
+    const QPointF midPos(petCenter.x() - 34.0, petCenter.y() + 18.0);
     const QPointF clickPos(petCenter.x() + 6.0, petCenter.y() + 4.0);
+    const QPointF gearPos = gearRect.center();
+
     QPointF cursorPos = restPos;
-    if (t < 0.09) {
+    if (t < 0.07) {
         cursorPos = restPos;
-    } else if (t < 0.17) {
-        cursorPos = lerpPoint(restPos, clickPos, smoothStep(0.09, 0.17, t));
-    } else if (t < 0.44) {
+    } else if (t < 0.14) {
+        cursorPos = lerpPoint(restPos, clickPos, smoothStep(0.07, 0.14, t));
+    } else if (t < 0.34) {
         cursorPos = clickPos;
-    } else if (t < 0.50) {
-        cursorPos = lerpPoint(clickPos, midPos, smoothStep(0.44, 0.50, t));
-    } else if (t < 0.56) {
-        cursorPos = lerpPoint(midPos, clickPos, smoothStep(0.50, 0.56, t));
-    } else if (t < 0.90) {
+    } else if (t < 0.38) {
+        cursorPos = lerpPoint(clickPos, midPos, smoothStep(0.34, 0.38, t));
+    } else if (t < 0.43) {
+        cursorPos = lerpPoint(midPos, clickPos, smoothStep(0.38, 0.43, t));
+    } else if (t < 0.61) {
         cursorPos = clickPos;
+    } else if (t < 0.68) {
+        cursorPos = lerpPoint(clickPos, gearPos, smoothStep(0.61, 0.68, t));
+    } else if (t < 0.92) {
+        cursorPos = gearPos;
     } else {
-        cursorPos = lerpPoint(clickPos, restPos, smoothStep(0.90, 0.98, t));
+        cursorPos = lerpPoint(gearPos, restPos, smoothStep(0.92, 0.98, t));
     }
 
-    const bool singlePressed = (t >= 0.21 && t < 0.245);
-    const bool doublePressed = (t >= 0.585 && t < 0.600) || (t >= 0.612 && t < 0.628);
+    const bool singlePressed = (t >= 0.15 && t < 0.18);
+    // Realistic double-click cadence (~160ms between clicks on 15s loop)
+    const bool doublePressed = (t >= 0.450 && t < 0.461) || (t >= 0.471 && t < 0.482);
 
-    if (t >= 0.215 && t < 0.34) {
-        drawClickRipple(p, clickPos, (t - 0.215) / 0.125, false);
-    } else if (t >= 0.59 && t < 0.74) {
-        drawClickRipple(p, clickPos, (t - 0.59) / 0.15, true);
+    if (t >= 0.155 && t < 0.25) {
+        drawClickRipple(p, clickPos, (t - 0.155) / 0.095, false);
+    } else if (t >= 0.455 && t < 0.56) {
+        drawClickRipple(p, clickPos, (t - 0.455) / 0.105, true);
+    } else if (t >= 0.70 && t < 0.79) {
+        drawClickRipple(p, gearPos, (t - 0.70) / 0.09, false);
     }
 
-    drawPixelCursor(p, cursorPos, singlePressed || doublePressed);
+    drawPixelCursor(p, cursorPos, singlePressed || doublePressed || clickingGear);
 }
 
 void OnboardingPreview::paintDrag(QPainter& p, const QRect& stage, double t) const
@@ -883,7 +974,7 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         p.setOpacity(phaseAAlpha);
         p.setRenderHint(QPainter::Antialiasing, true);
 
-        const QRectF card(stage.left() + 26.0, stage.top() + 14.0, stage.width() - 52.0, stage.height() - 48.0);
+        const QRectF card(stage.left() + 26.0, stage.top() + 26.0, stage.width() - 52.0, stage.height() - 46.0);
         p.setPen(QPen(PixelTheme::kBorder, 2));
         p.setBrush(PixelTheme::kBackground);
         p.drawRoundedRect(card, 6, 6);
@@ -920,7 +1011,7 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         p.drawText(btn24, Qt::AlignCenter, QStringLiteral("24h"));
 
         // Row 2: Separate Hour : Minute [AM/PM] dropdowns
-        const double rowY = card.top() + 44.0;
+        const double rowY = card.top() + 50.0;
         const QRectF hourBox(card.left() + 14, rowY, 102, 36);
         const QRectF minBox(hourBox.right() + 20, rowY, 102, 36);
         const QRectF periodBox(minBox.right() + 10, rowY, 96, 36);
@@ -999,47 +1090,37 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         p.setPen(Qt::white);
         p.drawText(saveBtn, Qt::AlignCenter, QStringLiteral("Save Alarm"));
 
-        // Compact "Scroll to change" mouse-wheel cue below the card while scrolling hour/minute
-        const bool showingScrollCue = (t >= 0.06 && t < 0.43);
-        if (showingScrollCue) {
-            drawScrollWheelHint(p, QPointF(stage.center().x(), card.bottom() + 17.0), t * 5.0);
+        // Contextual "Scroll to change" speech bubble anchored directly above the active hour/minute selector
+        const double hourBubbleAlpha = smoothStep(0.05, 0.09, t) * (1.0 - smoothStep(0.20, 0.22, t));
+        const double minBubbleAlpha = smoothStep(0.22, 0.25, t) * (1.0 - smoothStep(0.36, 0.39, t));
+        if (hourBubbleAlpha > 0.01) {
+            drawScrollBubble(p, hourBox, stage, hourBubbleAlpha, t * 6.0);
+        } else if (minBubbleAlpha > 0.01) {
+            drawScrollBubble(p, minBox, stage, minBubbleAlpha, t * 6.0);
         }
 
-        // Phase A cursor: Hour (scroll) -> Minute (scroll) -> AM/PM -> Save Alarm
-        QPointF cursorPos = hourBox.center();
+        // Phase A cursor: Hour (lower-right so number stays clear) -> Minute -> AM/PM -> Save Alarm
+        const QPointF pHour(hourBox.center().x() + 16.0, hourBox.bottom() - 8.0);
+        const QPointF pMin(minBox.center().x() + 16.0, minBox.bottom() - 8.0);
+        const QPointF pPeriod(periodBox.center().x() + 10.0, periodBox.bottom() - 8.0);
+        QPointF cursorPos = pHour;
         if (t < 0.06) {
-            cursorPos = lerpPoint(QPointF(card.left() + 8, card.bottom() - 8), hourBox.center(), smoothStep(0.0, 0.06, t));
+            cursorPos = lerpPoint(QPointF(card.left() + 8, card.bottom() - 8), pHour, smoothStep(0.0, 0.06, t));
         } else if (t < 0.21) {
-            cursorPos = hourBox.center();
+            cursorPos = pHour;
         } else if (t < 0.25) {
-            cursorPos = lerpPoint(hourBox.center(), minBox.center(), smoothStep(0.21, 0.25, t));
+            cursorPos = lerpPoint(pHour, pMin, smoothStep(0.21, 0.25, t));
         } else if (t < 0.37) {
-            cursorPos = minBox.center();
+            cursorPos = pMin;
         } else if (t < 0.40) {
-            cursorPos = lerpPoint(minBox.center(), periodBox.center(), smoothStep(0.37, 0.40, t));
+            cursorPos = lerpPoint(pMin, pPeriod, smoothStep(0.37, 0.40, t));
         } else if (t < 0.43) {
-            cursorPos = periodBox.center();
+            cursorPos = pPeriod;
         } else if (t < 0.46) {
-            cursorPos = lerpPoint(periodBox.center(), saveBtn.center(), smoothStep(0.43, 0.46, t));
+            cursorPos = lerpPoint(pPeriod, saveBtn.center(), smoothStep(0.43, 0.46, t));
         } else {
             cursorPos = saveBtn.center();
         }
-
-        // Subtle upward scroll chevron pulses right beside the active selector when wheel ticks
-        const auto drawWheelTick = [&](const QRectF& box, bool pulse) {
-            if (!pulse) {
-                return;
-            }
-            QFont wf(PixelTheme::bodyFontFamily());
-            wf.setPixelSize(11);
-            wf.setBold(true);
-            p.setFont(wf);
-            p.setPen(PixelTheme::kPrimaryAccent);
-            p.drawText(QRectF(box.left(), box.top() - 16, box.width() - 20, 15),
-                       Qt::AlignCenter, QStringLiteral("+1"));
-        };
-        drawWheelTick(hourBox, t >= 0.12 && t < 0.19);
-        drawWheelTick(minBox, (t >= 0.265 && t < 0.305) || (t >= 0.315 && t < 0.365));
 
         const bool clickingSave = (t >= 0.465 && t < 0.49);
         if (t >= 0.47 && t < 0.53) {
@@ -1140,23 +1221,9 @@ void OnboardingPreview::paintComplete(QPainter& p, const QRect& stage, double t)
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setPen(QPen(PixelTheme::kBorder, 2));
     p.setBrush(PixelTheme::kBackground);
-    p.drawEllipse(center, 72, 72);
-
-    // Subtle pastel pixel sparkles around Chiikawa
-    const auto drawSparkle = [&](double ox, double oy, double phase) {
-        const double pulse = m_reducedMotion ? 0.85 : (0.45 + 0.55 * std::sin((t + phase) * 6.28318));
-        QColor c = PixelTheme::kPrimaryAccent;
-        c.setAlpha(qRound(pulse * 225.0));
-        const int sx = qRound(center.x() + ox);
-        const int sy = qRound(center.y() + oy);
-        p.fillRect(sx - 1, sy - 5, 2, 10, c);
-        p.fillRect(sx - 5, sy - 1, 10, 2, c);
-    };
-    drawSparkle(-94, -30, 0.0);
-    drawSparkle(94, -34, 0.33);
-    drawSparkle(-82, 34, 0.66);
-    drawSparkle(84, 30, 0.18);
+    p.drawEllipse(center, 68, 68);
     p.restore();
 
-    drawPetSprite(p, center, 132, false);
+    drawTwinklingStars(p, center, t);
+    drawPetSprite(p, center, 126, false);
 }
