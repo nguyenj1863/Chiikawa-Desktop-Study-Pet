@@ -2,14 +2,15 @@
 
 #include <QWidget>
 
+class QFrame;
 class QLabel;
 class QPropertyAnimation;
-class QPushButton;
 class QVBoxLayout;
 
 /**
  * Collapsible pixel-art accordion section with live collapsed summary text,
- * crisp pixel chevron, and smooth 160 ms height transition.
+ * crisp pixel chevron, and smooth 165 ms height transition.
+ * Header height is computed from its layout so title and summary never overlap or clip.
  */
 class CollapsibleSection : public QWidget {
     Q_OBJECT
@@ -24,6 +25,9 @@ public:
     void setExpanded(bool expanded, bool animate = true);
 
     [[nodiscard]] int expectedContentHeight() const;
+    [[nodiscard]] QFrame* headerWidget() const { return m_header; }
+    [[nodiscard]] QLabel* titleLabel() const { return m_titleLabel; }
+    [[nodiscard]] QLabel* summaryLabel() const { return m_summaryLabel; }
 
 signals:
     void toggled(bool expanded);
@@ -34,8 +38,9 @@ private slots:
 
 private:
     void updateChevron();
+    void refreshHeaderVisibility();
 
-    QPushButton* m_headerBtn = nullptr;
+    QFrame* m_header = nullptr;
     QLabel* m_titleLabel = nullptr;
     QLabel* m_summaryLabel = nullptr;
     QLabel* m_chevronLabel = nullptr;

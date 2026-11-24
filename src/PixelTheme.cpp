@@ -231,6 +231,45 @@ QIcon icon(PixelIcon kind, const QColor& color, int logicalSize)
     pm.setDevicePixelRatio(static_cast<qreal>(dpr));
 
     QPainter p(&pm);
+    if (kind == PixelIcon::Reset) {
+        // Crisp, centered counterclockwise circular arrow
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const qreal s = static_cast<qreal>(logicalSize);
+        const qreal stroke = std::max<qreal>(1.8, s * 0.135);
+        const qreal margin = stroke * 0.95 + 1.0;
+        const QRectF arcRect(margin, margin, s - margin * 2.0, s - margin * 2.0);
+
+        QPen pen(color, stroke, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        // 270-degree arc ending at 135 deg (top-left) going counterclockwise:
+        // In Qt angles (1/16 deg, 0=3 o'clock, positive=CCW):
+        // start at 150 deg (top-left) and sweep -275 deg (clockwise back around) so arrowhead points CCW at 140 deg
+        p.drawArc(arcRect, 145 * 16, -280 * 16);
+
+        // Counterclockwise arrowhead at top-left of circle (pointing down-left)
+        const qreal cx = arcRect.center().x();
+        const qreal cy = arcRect.center().y();
+        const qreal r = arcRect.width() * 0.5;
+        // Point at ~142 degrees
+        const qreal ax = cx - r * 0.78;
+        const qreal ay = cy - r * 0.62;
+        const qreal hs = std::max<qreal>(2.6, s * 0.22);
+
+        QPolygonF head;
+        head << QPointF(ax - hs * 0.35, ay + hs * 0.65)
+             << QPointF(ax - hs * 0.55, ay - hs * 0.65)
+             << QPointF(ax + hs * 0.80, ay - hs * 0.10);
+        p.setPen(Qt::NoPen);
+        p.setBrush(color);
+        p.drawPolygon(head);
+
+        p.end();
+        QIcon result(pm);
+        cache.insert(key, result);
+        return result;
+    }
+
     p.setRenderHint(QPainter::Antialiasing, false);
     p.setPen(Qt::NoPen);
     p.setBrush(color);
@@ -363,12 +402,12 @@ QString styleSheet()
             background: #FFF9F2;
             border: 2px solid #DDBFB3;
             border-radius: 4px;
-            padding: 3px 6px;
+            padding: 2px 3px;
             color: #654C43;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
-            font-size: 12px;
-            font-weight: 600;
-            min-height: 22px;
+            font-size: 11px;
+            font-weight: 700;
+            min-height: 20px;
             selection-background-color: #F7C2B5;
             selection-color: #654C43;
         }
@@ -382,7 +421,7 @@ QString styleSheet()
         }
         QSpinBox::up-button, QSpinBox::down-button,
         QTimeEdit::up-button, QTimeEdit::down-button {
-            width: 16px;
+            width: 14px;
             border: none;
             background: #FFF0E6;
         }
@@ -394,12 +433,21 @@ QString styleSheet()
             background: #FFF9F2;
             border: 2px solid #DDBFB3;
             border-radius: 4px;
-            padding: 4px 24px 4px 8px;
+            padding: 3px 22px 3px 7px;
             color: #654C43;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            min-height: 22px;
+            min-height: 20px;
+        }
+        QComboBox#timeSelect {
+            padding: 3px 18px 3px 6px;
+            font-family: 'Consolas', 'Cascadia Mono', 'Segoe UI', monospace;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        QComboBox#timeSelect::drop-down {
+            width: 17px;
         }
         QComboBox:hover {
             border-color: #F3A6A0;
