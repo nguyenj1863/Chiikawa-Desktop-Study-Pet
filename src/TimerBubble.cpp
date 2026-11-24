@@ -19,12 +19,12 @@ TimerBubble::TimerBubble(QWidget* parent)
     m_label->setAlignment(Qt::AlignCenter);
     m_label->setStyleSheet(QStringLiteral(
         "QLabel {"
-        "  color: #4a3f35;"
+        "  color: #593E35;"
         "  font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;"
-        "  font-size: 12px;"
-        "  font-weight: 600;"
+        "  font-size: 15px;"
+        "  font-weight: 700;"
         "  background: transparent;"
-        "  padding: 6px 12px;"
+        "  padding: 8px 16px;"
         "}"));
 
     m_opacity = new QGraphicsOpacityEffect(this);
@@ -51,7 +51,7 @@ void TimerBubble::updateText(const QString& text)
     m_lastText = text;
     m_label->setText(text);
     m_label->adjustSize();
-    resize(m_label->sizeHint() + QSize(8, 4));
+    resize(m_label->sizeHint() + QSize(12, 6));
     m_label->setGeometry(rect());
 }
 
@@ -103,15 +103,15 @@ void TimerBubble::paintEvent(QPaintEvent* event)
     p.setRenderHint(QPainter::Antialiasing);
 
     QPainterPath path;
-    path.addRoundedRect(QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5), 12.0, 12.0);
+    path.addRoundedRect(QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5), 15.0, 15.0);
 
     // Soft shadow
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor(0, 0, 0, 28));
+    p.setBrush(QColor(89, 62, 53, 30));
     p.drawPath(path.translated(0, 1.5));
 
-    // Off-white translucent fill
-    p.setBrush(QColor(255, 252, 245, 230));
-    p.setPen(QPen(QColor(220, 205, 190, 180), 1.0));
+    // Warm cream pill fill + soft border
+    p.setBrush(QColor(255, 249, 242, 242));
+    p.setPen(QPen(QColor(221, 191, 179, 210), 1.5));
     p.drawPath(path);
 }
