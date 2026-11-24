@@ -100,8 +100,8 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 private:
-    static constexpr int kBoxSize = 16;
-    static constexpr int kSpacing = 9;
+    static constexpr int kBoxSize = 14;
+    static constexpr int kSpacing = 7;
     bool m_hovered = false;
 };
 

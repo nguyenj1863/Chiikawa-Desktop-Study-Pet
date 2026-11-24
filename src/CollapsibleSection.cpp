@@ -132,31 +132,27 @@ CollapsibleSection::CollapsibleSection(const QString& title, bool expandedByDefa
     connect(headerFrame, &SectionHeaderFrame::clicked, this, &CollapsibleSection::onHeaderClicked);
 
     auto* headerLayout = new QHBoxLayout(m_header);
-    headerLayout->setContentsMargins(10, 7, 10, 7);
-    headerLayout->setSpacing(8);
-
-    auto* textCol = new QVBoxLayout();
-    textCol->setContentsMargins(0, 0, 0, 0);
-    textCol->setSpacing(2);
+    headerLayout->setContentsMargins(9, 5, 9, 5);
+    headerLayout->setSpacing(6);
 
     m_titleLabel = new QLabel(title, m_header);
     m_titleLabel->setObjectName(QStringLiteral("sectionTitle"));
-    m_titleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_titleLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     m_titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 
     m_summaryLabel = new QLabel(m_header);
     m_summaryLabel->setObjectName(QStringLiteral("sectionSummary"));
     m_summaryLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_summaryLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_summaryLabel->setWordWrap(false);
     m_summaryLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     m_summaryLabel->setVisible(false);
 
-    textCol->addWidget(m_titleLabel);
-    textCol->addWidget(m_summaryLabel);
-    headerLayout->addLayout(textCol, 1);
+    headerLayout->addWidget(m_titleLabel);
+    headerLayout->addWidget(m_summaryLabel, 1);
 
     m_chevronLabel = new QLabel(m_header);
-    m_chevronLabel->setFixedSize(14, 14);
+    m_chevronLabel->setFixedSize(12, 12);
     m_chevronLabel->setAlignment(Qt::AlignCenter);
     m_chevronLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     headerLayout->addWidget(m_chevronLabel, 0, Qt::AlignVCenter);
@@ -196,7 +192,7 @@ void CollapsibleSection::setContentLayout(QLayout* contentLayout)
     if (!contentLayout) {
         return;
     }
-    contentLayout->setContentsMargins(4, 8, 4, 2);
+    contentLayout->setContentsMargins(2, 5, 2, 2);
     m_bodyContainer->setLayout(contentLayout);
     if (m_expanded) {
         m_bodyContainer->setVisible(true);

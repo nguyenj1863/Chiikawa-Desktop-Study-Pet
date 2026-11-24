@@ -28,7 +28,7 @@ class SettingsPanel : public QWidget {
     Q_OBJECT
 
 public:
-    static constexpr int kPanelWidth = 336;
+    static constexpr int kPanelWidth = 342;
 
     SettingsPanel(AppSettings* settings,
                   StudyTimer* timer,
@@ -122,6 +122,7 @@ private:
     QWidget* m_headerWidget = nullptr;
     QScrollArea* m_scrollArea = nullptr;
     QWidget* m_contentWidget = nullptr;
+    QWidget* m_footerWidget = nullptr;
 
     // Study Timer
     QPushButton* m_countdownBtn = nullptr;

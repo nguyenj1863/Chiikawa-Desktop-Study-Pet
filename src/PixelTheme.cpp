@@ -681,9 +681,9 @@ QString styleSheet()
             color: #654C43;
             border: none;
             font-family: 'Cascadia Mono', 'Consolas', 'Segoe UI', monospace;
-            font-size: 32px;
+            font-size: 28px;
             font-weight: 700;
-            padding: 2px 6px;
+            padding: 1px 4px;
         }
         QPushButton#countdownDisplay:hover {
             color: #4D3730;
@@ -703,7 +703,7 @@ QString styleSheet()
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 12px;
             font-weight: 700;
-            min-height: 26px;
+            min-height: 24px;
             selection-background-color: #F7C2B5;
             selection-color: #654C43;
         }
@@ -718,28 +718,28 @@ QString styleSheet()
         QSpinBox::up-button, QTimeEdit::up-button {
             subcontrol-origin: border;
             subcontrol-position: top right;
-            width: 18px;
-            border-left: 2px solid #E8C7B7;
-            border-bottom: 1px solid #E8C7B7;
-            background: #FFF0E6;
+            width: 19px;
+            border-left: 2px solid #CFA696;
+            border-bottom: 1px solid #CFA696;
+            background: #F4D5C7;
             border-top-right-radius: 2px;
         }
         QSpinBox::down-button, QTimeEdit::down-button {
             subcontrol-origin: border;
             subcontrol-position: bottom right;
-            width: 18px;
-            border-left: 2px solid #E8C7B7;
-            border-top: 1px solid #E8C7B7;
-            background: #FFF0E6;
+            width: 19px;
+            border-left: 2px solid #CFA696;
+            border-top: 1px solid #CFA696;
+            background: #F4D5C7;
             border-bottom-right-radius: 2px;
         }
         QSpinBox::up-button:hover, QSpinBox::down-button:hover,
         QTimeEdit::up-button:hover, QTimeEdit::down-button:hover {
-            background: #F7C2B5;
+            background: #F0B9AC;
         }
         QSpinBox::up-button:pressed, QSpinBox::down-button:pressed,
         QTimeEdit::up-button:pressed, QTimeEdit::down-button:pressed {
-            background: #F3A6A0;
+            background: #EA9891;
         }
         QSpinBox::up-arrow, QTimeEdit::up-arrow {
             image: url(:/assets/icons/arrow_up.png);
@@ -755,15 +755,15 @@ QString styleSheet()
             background: #FFF9F2;
             border: 2px solid #DDBFB3;
             border-radius: 4px;
-            padding: 3px 22px 3px 7px;
+            padding: 2px 20px 2px 6px;
             color: #654C43;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 11px;
             font-weight: 600;
-            min-height: 22px;
+            min-height: 20px;
         }
         QComboBox#timeSelect {
-            padding: 3px 20px 3px 6px;
+            padding: 2px 20px 2px 6px;
             font-family: 'Consolas', 'Cascadia Mono', 'Segoe UI', monospace;
             font-size: 12px;
             font-weight: 700;
@@ -781,12 +781,12 @@ QString styleSheet()
         QComboBox::drop-down {
             subcontrol-origin: padding;
             subcontrol-position: top right;
-            width: 22px;
-            border-left: 2px solid #E8C7B7;
-            background: #FFF0E6;
+            width: 20px;
+            border-left: 2px solid #CFA696;
+            background: #F4D5C7;
         }
         QComboBox::drop-down:hover {
-            background: #F7C2B5;
+            background: #F0B9AC;
         }
         QComboBox::down-arrow {
             image: url(:/assets/icons/arrow_down.png);
@@ -848,11 +848,11 @@ QString styleSheet()
             color: #654C43;
             border: 2px solid #DDBFB3;
             border-radius: 4px;
-            padding: 5px 10px;
+            padding: 4px 8px;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 11px;
             font-weight: 700;
-            min-height: 20px;
+            min-height: 18px;
         }
         QPushButton:hover {
             background: #F7C2B5;
@@ -876,8 +876,8 @@ QString styleSheet()
             color: #654C43;
             border: 2px solid #DDBFB3;
             border-radius: 4px;
-            padding: 4px 8px;
-            min-height: 18px;
+            padding: 3px 6px;
+            min-height: 16px;
         }
         QPushButton#chip:hover {
             background: #F7C2B5;
@@ -1003,8 +1003,8 @@ PixelCheckBox::PixelCheckBox(const QString& text, QWidget* parent)
 QSize PixelCheckBox::sizeHint() const
 {
     const QFontMetrics fm(font());
-    const int w = 6 + kBoxSize + kSpacing + fm.horizontalAdvance(text()) + 10;
-    const int h = std::max(26, fm.height() + 8);
+    const int w = 4 + kBoxSize + kSpacing + fm.horizontalAdvance(text()) + 8;
+    const int h = std::max(21, fm.height() + 4);
     return {w, h};
 }
 
@@ -1050,12 +1050,11 @@ void PixelCheckBox::paintEvent(QPaintEvent* event)
         p.fillRect(box, border);
         p.fillRect(box.adjusted(2, 2, -2, -2), fill);
 
-        // Crisp pixel checkmark
-        p.fillRect(box.x() + 3, box.y() + 8, 2, 2, Qt::white);
-        p.fillRect(box.x() + 5, box.y() + 10, 2, 2, Qt::white);
-        p.fillRect(box.x() + 7, box.y() + 8, 2, 2, Qt::white);
-        p.fillRect(box.x() + 9, box.y() + 6, 2, 2, Qt::white);
-        p.fillRect(box.x() + 11, box.y() + 4, 2, 2, Qt::white);
+        // Crisp pixel checkmark (aligned for 14x14 box)
+        p.fillRect(box.x() + 3, box.y() + 7, 2, 2, Qt::white);
+        p.fillRect(box.x() + 5, box.y() + 9, 2, 2, Qt::white);
+        p.fillRect(box.x() + 7, box.y() + 7, 2, 2, Qt::white);
+        p.fillRect(box.x() + 9, box.y() + 5, 2, 2, Qt::white);
     } else {
         const QColor fill = m_hovered && isEnabled() ? QColor(0xFF, 0xFF, 0xFF) : PixelTheme::kBackground;
         const QColor border = m_hovered && isEnabled() ? PixelTheme::kPrimaryAccent : PixelTheme::kBorder;
