@@ -28,6 +28,7 @@ private slots:
     void returningUserBypassesOnboarding();
     void replayPreservesTimersAlarmsPositionAndCompletionState();
     void restoreDefaultsPreservesOnboardingCompleted();
+    void fireAndSkipInteractiveHitRegions();
 };
 
 void TestOnboarding::init()
@@ -267,6 +268,45 @@ void TestOnboarding::restoreDefaultsPreservesOnboardingCompleted()
 
     AppSettings reloaded;
     QCOMPARE(reloaded.onboardingCompleted(), true);
+}
+
+void TestOnboarding::fireAndSkipInteractiveHitRegions()
+{
+    const QSize winSize(120, 120);
+
+    // Fire: small centered opaque sprite -> hit rect expands into surrounding negative space
+    QImage fireFrame(120, 120, QImage::Format_ARGB32);
+    fireFrame.fill(Qt::transparent);
+    for (int y = 45; y < 75; ++y) {
+        for (int x = 45; x < 75; ++x) {
+            fireFrame.setPixelColor(x, y, QColor(255, 120, 80, 255));
+        }
+    }
+    const QRect fireHit = PetWindow::computeInteractiveHitRect(fireFrame, AnimationId::Fire, winSize);
+    QVERIFY(!fireHit.isEmpty());
+    QVERIFY(fireHit.contains(QPoint(35, 60))); // negative space around small fire sprite
+    QVERIFY(fireHit.contains(QPoint(85, 60)));
+    QVERIFY(QRect(QPoint(0, 0), winSize).contains(fireHit));
+
+    // Skip: two separated positive regions -> gap between them is included, outer margin is excluded
+    QImage skipFrame(120, 120, QImage::Format_ARGB32);
+    skipFrame.fill(Qt::transparent);
+    for (int y = 30; y < 90; ++y) {
+        for (int x = 20; x < 45; ++x) {
+            skipFrame.setPixelColor(x, y, QColor(255, 255, 255, 255));
+        }
+        for (int x = 75; x < 100; ++x) {
+            skipFrame.setPixelColor(x, y, QColor(255, 255, 255, 255));
+        }
+    }
+    const QRect skipHit = PetWindow::computeInteractiveHitRect(skipFrame, AnimationId::Skip, winSize);
+    QVERIFY(!skipHit.isEmpty());
+    QVERIFY(skipHit.contains(QPoint(60, 60)));  // gap between the two positive spaces
+    QVERIFY(!skipHit.contains(QPoint(5, 5)));   // outer background remains click-through
+
+    // Stomp and Twirl keep default per-pixel alpha behavior (no extra hit rect)
+    QVERIFY(PetWindow::computeInteractiveHitRect(skipFrame, AnimationId::Stomp, winSize).isEmpty());
+    QVERIFY(PetWindow::computeInteractiveHitRect(skipFrame, AnimationId::Twirl, winSize).isEmpty());
 }
 
 QTEST_MAIN(TestOnboarding)

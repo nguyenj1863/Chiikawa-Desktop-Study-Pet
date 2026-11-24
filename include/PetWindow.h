@@ -2,10 +2,12 @@
 
 #include <QWidget>
 #include <QPoint>
+#include <QRect>
 #include <QTimer>
 #include <chrono>
 #include <memory>
 
+class QImage;
 class QLabel;
 class QPushButton;
 class QPropertyAnimation;
@@ -25,6 +27,7 @@ class AlarmNotification;
 class OnboardingWindow;
 class UISoundManager;
 
+#include "AnimationManager.h"
 #include "DesktopLayerHelper.h"
 
 /**
@@ -47,6 +50,14 @@ public:
     /** Entry point after construction: shows first-launch onboarding or reveals the pet directly. */
     void startApplication();
 
+    /**
+     * Computes the invisible alpha=1 hit-test rect for animations that need extra
+     * clickable/hoverable area (Fire surrounding halo, Skip interior gap bridge).
+     */
+    [[nodiscard]] static QRect computeInteractiveHitRect(const QImage& frame,
+                                                         AnimationId animId,
+                                                         const QSize& windowSize);
+
 public slots:
     void showPet();
     void hidePet();
@@ -64,6 +75,7 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void enterEvent(QEnterEvent* event) override;
     void leaveEvent(QEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
     void closeEvent(QCloseEvent* event) override;
@@ -122,5 +134,6 @@ private:
     QPoint m_dragOffset;
     bool m_hovering = false;
     bool m_completionHandled = false;
+    QRect m_interactiveHitRect;
     QTimer m_singleClickTimer;
 };

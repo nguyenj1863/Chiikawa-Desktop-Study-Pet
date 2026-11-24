@@ -55,6 +55,14 @@ PetWindow::PetWindow(QWidget* parent)
     m_animations = std::make_unique<AnimationManager>(m_petLabel, this);
     m_animations->setTargetSize(m_settings->petSize());
     m_animations->setAutoSwitchEnabled(m_settings->autoAnimationEnabled());
+    connect(m_animations.get(), &AnimationManager::frameUpdated,
+            this, [this](const QPixmap& frame, AnimationId id) {
+                const QRect nextHit = computeInteractiveHitRect(frame.toImage(), id, size());
+                if (nextHit != m_interactiveHitRect) {
+                    m_interactiveHitRect = nextHit;
+                    update();
+                }
+            });
     if (!m_animations->loadAll()) {
         m_petLabel->setText(QStringLiteral("GIF?"));
     }
@@ -768,6 +776,71 @@ void PetWindow::onTimerCompleted()
     playCompletionFeedback();
     if (m_bubble && m_hovering) {
         m_bubble->updateText(QStringLiteral("Done!"));
+    }
+}
+
+QRect PetWindow::computeInteractiveHitRect(const QImage& frame,
+                                           AnimationId animId,
+                                           const QSize& windowSize)
+{
+    if ((animId != AnimationId::Fire && animId != AnimationId::Skip)
+        || frame.isNull() || windowSize.isEmpty()) {
+        return {};
+    }
+
+    const QImage rgba = (frame.format() == QImage::Format_ARGB32 || frame.format() == QImage::Format_ARGB32_Premultiplied)
+        ? frame
+        : frame.convertToFormat(QImage::Format_ARGB32);
+
+    int minX = rgba.width();
+    int minY = rgba.height();
+    int maxX = -1;
+    int maxY = -1;
+
+    for (int y = 0; y < rgba.height(); ++y) {
+        const auto* row = reinterpret_cast<const QRgb*>(rgba.constScanLine(y));
+        for (int x = 0; x < rgba.width(); ++x) {
+            if (qAlpha(row[x]) > 10) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+
+    if (maxX < minX || maxY < minY) {
+        return {};
+    }
+
+    const int offsetX = (windowSize.width() - rgba.width()) / 2;
+    const int offsetY = (windowSize.height() - rgba.height()) / 2;
+    QRect hitRect(minX + offsetX, minY + offsetY, maxX - minX + 1, maxY - minY + 1);
+
+    if (animId == AnimationId::Fire) {
+        // Expand around the fast-moving small fire sprite so surrounding negative space is clickable/hoverable
+        const int pad = std::max(14, std::min(windowSize.width(), windowSize.height()) / 6);
+        hitRect = hitRect.adjusted(-pad, -pad, pad, pad);
+    }
+
+    return hitRect.intersected(QRect(QPoint(0, 0), windowSize));
+}
+
+void PetWindow::paintEvent(QPaintEvent* event)
+{
+    Q_UNUSED(event);
+    if (m_interactiveHitRect.isEmpty()) {
+        return;
+    }
+    // Windows WS_EX_LAYERED passes hits through alpha==0 pixels; alpha=1 is invisible
+    // while keeping the target region clickable and hoverable.
+    QPainter p(this);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0, 0, 0, 1));
+    if (m_animations && m_animations->currentAnimation() == AnimationId::Fire) {
+        p.drawRoundedRect(m_interactiveHitRect, 12, 12);
+    } else {
+        p.fillRect(m_interactiveHitRect, QColor(0, 0, 0, 1));
     }
 }
 

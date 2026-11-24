@@ -9,6 +9,7 @@
 
 class QLabel;
 class QMovie;
+class QPixmap;
 
 enum class AnimationId {
     Skip = 0,
@@ -53,6 +54,7 @@ public:
 
 signals:
     void animationChanged(AnimationId id);
+    void frameUpdated(const QPixmap& frame, AnimationId id);
 
 private slots:
     void onAutoSwitchTimeout();

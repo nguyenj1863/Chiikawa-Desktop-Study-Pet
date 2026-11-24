@@ -145,6 +145,7 @@ void AnimationManager::updateDisplayedFrame()
         frame = frame.transformed(QTransform().scale(-1, 1));
     }
     m_label->setPixmap(frame);
+    emit frameUpdated(frame, m_current);
 }
 
 void AnimationManager::onFrameChanged()
