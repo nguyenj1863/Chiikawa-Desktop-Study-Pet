@@ -24,7 +24,8 @@ enum class PixelIcon {
     RestoreDefaults,
     Exit,
     Edit,
-    Help
+    Help,
+    Gear
 };
 
 namespace PixelTheme {

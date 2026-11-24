@@ -8,6 +8,7 @@
 #include "CompletionToast.h"
 #include "MovementController.h"
 #include "OnboardingWindow.h"
+#include "PixelTheme.h"
 #include "SettingsPanel.h"
 #include "StudyTimer.h"
 #include "SystemTrayManager.h"
@@ -234,19 +235,28 @@ void PetWindow::setupUi()
     m_petLabel->setStyleSheet(QStringLiteral("background: transparent;"));
     layout->addWidget(m_petLabel);
 
-    m_gearButton = new QPushButton(QStringLiteral("⚙"), this);
-    m_gearButton->setFixedSize(28, 28);
+    m_gearButton = new QPushButton(this);
+    m_gearButton->setFixedSize(30, 30);
+    m_gearButton->setIcon(PixelTheme::icon(PixelIcon::Gear, PixelTheme::kPrimaryText, 16));
+    m_gearButton->setIconSize(QSize(16, 16));
     m_gearButton->setCursor(Qt::PointingHandCursor);
     m_gearButton->setToolTip(QStringLiteral("Settings"));
+    m_gearButton->setAccessibleName(QStringLiteral("Open settings"));
     m_gearButton->setStyleSheet(QStringLiteral(
         "QPushButton {"
-        "  background: rgba(255, 246, 238, 230);"
-        "  color: #6a5545;"
-        "  border: 1px solid rgba(220, 200, 180, 180);"
-        "  border-radius: 14px;"
-        "  font-size: 14px;"
+        "  background: #FFF9F2;"
+        "  border: 2px solid #DDBFB3;"
+        "  border-radius: 6px;"
+        "  padding: 0px;"
         "}"
-        "QPushButton:hover { background: rgba(255, 236, 220, 245); }"));
+        "QPushButton:hover {"
+        "  background: #F7C2B5;"
+        "  border-color: #DF9B92;"
+        "}"
+        "QPushButton:pressed {"
+        "  background: #F3A6A0;"
+        "  border-color: #DC8981;"
+        "}"));
     m_gearOpacity = new QGraphicsOpacityEffect(m_gearButton);
     m_gearOpacity->setOpacity(0.0);
     m_gearButton->setGraphicsEffect(m_gearOpacity);

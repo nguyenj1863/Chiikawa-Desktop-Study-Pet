@@ -36,6 +36,7 @@
 #include <QSpinBox>
 #include <QStyle>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 #include <algorithm>
 #include <chrono>
 
@@ -56,6 +57,45 @@ void styleChipButton(QPushButton* btn)
     btn->setCursor(Qt::PointingHandCursor);
     btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 }
+
+class WheelAwareTimeCombo : public QComboBox {
+public:
+    WheelAwareTimeCombo(QScrollArea* scrollArea, QWidget* parent = nullptr)
+        : QComboBox(parent)
+        , m_scrollArea(scrollArea)
+    {
+    }
+
+protected:
+    void wheelEvent(QWheelEvent* event) override
+    {
+        // Yield wheel scrolling to the settings scroll area when it is scrollable and this combo is unfocused
+        if (m_scrollArea && m_scrollArea->verticalScrollBar()
+            && m_scrollArea->verticalScrollBar()->isVisible() && !hasFocus()) {
+            event->ignore();
+            return;
+        }
+        const int n = count();
+        if (n <= 1) {
+            event->ignore();
+            return;
+        }
+        const int dy = event->angleDelta().y();
+        if (dy == 0) {
+            event->ignore();
+            return;
+        }
+        // Wheel up increases value (+1), wheel down decreases value (-1), wrapping cleanly
+        const int step = (dy > 0) ? 1 : -1;
+        const int next = (currentIndex() + step + n) % n;
+        setCurrentIndex(next);
+        emit activated(next);
+        event->accept();
+    }
+
+private:
+    QScrollArea* m_scrollArea = nullptr;
+};
 
 void styleTimeCombo(QComboBox* combo)
 {
@@ -367,28 +407,28 @@ void SettingsPanel::buildUi()
     auto* selectorsRow = new QHBoxLayout();
     selectorsRow->setSpacing(4);
 
-    m_alarmHourCombo = new QComboBox(m_contentWidget);
+    m_alarmHourCombo = new WheelAwareTimeCombo(m_scrollArea, m_contentWidget);
     styleTimeCombo(m_alarmHourCombo);
     m_alarmHourCombo->setAccessibleName(QStringLiteral("Alarm hour"));
-    m_alarmHourCombo->setToolTip(QStringLiteral("Alarm hour"));
+    m_alarmHourCombo->setToolTip(QStringLiteral("Alarm hour (click or scroll)"));
 
     auto* colonLbl = new QLabel(QStringLiteral(":"), m_contentWidget);
     colonLbl->setAlignment(Qt::AlignCenter);
     colonLbl->setFixedWidth(10);
     colonLbl->setStyleSheet(QStringLiteral("font-weight: 700; font-size: 13px; color: #654C43;"));
 
-    m_alarmMinuteCombo = new QComboBox(m_contentWidget);
+    m_alarmMinuteCombo = new WheelAwareTimeCombo(m_scrollArea, m_contentWidget);
     styleTimeCombo(m_alarmMinuteCombo);
     m_alarmMinuteCombo->setAccessibleName(QStringLiteral("Alarm minute"));
-    m_alarmMinuteCombo->setToolTip(QStringLiteral("Alarm minute"));
+    m_alarmMinuteCombo->setToolTip(QStringLiteral("Alarm minute (click or scroll)"));
     for (int m = 0; m < 60; ++m) {
         m_alarmMinuteCombo->addItem(QStringLiteral("%1").arg(m, 2, 10, QChar(u'0')), m);
     }
 
-    m_alarmPeriodCombo = new QComboBox(m_contentWidget);
+    m_alarmPeriodCombo = new WheelAwareTimeCombo(m_scrollArea, m_contentWidget);
     styleTimeCombo(m_alarmPeriodCombo);
     m_alarmPeriodCombo->setAccessibleName(QStringLiteral("AM or PM"));
-    m_alarmPeriodCombo->setToolTip(QStringLiteral("AM or PM"));
+    m_alarmPeriodCombo->setToolTip(QStringLiteral("AM or PM (click or scroll)"));
     m_alarmPeriodCombo->addItem(QStringLiteral("AM"), false);
     m_alarmPeriodCombo->addItem(QStringLiteral("PM"), true);
 

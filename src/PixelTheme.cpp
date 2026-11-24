@@ -217,6 +217,21 @@ PixelGrid gridFor(PixelIcon kind)
             ".....##.....",
             "............",
         }};
+    case PixelIcon::Gear:
+        return {{
+            "....####....",
+            ".##.####.##.",
+            ".##########.",
+            "..########..",
+            "####....####",
+            "####....####",
+            "####....####",
+            "####....####",
+            "..########..",
+            ".##########.",
+            ".##.####.##.",
+            "....####....",
+        }};
     }
     return {{
         "............", "............", "............", "............",
@@ -422,16 +437,16 @@ QString styleSheet()
         QLabel#onboardingWelcomeHeading {
             color: #593E35;
             font-family: '%1', 'Segoe UI', sans-serif;
-            font-size: 34px;
-            font-weight: 700;
-            letter-spacing: 0.4px;
+            font-size: 38px;
+            font-weight: 500;
+            letter-spacing: 0.8px;
         }
         QLabel#onboardingHeading {
             color: #593E35;
             font-family: '%1', 'Segoe UI', sans-serif;
-            font-size: 28px;
-            font-weight: 700;
-            letter-spacing: 0.3px;
+            font-size: 30px;
+            font-weight: 500;
+            letter-spacing: 0.6px;
         }
         QLabel#onboardingBody {
             color: #6F574D;
@@ -444,6 +459,13 @@ QString styleSheet()
             font-family: '%2', 'Segoe UI', sans-serif;
             font-size: 14px;
             font-weight: 700;
+        }
+        QLabel#onboardingFooter {
+            color: #9E867B;
+            font-family: '%2', 'Segoe UI Symbol', 'Segoe UI', sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
         }
         QPushButton#onboardingPrimary {
             background: #F3A6A0;
