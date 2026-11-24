@@ -45,6 +45,7 @@ void AppSettings::load()
 
     m_soundEnabled = settings.value(QStringLiteral("app/soundEnabled"), SettingsDefaults::kSoundEnabled).toBool();
     m_buttonSoundsEnabled = settings.value(QStringLiteral("app/buttonSoundsEnabled"), SettingsDefaults::kButtonSoundsEnabled).toBool();
+    m_onboardingCompleted = settings.value(QStringLiteral("app/onboardingCompleted"), SettingsDefaults::kOnboardingCompleted).toBool();
     m_alarmSoundId = settings.value(QStringLiteral("alarm/soundId"), SettingsDefaults::defaultAlarmSoundId()).toString();
     m_alarmVolume = settings.value(QStringLiteral("alarm/volume"), SettingsDefaults::kAlarmVolume).toDouble();
     m_alarmNotificationEnabled = settings.value(QStringLiteral("alarm/notificationEnabled"), SettingsDefaults::kAlarmNotificationEnabled).toBool();
@@ -100,6 +101,7 @@ void AppSettings::save() const
 
     settings.setValue(QStringLiteral("app/soundEnabled"), m_soundEnabled);
     settings.setValue(QStringLiteral("app/buttonSoundsEnabled"), m_buttonSoundsEnabled);
+    settings.setValue(QStringLiteral("app/onboardingCompleted"), m_onboardingCompleted);
     settings.setValue(QStringLiteral("alarm/soundId"), m_alarmSoundId);
     settings.setValue(QStringLiteral("alarm/volume"), m_alarmVolume);
     settings.setValue(QStringLiteral("alarm/notificationEnabled"), m_alarmNotificationEnabled);
@@ -198,6 +200,11 @@ void AppSettings::setSoundEnabled(bool enabled)
 void AppSettings::setButtonSoundsEnabled(bool enabled)
 {
     m_buttonSoundsEnabled = enabled;
+}
+
+void AppSettings::setOnboardingCompleted(bool completed)
+{
+    m_onboardingCompleted = completed;
 }
 
 void AppSettings::setAlarmSoundId(const QString& soundId)

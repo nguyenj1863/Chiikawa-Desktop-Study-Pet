@@ -68,6 +68,10 @@ public:
     [[nodiscard]] bool buttonSoundsEnabled() const { return m_buttonSoundsEnabled; }
     void setButtonSoundsEnabled(bool enabled);
 
+    // --- Onboarding ---
+    [[nodiscard]] bool onboardingCompleted() const { return m_onboardingCompleted; }
+    void setOnboardingCompleted(bool completed);
+
     [[nodiscard]] QString alarmSoundId() const { return m_alarmSoundId; }
     void setAlarmSoundId(const QString& soundId);
 
@@ -120,6 +124,7 @@ private:
 
     bool m_soundEnabled = SettingsDefaults::kSoundEnabled;
     bool m_buttonSoundsEnabled = SettingsDefaults::kButtonSoundsEnabled;
+    bool m_onboardingCompleted = SettingsDefaults::kOnboardingCompleted;
     QString m_alarmSoundId = SettingsDefaults::defaultAlarmSoundId();
     double m_alarmVolume = SettingsDefaults::kAlarmVolume;
     bool m_alarmNotificationEnabled = SettingsDefaults::kAlarmNotificationEnabled;

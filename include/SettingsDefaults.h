@@ -27,6 +27,7 @@ inline constexpr int kMaxTimerSeconds = 24 * 60 * 60;
 
 inline constexpr bool kSoundEnabled = true;
 inline constexpr bool kButtonSoundsEnabled = true;
+inline constexpr bool kOnboardingCompleted = false;
 inline constexpr double kAlarmVolume = 0.25;
 inline constexpr double kMinAlarmVolume = 0.0;
 inline constexpr double kMaxAlarmVolume = 1.0;

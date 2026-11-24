@@ -201,6 +201,21 @@ PixelGrid gridFor(PixelIcon kind)
             "............",
             "............",
         }};
+    case PixelIcon::Help:
+        return {{
+            "............",
+            "...######...",
+            "..##....##..",
+            "..##....##..",
+            ".......##...",
+            "......##....",
+            ".....##.....",
+            ".....##.....",
+            "............",
+            ".....##.....",
+            ".....##.....",
+            "............",
+        }};
     }
     return {{
         "............", "............", "............", "............",
@@ -354,6 +369,17 @@ QString styleSheet()
             color: #654C43;
             font-size: 13px;
             font-weight: 700;
+        }
+        QLabel#onboardingHeading {
+            color: #654C43;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+        QLabel#onboardingBody {
+            color: #967F73;
+            font-size: 12px;
+            font-weight: 500;
         }
         QLabel#sectionTitle {
             color: #654C43;

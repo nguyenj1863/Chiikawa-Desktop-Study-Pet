@@ -23,7 +23,8 @@ enum class PixelIcon {
     ChevronRight,
     RestoreDefaults,
     Exit,
-    Edit
+    Edit,
+    Help
 };
 
 namespace PixelTheme {
