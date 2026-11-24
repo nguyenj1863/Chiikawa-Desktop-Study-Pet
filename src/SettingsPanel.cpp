@@ -4,6 +4,7 @@
 #include "AlarmSoundManager.h"
 #include "AppSettings.h"
 #include "CollapsibleSection.h"
+#include "DesktopLayerHelper.h"
 #include "PixelTheme.h"
 #include "SettingsDefaults.h"
 #include "StartupManager.h"
@@ -289,7 +290,11 @@ SettingsPanel::SettingsPanel(AppSettings* settings,
                              AlarmSoundManager* soundManager,
                              UISoundManager* uiSound,
                              QWidget* parent)
+#ifdef Q_OS_MACOS
+    : QWidget(parent, Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
+#else
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
+#endif
     , m_settings(settings)
     , m_timer(timer)
     , m_alarmScheduler(alarmScheduler)
@@ -807,9 +812,23 @@ void SettingsPanel::buildUi()
     m_moveCheck = new PixelCheckBox(QStringLiteral("Autonomous movement"), m_contentWidget);
     m_animCheck = new PixelCheckBox(QStringLiteral("Random animations"), m_contentWidget);
     m_desktopOnlyCheck = new PixelCheckBox(QStringLiteral("Desktop-Only Mode"), m_contentWidget);
-    m_desktopOnlyCheck->setToolTip(
-        QStringLiteral("Keep Chiikawa on your desktop, behind other application windows."));
+    if (DesktopLayerHelper::isSupported()) {
+        m_desktopOnlyCheck->setToolTip(
+            QStringLiteral("Keep Chiikawa on your desktop, behind other application windows."));
+    } else {
+        m_desktopOnlyCheck->setEnabled(false);
+        m_desktopOnlyCheck->setToolTip(
+            QStringLiteral("Desktop-Only Mode is currently supported on Windows only."));
+    }
+#ifdef Q_OS_MACOS
+    m_startupCheck = new PixelCheckBox(QStringLiteral("Launch at login"), m_contentWidget);
+#else
     m_startupCheck = new PixelCheckBox(QStringLiteral("Launch on Windows startup"), m_contentWidget);
+#endif
+    if (!StartupManager::isSupported()) {
+        m_startupCheck->setEnabled(false);
+        m_startupCheck->setToolTip(QStringLiteral("Automatic startup is not supported on this platform."));
+    }
 
     for (QCheckBox* cb : {m_moveCheck, m_animCheck, m_desktopOnlyCheck, m_startupCheck}) {
         connect(cb, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
@@ -959,7 +978,7 @@ void SettingsPanel::syncFromSettings()
     m_speedValue->setText(QStringLiteral("%1x").arg(m_settings->movementSpeed(), 0, 'f', 2));
     m_moveCheck->setChecked(m_settings->movementEnabled());
     m_animCheck->setChecked(m_settings->autoAnimationEnabled());
-    m_desktopOnlyCheck->setChecked(m_settings->desktopOnlyMode());
+    m_desktopOnlyCheck->setChecked(DesktopLayerHelper::isSupported() && m_settings->desktopOnlyMode());
     m_startupCheck->setChecked(m_settings->launchOnStartup());
 
     m_soundCheck->setChecked(m_settings->soundEnabled());
@@ -1238,7 +1257,11 @@ void SettingsPanel::setAlwaysOnTop(bool enabled)
     }
     const bool wasVisible = isVisible();
     const QPoint savedPos = pos();
+#ifdef Q_OS_MACOS
+    Qt::WindowFlags flags = Qt::Window | Qt::FramelessWindowHint;
+#else
     Qt::WindowFlags flags = Qt::Tool | Qt::FramelessWindowHint;
+#endif
     if (enabled) {
         flags |= Qt::WindowStaysOnTopHint;
     }

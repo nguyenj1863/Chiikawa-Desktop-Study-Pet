@@ -23,6 +23,15 @@ class DesktopLayerHelper {
 public:
     DesktopLayerHelper();
 
+    [[nodiscard]] static constexpr bool isSupported()
+    {
+#ifdef Q_OS_WIN
+        return true;
+#else
+        return false;
+#endif
+    }
+
     void applyMode(QWidget* petWindow, bool desktopOnly);
     [[nodiscard]] bool isDesktopOnly() const { return m_desktopOnly; }
 

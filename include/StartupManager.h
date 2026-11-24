@@ -12,6 +12,15 @@ class StartupManager {
 public:
     static constexpr auto kRunValueName = "ChiikawaStudyPet";
 
+    [[nodiscard]] static constexpr bool isSupported()
+    {
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+        return true;
+#else
+        return false;
+#endif
+    }
+
     [[nodiscard]] static bool isEnabled();
     [[nodiscard]] static bool enable(const QString& executablePath);
     [[nodiscard]] static bool disable();

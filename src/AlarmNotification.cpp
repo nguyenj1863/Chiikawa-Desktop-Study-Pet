@@ -16,7 +16,11 @@
 #include <algorithm>
 
 AlarmNotification::AlarmNotification(QWidget* parent)
+#ifdef Q_OS_MACOS
+    : QWidget(parent, Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
+#else
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
+#endif
 {
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_ShowWithoutActivating);

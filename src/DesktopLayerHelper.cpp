@@ -15,6 +15,9 @@ DesktopLayerHelper::DesktopLayerHelper()
 
 void DesktopLayerHelper::applyMode(QWidget* petWindow, bool desktopOnly)
 {
+    if (!isSupported()) {
+        desktopOnly = false;
+    }
     m_desktopOnly = desktopOnly;
     if (!petWindow) {
         return;
@@ -23,7 +26,13 @@ void DesktopLayerHelper::applyMode(QWidget* petWindow, bool desktopOnly)
     const bool wasVisible = petWindow->isVisible();
     const QPoint savedPos = petWindow->pos();
 
+#ifdef Q_OS_MACOS
+    // On macOS, Qt::Tool creates an NSPanel that hides when another app activates.
+    // LSUIElement=true in Info.plist already hides the Dock icon, so Qt::Window keeps Chiikawa visible.
+    Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Window;
+#else
     Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Tool;
+#endif
     if (desktopOnly) {
         flags |= Qt::WindowStaysOnBottomHint;
     } else {

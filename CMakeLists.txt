@@ -74,7 +74,7 @@ set(CHIICAWA_HEADERS
     include/PetWindow.h
 )
 
-add_executable(ChiikawaStudyPet WIN32
+add_executable(ChiikawaStudyPet WIN32 MACOSX_BUNDLE
     ${CHIICAWA_SOURCES}
     ${CHIICAWA_HEADERS}
 )
@@ -88,6 +88,17 @@ target_link_libraries(ChiikawaStudyPet PRIVATE Qt6::Widgets Qt6::Multimedia)
 if(WIN32)
     target_sources(ChiikawaStudyPet PRIVATE resources/app.rc)
     target_link_libraries(ChiikawaStudyPet PRIVATE user32 shell32 ole32)
+elseif(APPLE)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
+        @ONLY
+    )
+    set_target_properties(ChiikawaStudyPet PROPERTIES
+        MACOSX_BUNDLE TRUE
+        OUTPUT_NAME "ChiikawaStudyPet"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
+    )
 endif()
 
 enable_testing()

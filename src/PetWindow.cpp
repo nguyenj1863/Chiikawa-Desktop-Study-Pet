@@ -216,8 +216,12 @@ PetWindow::~PetWindow()
 
 void PetWindow::setupWindowFlags()
 {
+#ifdef Q_OS_MACOS
+    Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Window;
+#else
     Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Tool;
-    if (m_settings->desktopOnlyMode()) {
+#endif
+    if (DesktopLayerHelper::isSupported() && m_settings->desktopOnlyMode()) {
         flags |= Qt::WindowStaysOnBottomHint;
     } else {
         flags |= Qt::WindowStaysOnTopHint;
