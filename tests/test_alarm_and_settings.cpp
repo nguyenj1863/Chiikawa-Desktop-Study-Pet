@@ -19,6 +19,7 @@
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QTest>
+#include <QWheelEvent>
 
 namespace {
 
@@ -411,6 +412,15 @@ void TestAlarmAndSettings::timeFormatConversions12hAnd24h()
     panel.setUse24Hour(false);
     QCOMPARE(panel.use24Hour(), false);
     QCOMPARE(panel.selectedAlarmTime(), QTime(17, 30));
+
+    // Real alarm hour and minute selectors support mouse wheel scrolling
+    const auto timeCombos = panel.findChildren<QComboBox*>(QStringLiteral("timeSelect"));
+    QVERIFY(timeCombos.size() >= 2);
+    QWheelEvent wheelUp(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, 120),
+                        Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(timeCombos[0], &wheelUp); // 5 PM -> 6 PM
+    QCoreApplication::sendEvent(timeCombos[1], &wheelUp); // :30 -> :31
+    QCOMPARE(panel.selectedAlarmTime(), QTime(18, 31));
 }
 
 void TestAlarmAndSettings::occurrenceFormattingTodayAndTomorrow()

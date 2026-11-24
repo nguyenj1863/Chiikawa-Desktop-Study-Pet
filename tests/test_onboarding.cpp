@@ -10,6 +10,7 @@
 
 #include <QApplication>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QPushButton>
 #include <QSettings>
 #include <QSignalSpy>
@@ -83,9 +84,16 @@ void TestOnboarding::tutorialNavigationProgressAndInactivePreviewPause()
     win.openOnboarding(false);
     QApplication::processEvents();
 
-    // Bundled SIL OFL fonts should load cleanly
-    QVERIFY(!PixelTheme::displayFontFamily().isEmpty());
+    // Bundled SIL OFL fonts should load cleanly, keeping Pixelify Sans as display font
+    QCOMPARE(PixelTheme::displayFontFamily(), QStringLiteral("Pixelify Sans"));
     QVERIFY(!PixelTheme::bodyFontFamily().isEmpty());
+    QVERIFY(!PixelTheme::icon(PixelIcon::Gear, PixelTheme::kPrimaryText, 16).isNull());
+
+    // Exact creator footer must appear ONLY on the Welcome screen
+    auto* footer = win.findChild<QLabel*>(QStringLiteral("onboardingFooter"));
+    QVERIFY(footer != nullptr);
+    QCOMPARE(footer->text(), QStringLiteral("\u00A9 2026 John Nguyen \u2661"));
+    QVERIFY(footer->isVisible());
 
     QVERIFY(win.width() >= 340 && win.width() <= 520);
     QCOMPARE(win.currentPage(), static_cast<int>(OnboardingWindow::Welcome));
@@ -94,10 +102,11 @@ void TestOnboarding::tutorialNavigationProgressAndInactivePreviewPause()
     const double interactDuration = win.previewForPage(OnboardingWindow::Interact)->cycleDurationMs();
     QVERIFY(interactDuration >= 10000.0 && interactDuration <= 14000.0);
 
-    // Programmatic navigation must not emit click sounds
+    // Programmatic navigation must not emit click sounds and hides Welcome-only footer
     win.goToPage(OnboardingWindow::Interact, false);
     QCOMPARE(uiSound.playCount(), 0);
     QCOMPARE(win.progressText(), QStringLiteral("1 / 4"));
+    QVERIFY(!footer->isVisible());
 
     // Only the active step's preview should be active; all other previews must be stopped
     for (int i = 0; i < OnboardingWindow::PageCount; ++i) {
