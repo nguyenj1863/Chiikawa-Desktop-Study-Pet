@@ -103,6 +103,7 @@ void TestAppSettings::persistsDesktopAndAlarmPreferences()
         s.setAlarmVolume(0.65);
         s.setAlarmNotificationEnabled(false);
         s.setSnoozeMinutes(15);
+        s.setAlarmUse24Hour(true);
         s.setAlarmConfigured(true);
         s.setAlarmEnabled(true);
         s.setAlarmTime(QTime(17, 30));
@@ -116,6 +117,7 @@ void TestAppSettings::persistsDesktopAndAlarmPreferences()
         QVERIFY(qAbs(s.alarmVolume() - 0.65) < 0.001);
         QCOMPARE(s.alarmNotificationEnabled(), false);
         QCOMPARE(s.snoozeMinutes(), 15);
+        QCOMPARE(s.alarmUse24Hour(), true);
         QCOMPARE(s.hasAlarmConfigured(), true);
         QCOMPARE(s.alarmEnabled(), true);
         QCOMPARE(s.alarmTime(), QTime(17, 30));
