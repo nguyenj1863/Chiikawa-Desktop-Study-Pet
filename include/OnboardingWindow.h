@@ -32,7 +32,7 @@ public:
         PageCount = 6
     };
 
-    static constexpr int kDefaultWidth = 492;
+    static constexpr int kDefaultWidth = 504;
     static constexpr int kStepCount = 4;
     static constexpr int kTransitionMs = 160;
 
@@ -96,6 +96,7 @@ private:
     QPushButton* m_skipBtn = nullptr;
     QPushButton* m_backBtn = nullptr;
     QPushButton* m_primaryBtn = nullptr;
+    QLabel* m_footerLabel = nullptr;
 
     bool m_isReplay = false;
     bool m_outcomeEmitted = false;

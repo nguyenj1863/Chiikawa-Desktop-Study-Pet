@@ -118,7 +118,7 @@ void OnboardingWindow::buildUi()
 
     m_stack->addWidget(createPageWidget(
         Alarm,
-        QStringLiteral("Don't forget!"),
+        QStringLiteral("Don't Forget!"),
         QStringLiteral("Set an <b style='color:#593E35;'>alarm</b> and <b style='color:#593E35;'>snooze</b> it if you need a little more time."),
         m_previews[Alarm]));
 
@@ -167,6 +167,13 @@ void OnboardingWindow::buildUi()
     nav->addWidget(m_backBtn);
     nav->addWidget(m_primaryBtn);
     root->addLayout(nav);
+
+    // Subtle personal signature footer on the Welcome screen only
+    m_footerLabel = new QLabel(QStringLiteral("\u00A9 2026 John Nguyen \u2661"), this);
+    m_footerLabel->setObjectName(QStringLiteral("onboardingFooter"));
+    m_footerLabel->setAlignment(Qt::AlignCenter);
+    m_footerLabel->setContentsMargins(0, 4, 0, 0);
+    root->addWidget(m_footerLabel);
 
     // Logical tab order
     setTabOrder(m_skipBtn, m_backBtn);
@@ -312,6 +319,10 @@ void OnboardingWindow::updateNavigationState()
         m_backBtn->setVisible(true);
         m_primaryBtn->setText(QStringLiteral("Next"));
         m_primaryBtn->setToolTip(QStringLiteral("Continue to next step"));
+    }
+
+    if (m_footerLabel) {
+        m_footerLabel->setVisible(page == Welcome);
     }
 }
 

@@ -65,17 +65,17 @@ bool OnboardingPreview::systemPrefersReducedMotion()
 QSize OnboardingPreview::sizeHint() const
 {
     if (m_mode == Mode::Welcome || m_mode == Mode::Complete) {
-        return {440, 156};
+        return {452, 178};
     }
-    return {440, 224};
+    return {452, 228};
 }
 
 QSize OnboardingPreview::minimumSizeHint() const
 {
     if (m_mode == Mode::Welcome || m_mode == Mode::Complete) {
-        return {280, 136};
+        return {280, 152};
     }
-    return {280, 204};
+    return {280, 206};
 }
 
 void OnboardingPreview::ensureMoviesLoaded()
@@ -200,7 +200,7 @@ double OnboardingPreview::cycleDurationMs() const
     case Mode::Interact:   return 12000.0; // Slower 12s instructional loop with clear pauses
     case Mode::Drag:       return 7000.0;  // Clear 7s approach, grab, drag, settle loop
     case Mode::StudyTimer: return 9000.0;  // 9s real timer card + hover bubble sequence
-    case Mode::Alarm:      return 10000.0; // 10s one-time alarm + notification snooze sequence
+    case Mode::Alarm:      return 12500.0; // 12.5s scroll-based alarm setup + notification snooze sequence
     case Mode::Complete:   return 3600.0;
     case Mode::Welcome:    return 3600.0;
     }
@@ -454,17 +454,67 @@ void OnboardingPreview::drawPillBadge(QPainter& p,
     p.restore();
 }
 
+void OnboardingPreview::drawScrollWheelHint(QPainter& p, const QPointF& center, double phase) const
+{
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    QFont f(PixelTheme::bodyFontFamily());
+    f.setPixelSize(12);
+    f.setBold(true);
+    p.setFont(f);
+    const QString label = QStringLiteral("Scroll to change");
+    const QFontMetrics fm(f);
+    const int w = 24 + fm.horizontalAdvance(label) + 18;
+    const int h = 26;
+    const QRectF pill(center.x() - w * 0.5, center.y() - h * 0.5, w, h);
+
+    p.setPen(QPen(PixelTheme::kBorder, 1.8));
+    p.setBrush(PixelTheme::kBackground);
+    p.drawRoundedRect(pill, 6, 6);
+
+    // Compact pixel mouse body + animated scroll wheel indicator
+    const QRectF mouseRect(pill.left() + 8, pill.center().y() - 8, 12, 16);
+    p.setPen(QPen(QColor(0x59, 0x3E, 0x35), 1.5));
+    p.setBrush(PixelTheme::kCardBg);
+    p.drawRoundedRect(mouseRect, 5, 5);
+
+    const double wheelOffset = m_reducedMotion ? 0.0 : -std::sin(phase * 6.28318) * 1.8;
+    p.setPen(Qt::NoPen);
+    p.setBrush(PixelTheme::kPrimaryAccent);
+    p.drawRoundedRect(QRectF(mouseRect.center().x() - 1.3,
+                             mouseRect.top() + 3.5 + wheelOffset, 2.6, 4.5), 1, 1);
+
+    p.setPen(QColor(0x59, 0x3E, 0x35));
+    p.drawText(QRectF(mouseRect.right() + 6, pill.top(), pill.width() - 28, pill.height()),
+               Qt::AlignLeft | Qt::AlignVCenter, label);
+    p.restore();
+}
+
 void OnboardingPreview::paintWelcome(QPainter& p, const QRect& stage) const
 {
     const QPointF center(stage.center().x(), stage.center().y() + 2.0);
     p.save();
     p.setRenderHint(QPainter::Antialiasing, true);
+
+    // Warm integrated medallion spotlight with subtle corner pixel stars
     p.setPen(QPen(PixelTheme::kBorder, 2));
     p.setBrush(PixelTheme::kBackground);
-    p.drawEllipse(center, 58, 58);
+    p.drawEllipse(center, 72, 72);
+
+    const auto drawStar = [&](double ox, double oy, int arm) {
+        const int sx = qRound(center.x() + ox);
+        const int sy = qRound(center.y() + oy);
+        p.fillRect(sx - 1, sy - arm, 2, arm * 2, PixelTheme::kPrimaryAccent);
+        p.fillRect(sx - arm, sy - 1, arm * 2, 2, PixelTheme::kPrimaryAccent);
+    };
+    drawStar(-96, -34, 4);
+    drawStar(98, -28, 4);
+    drawStar(-84, 40, 3);
+    drawStar(88, 36, 3);
     p.restore();
 
-    drawPetSprite(p, center, 106, false);
+    drawPetSprite(p, center, 132, false);
 }
 
 void OnboardingPreview::paintInteract(QPainter& p, const QRect& stage, double t) const
@@ -495,17 +545,14 @@ void OnboardingPreview::paintInteract(QPainter& p, const QRect& stage, double t)
         p.setOpacity(gearReveal);
         p.setRenderHint(QPainter::Antialiasing, true);
 
-        const QPointF gearCenter(petCenter.x() + 40.0, petCenter.y() - 36.0);
+        // Exact redesigned pixel-art settings gear button matching PetWindow::m_gearButton
+        const QRectF gearRect(petCenter.x() + 26.0, petCenter.y() - 50.0, 30.0, 30.0);
         p.setPen(QPen(PixelTheme::kBorder, 2.0));
         p.setBrush(PixelTheme::kBackground);
-        p.drawEllipse(gearCenter, 16, 16);
+        p.drawRoundedRect(gearRect, 6, 6);
 
-        QFont gf(QStringLiteral("Segoe UI Symbol"));
-        gf.setPixelSize(16);
-        p.setFont(gf);
-        p.setPen(QColor(0x59, 0x3E, 0x35));
-        p.drawText(QRectF(gearCenter.x() - 16, gearCenter.y() - 16, 32, 32),
-                   Qt::AlignCenter, QStringLiteral("⚙"));
+        const QPixmap gearPm = PixelTheme::icon(PixelIcon::Gear, PixelTheme::kPrimaryText, 16).pixmap(16, 16);
+        p.drawPixmap(QPointF(gearRect.center().x() - 8.0, gearRect.center().y() - 8.0), gearPm);
 
         // Compact real-styled settings popup hint beside Chiikawa
         const QRectF miniPanel(petCenter.x() + 72.0, stage.center().y() - 34.0, 122.0, 102.0);
@@ -820,37 +867,41 @@ void OnboardingPreview::paintStudyTimer(QPainter& p, const QRect& stage, double 
 
 void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) const
 {
-    // 10-second sequence matching the real one-time Alarm settings + AlarmNotification:
-    // Phase A (0.00 - 0.46): Real one-time Alarm settings card (12h/24h, separate Hour:Min AM/PM, Save Alarm)
-    // Phase B (0.46 - 0.96): Real AlarmNotification popup (Bell + Time to go! + Snooze 5m / Dismiss -> Snoozed for 5 minutes.)
+    // 12.5-second sequence matching the real one-time Alarm settings (with scroll interaction) + AlarmNotification:
+    // Phase A (0.00 - 0.54): Real one-time Alarm settings card
+    //   0.04-0.22: Cursor over Hour -> "Scroll to change" cue -> scrolls 04 -> 05 with calm pause
+    //   0.22-0.38: Cursor over Minute -> scrolls 28 -> 29 -> 30 with brief pauses
+    //   0.38-0.44: Cursor over AM/PM -> switches AM -> PM
+    //   0.44-0.54: Cursor clicks Save Alarm -> "Today at 5:30 PM"
+    // Phase B (0.54 - 0.96): Real AlarmNotification popup (Bell + Time to go! + Snooze 5m / Dismiss -> Snoozed for 5 minutes.)
 
-    const double phaseAAlpha = 1.0 - smoothStep(0.44, 0.50, t);
-    const double phaseBAlpha = smoothStep(0.48, 0.54, t) * (1.0 - smoothStep(0.93, 0.98, t));
+    const double phaseAAlpha = 1.0 - smoothStep(0.52, 0.57, t);
+    const double phaseBAlpha = smoothStep(0.55, 0.60, t) * (1.0 - smoothStep(0.93, 0.98, t));
 
     if (phaseAAlpha > 0.01) {
         p.save();
         p.setOpacity(phaseAAlpha);
         p.setRenderHint(QPainter::Antialiasing, true);
 
-        const QRectF card(stage.left() + 28.0, stage.top() + 20.0, stage.width() - 56.0, stage.height() - 40.0);
+        const QRectF card(stage.left() + 26.0, stage.top() + 14.0, stage.width() - 52.0, stage.height() - 48.0);
         p.setPen(QPen(PixelTheme::kBorder, 2));
         p.setBrush(PixelTheme::kBackground);
         p.drawRoundedRect(card, 6, 6);
 
         // Row 1: Bell + "Alarm Time" + [12h] [24h] format toggle
         const QPixmap bellPm = PixelTheme::icon(PixelIcon::Bell, PixelTheme::kPrimaryAccent, 15).pixmap(15, 15);
-        p.drawPixmap(QPointF(card.left() + 14, card.top() + 15), bellPm);
+        p.drawPixmap(QPointF(card.left() + 14, card.top() + 13), bellPm);
 
         QFont secFont(PixelTheme::bodyFontFamily());
         secFont.setPixelSize(14);
         secFont.setBold(true);
         p.setFont(secFont);
         p.setPen(QColor(0x59, 0x3E, 0x35));
-        p.drawText(QRectF(card.left() + 34, card.top() + 12, 140, 22),
+        p.drawText(QRectF(card.left() + 34, card.top() + 10, 140, 22),
                    Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Alarm Time"));
 
-        const QRectF btn12(card.right() - 102, card.top() + 11, 42, 24);
-        const QRectF btn24(card.right() - 54, card.top() + 11, 42, 24);
+        const QRectF btn12(card.right() - 102, card.top() + 9, 42, 24);
+        const QRectF btn24(card.right() - 54, card.top() + 9, 42, 24);
         QFont chipFont(PixelTheme::bodyFontFamily());
         chipFont.setPixelSize(12);
         chipFont.setBold(true);
@@ -869,22 +920,31 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         p.drawText(btn24, Qt::AlignCenter, QStringLiteral("24h"));
 
         // Row 2: Separate Hour : Minute [AM/PM] dropdowns
-        const double rowY = card.top() + 50.0;
-        const QRectF hourBox(card.left() + 14, rowY, 96, 36);
-        const QRectF minBox(hourBox.right() + 20, rowY, 96, 36);
+        const double rowY = card.top() + 44.0;
+        const QRectF hourBox(card.left() + 14, rowY, 102, 36);
+        const QRectF minBox(hourBox.right() + 20, rowY, 102, 36);
         const QRectF periodBox(minBox.right() + 10, rowY, 96, 36);
 
-        const bool hourActive = (t >= 0.06 && t < 0.16);
-        const bool minActive = (t >= 0.16 && t < 0.25);
-        const bool periodActive = (t >= 0.25 && t < 0.33);
-        const bool saved = (t >= 0.36);
+        const bool hourActive = (t >= 0.05 && t < 0.22);
+        const bool minActive = (t >= 0.22 && t < 0.38);
+        const bool periodActive = (t >= 0.38 && t < 0.44);
+        const bool saved = (t >= 0.47);
+
+        const QString hourVal = (t >= 0.13) ? QStringLiteral("05") : QStringLiteral("04");
+        QString minVal = QStringLiteral("28");
+        if (t >= 0.32) {
+            minVal = QStringLiteral("30");
+        } else if (t >= 0.27) {
+            minVal = QStringLiteral("29");
+        }
+        const QString periodVal = (t >= 0.41) ? QStringLiteral("PM") : QStringLiteral("AM");
 
         const auto drawCombo = [&](const QRectF& r, const QString& val, bool focused) {
             p.setPen(QPen(focused ? PixelTheme::kPrimaryAccent : PixelTheme::kBorder, 2));
             p.setBrush(focused ? QColor(Qt::white) : PixelTheme::kBackground);
             p.drawRoundedRect(r, 4, 4);
 
-            // Drop-down button strip on the right matching QComboBox#timeSelect
+            // Drop-down strip matching QComboBox#timeSelect
             const QRectF dd(r.right() - 22, r.top() + 2, 20, r.height() - 4);
             p.setPen(Qt::NoPen);
             p.setBrush(focused ? PixelTheme::kHoverAccent : PixelTheme::kCardBg);
@@ -892,7 +952,6 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
             p.setPen(QPen(PixelTheme::kSecondaryAccent, 1.5));
             p.drawLine(QPointF(dd.left(), r.top() + 2), QPointF(dd.left(), r.bottom() - 2));
 
-            // Down arrow triangle
             QPolygonF tri;
             tri << QPointF(dd.center().x() - 4, dd.center().y() - 2)
                 << QPointF(dd.center().x() + 4, dd.center().y() - 2)
@@ -902,7 +961,7 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
             p.drawPolygon(tri);
 
             QFont cf(QStringLiteral("Consolas"));
-            cf.setPixelSize(15);
+            cf.setPixelSize(16);
             cf.setBold(true);
             p.setFont(cf);
             p.setPen(QColor(0x59, 0x3E, 0x35));
@@ -910,7 +969,7 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
                        Qt::AlignCenter, val);
         };
 
-        drawCombo(hourBox, (t >= 0.11) ? QStringLiteral("05") : QStringLiteral("04"), hourActive);
+        drawCombo(hourBox, hourVal, hourActive);
         QFont colonFont(QStringLiteral("Consolas"));
         colonFont.setPixelSize(18);
         colonFont.setBold(true);
@@ -918,11 +977,11 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         p.setPen(QColor(0x59, 0x3E, 0x35));
         p.drawText(QRectF(hourBox.right(), rowY, 20, 36), Qt::AlignCenter, QStringLiteral(":"));
 
-        drawCombo(minBox, (t >= 0.20) ? QStringLiteral("30") : QStringLiteral("00"), minActive);
-        drawCombo(periodBox, (t >= 0.29) ? QStringLiteral("PM") : QStringLiteral("AM"), periodActive);
+        drawCombo(minBox, minVal, minActive);
+        drawCombo(periodBox, periodVal, periodActive);
 
         // Row 3: One-time schedule status + Save Alarm button
-        const double actY = card.bottom() - 48.0;
+        const double actY = card.bottom() - 46.0;
         const QRectF saveBtn(card.right() - 126, actY, 112, 34);
 
         QFont statusFont(PixelTheme::bodyFontFamily());
@@ -940,27 +999,51 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         p.setPen(Qt::white);
         p.drawText(saveBtn, Qt::AlignCenter, QStringLiteral("Save Alarm"));
 
-        // Phase A cursor: Hour -> Minute -> AM/PM -> Save Alarm
+        // Compact "Scroll to change" mouse-wheel cue below the card while scrolling hour/minute
+        const bool showingScrollCue = (t >= 0.06 && t < 0.43);
+        if (showingScrollCue) {
+            drawScrollWheelHint(p, QPointF(stage.center().x(), card.bottom() + 17.0), t * 5.0);
+        }
+
+        // Phase A cursor: Hour (scroll) -> Minute (scroll) -> AM/PM -> Save Alarm
         QPointF cursorPos = hourBox.center();
-        if (t < 0.08) {
-            cursorPos = lerpPoint(QPointF(card.left() + 8, card.bottom() - 8), hourBox.center(), smoothStep(0.0, 0.08, t));
-        } else if (t < 0.16) {
+        if (t < 0.06) {
+            cursorPos = lerpPoint(QPointF(card.left() + 8, card.bottom() - 8), hourBox.center(), smoothStep(0.0, 0.06, t));
+        } else if (t < 0.21) {
             cursorPos = hourBox.center();
-        } else if (t < 0.20) {
-            cursorPos = lerpPoint(hourBox.center(), minBox.center(), smoothStep(0.16, 0.20, t));
         } else if (t < 0.25) {
+            cursorPos = lerpPoint(hourBox.center(), minBox.center(), smoothStep(0.21, 0.25, t));
+        } else if (t < 0.37) {
             cursorPos = minBox.center();
-        } else if (t < 0.29) {
-            cursorPos = lerpPoint(minBox.center(), periodBox.center(), smoothStep(0.25, 0.29, t));
-        } else if (t < 0.35) {
-            cursorPos = lerpPoint(periodBox.center(), saveBtn.center(), smoothStep(0.29, 0.35, t));
+        } else if (t < 0.40) {
+            cursorPos = lerpPoint(minBox.center(), periodBox.center(), smoothStep(0.37, 0.40, t));
+        } else if (t < 0.43) {
+            cursorPos = periodBox.center();
+        } else if (t < 0.46) {
+            cursorPos = lerpPoint(periodBox.center(), saveBtn.center(), smoothStep(0.43, 0.46, t));
         } else {
             cursorPos = saveBtn.center();
         }
 
-        const bool clickingSave = (t >= 0.355 && t < 0.385);
-        if (t >= 0.36 && t < 0.44) {
-            drawClickRipple(p, saveBtn.center(), (t - 0.36) / 0.08, false);
+        // Subtle upward scroll chevron pulses right beside the active selector when wheel ticks
+        const auto drawWheelTick = [&](const QRectF& box, bool pulse) {
+            if (!pulse) {
+                return;
+            }
+            QFont wf(PixelTheme::bodyFontFamily());
+            wf.setPixelSize(11);
+            wf.setBold(true);
+            p.setFont(wf);
+            p.setPen(PixelTheme::kPrimaryAccent);
+            p.drawText(QRectF(box.left(), box.top() - 16, box.width() - 20, 15),
+                       Qt::AlignCenter, QStringLiteral("+1"));
+        };
+        drawWheelTick(hourBox, t >= 0.12 && t < 0.19);
+        drawWheelTick(minBox, (t >= 0.265 && t < 0.305) || (t >= 0.315 && t < 0.365));
+
+        const bool clickingSave = (t >= 0.465 && t < 0.49);
+        if (t >= 0.47 && t < 0.53) {
+            drawClickRipple(p, saveBtn.center(), (t - 0.47) / 0.06, false);
         }
         drawPixelCursor(p, cursorPos, clickingSave);
         p.restore();
@@ -971,7 +1054,7 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         p.setOpacity(phaseBAlpha);
         p.setRenderHint(QPainter::Antialiasing, true);
 
-        const bool snoozed = (t >= 0.72);
+        const bool snoozed = (t >= 0.76);
         const QRect notifRect(stage.left() + 44, stage.top() + 26, stage.width() - 88, 134);
         PixelTheme::paintPixelCard(p, notifRect, PixelTheme::kBackground, PixelTheme::kBorder, 2);
 
@@ -1037,13 +1120,13 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         const QPointF pStart(notifRect.right() - 20, notifRect.bottom() + 12);
         const QPointF pSnooze = snoozeBtn.center();
         QPointF cursorPos = pSnooze;
-        if (t < 0.68) {
-            cursorPos = lerpPoint(pStart, pSnooze, smoothStep(0.54, 0.68, t));
+        if (t < 0.72) {
+            cursorPos = lerpPoint(pStart, pSnooze, smoothStep(0.60, 0.72, t));
         }
 
-        const bool clickingSnooze = (t >= 0.70 && t < 0.735);
-        if (t >= 0.71 && t < 0.82) {
-            drawClickRipple(p, pSnooze, (t - 0.71) / 0.11, false);
+        const bool clickingSnooze = (t >= 0.74 && t < 0.775);
+        if (t >= 0.75 && t < 0.85) {
+            drawClickRipple(p, pSnooze, (t - 0.75) / 0.10, false);
         }
         drawPixelCursor(p, cursorPos, clickingSnooze);
         p.restore();
@@ -1057,7 +1140,7 @@ void OnboardingPreview::paintComplete(QPainter& p, const QRect& stage, double t)
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setPen(QPen(PixelTheme::kBorder, 2));
     p.setBrush(PixelTheme::kBackground);
-    p.drawEllipse(center, 58, 58);
+    p.drawEllipse(center, 72, 72);
 
     // Subtle pastel pixel sparkles around Chiikawa
     const auto drawSparkle = [&](double ox, double oy, double phase) {
@@ -1069,11 +1152,11 @@ void OnboardingPreview::paintComplete(QPainter& p, const QRect& stage, double t)
         p.fillRect(sx - 1, sy - 5, 2, 10, c);
         p.fillRect(sx - 5, sy - 1, 10, 2, c);
     };
-    drawSparkle(-74, -26, 0.0);
-    drawSparkle(72, -30, 0.33);
-    drawSparkle(-62, 30, 0.66);
-    drawSparkle(66, 26, 0.18);
+    drawSparkle(-94, -30, 0.0);
+    drawSparkle(94, -34, 0.33);
+    drawSparkle(-82, 34, 0.66);
+    drawSparkle(84, 30, 0.18);
     p.restore();
 
-    drawPetSprite(p, center, 106, false);
+    drawPetSprite(p, center, 132, false);
 }

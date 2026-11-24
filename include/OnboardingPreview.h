@@ -74,6 +74,7 @@ private:
     void drawPixelCursor(QPainter& p, const QPointF& tip, bool pressed) const;
     void drawClickRipple(QPainter& p, const QPointF& center, double progress, bool doubleRing) const;
     void drawPillBadge(QPainter& p, const QPointF& center, const QString& text, bool primary = false) const;
+    void drawScrollWheelHint(QPainter& p, const QPointF& center, double phase) const;
 
     Mode m_mode;
     bool m_active = false;
