@@ -637,10 +637,6 @@ void PetWindow::onTimerCompleted()
     }
     showCompletionToast();
     playCompletionFeedback();
-    if (m_tray) {
-        m_tray->notify(QStringLiteral("Chiikawa Study Pet"),
-                       QStringLiteral("Study session complete!"));
-    }
     if (m_bubble && m_hovering) {
         m_bubble->updateText(QStringLiteral("Done!"));
     }
