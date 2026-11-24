@@ -3,6 +3,7 @@
 #include "OnboardingPreview.h"
 #include "OnboardingWindow.h"
 #include "PetWindow.h"
+#include "PixelTheme.h"
 #include "SettingsPanel.h"
 #include "StudyTimer.h"
 #include "UISoundManager.h"
@@ -59,7 +60,7 @@ void TestOnboarding::firstLaunchShowsOnboardingAndHidesPet()
     QCOMPARE(pet.onboardingWindow()->isReplay(), false);
 
     // Skipping onboarding closes tutorial, persists completion, and reveals pet
-    auto* skipBtn = pet.onboardingWindow()->findChild<QPushButton*>(QStringLiteral("subtle"));
+    auto* skipBtn = pet.onboardingWindow()->findChild<QPushButton*>(QStringLiteral("onboardingSkip"));
     QVERIFY(skipBtn != nullptr);
     skipBtn->click();
     QApplication::processEvents();
@@ -82,8 +83,16 @@ void TestOnboarding::tutorialNavigationProgressAndInactivePreviewPause()
     win.openOnboarding(false);
     QApplication::processEvents();
 
-    QVERIFY(win.width() >= 320 && win.width() <= 480);
+    // Bundled SIL OFL fonts should load cleanly
+    QVERIFY(!PixelTheme::displayFontFamily().isEmpty());
+    QVERIFY(!PixelTheme::bodyFontFamily().isEmpty());
+
+    QVERIFY(win.width() >= 340 && win.width() <= 520);
     QCOMPARE(win.currentPage(), static_cast<int>(OnboardingWindow::Welcome));
+
+    // Step 1 click/double-click demonstration loop is slowed to 10-14 seconds
+    const double interactDuration = win.previewForPage(OnboardingWindow::Interact)->cycleDurationMs();
+    QVERIFY(interactDuration >= 10000.0 && interactDuration <= 14000.0);
 
     // Programmatic navigation must not emit click sounds
     win.goToPage(OnboardingWindow::Interact, false);
@@ -102,8 +111,14 @@ void TestOnboarding::tutorialNavigationProgressAndInactivePreviewPause()
         }
     }
 
-    auto* primaryBtn = win.findChild<QPushButton*>(QStringLiteral("primary"));
+    auto* primaryBtn = win.findChild<QPushButton*>(QStringLiteral("onboardingPrimary"));
+    auto* backBtn = win.findChild<QPushButton*>(QStringLiteral("onboardingSecondary"));
+    auto* skipBtn = win.findChild<QPushButton*>(QStringLiteral("onboardingSkip"));
     QVERIFY(primaryBtn != nullptr);
+    QVERIFY(backBtn != nullptr);
+    QVERIFY(skipBtn != nullptr);
+    QCOMPARE(primaryBtn->height(), backBtn->height());
+    QCOMPARE(primaryBtn->height(), skipBtn->height());
 
     // Advance through steps 2, 3, 4, Complete via user button clicks
     QTest::qWait(static_cast<int>(UISoundManager::kMinClickIntervalMs) + 15);
@@ -130,14 +145,6 @@ void TestOnboarding::tutorialNavigationProgressAndInactivePreviewPause()
     QCOMPARE(primaryBtn->text(), QStringLiteral("Meet Chiikawa"));
 
     // Back returns to step 4
-    QPushButton* backBtn = nullptr;
-    for (QPushButton* btn : win.findChildren<QPushButton*>()) {
-        if (btn->text() == QStringLiteral("Back")) {
-            backBtn = btn;
-            break;
-        }
-    }
-    QVERIFY(backBtn != nullptr);
     QTest::qWait(static_cast<int>(UISoundManager::kMinClickIntervalMs) + 15);
     backBtn->click();
     QCOMPARE(win.currentPage(), static_cast<int>(OnboardingWindow::Alarm));
