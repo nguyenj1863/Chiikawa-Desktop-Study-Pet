@@ -542,13 +542,24 @@ void TestAlarmAndSettings::completionToastPositioningHoverTimeoutAndActions()
     QCOMPARE(pos2.x(), 1920 + 1920 - 272 - 20);
     QCOMPARE(pos2.y(), 1040 - 110 - 20);
 
-    // 3. Verify 12-second default duration, hover pause/resume preserving remaining time, and actions
+    // 3. Verify 12-second default duration, layout bounds, hover pause/resume, and actions
     CompletionToast toast;
     QCOMPARE(CompletionToast::kDefaultDisplayDurationMs, 12000);
 
     toast.showNotification(12000);
+    QApplication::processEvents();
     QVERIFY(toast.isVisible());
     QVERIFY(toast.remainingDismissMs() > 11000 && toast.remainingDismissMs() <= 12000);
+
+    // Verify buttons are visible, equal height, have pointing-hand cursor, and do not clip
+    const auto buttons = toast.findChildren<QPushButton*>();
+    QCOMPARE(buttons.size(), 2);
+    QCOMPARE(buttons[0]->height(), buttons[1]->height());
+    for (QPushButton* btn : buttons) {
+        QVERIFY(btn->isVisible());
+        QCOMPARE(btn->cursor().shape(), Qt::PointingHandCursor);
+        QVERIFY(toast.rect().contains(btn->geometry()));
+    }
 
     QTest::qWait(120);
     QEnterEvent enterEvt(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));

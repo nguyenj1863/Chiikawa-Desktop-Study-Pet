@@ -1,4 +1,5 @@
 #include "CompletionToast.h"
+#include "PixelTheme.h"
 
 #include <QEnterEvent>
 #include <QGraphicsOpacityEffect>
@@ -7,7 +8,6 @@
 #include <QLabel>
 #include <QMovie>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QScreen>
@@ -22,46 +22,39 @@ CompletionToast::CompletionToast(QWidget* parent)
     setAttribute(Qt::WA_DeleteOnClose, false);
     setFocusPolicy(Qt::NoFocus);
     setWindowFlag(Qt::WindowDoesNotAcceptFocus, true);
-    setFixedWidth(272);
+    setFixedWidth(292);
+    setStyleSheet(PixelTheme::styleSheet());
 
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(14, 12, 14, 12);
-    root->setSpacing(8);
+    root->setContentsMargins(18, 16, 20, 18);
+    root->setSpacing(10);
 
     auto* top = new QHBoxLayout();
-    top->setSpacing(10);
+    top->setContentsMargins(0, 0, 0, 0);
+    top->setSpacing(12);
 
     m_gifLabel = new QLabel(this);
     m_gifLabel->setFixedSize(52, 52);
     m_gifLabel->setAlignment(Qt::AlignCenter);
-    m_gifLabel->setStyleSheet(QStringLiteral("background: transparent;"));
     m_movie = new QMovie(QStringLiteral(":/assets/chiikawa_twirl.gif"), QByteArray(), this);
     m_movie->setCacheMode(QMovie::CacheAll);
     m_movie->setScaledSize(QSize(52, 52));
     m_gifLabel->setMovie(m_movie);
-    top->addWidget(m_gifLabel, 0, Qt::AlignTop);
+    top->addWidget(m_gifLabel, 0, Qt::AlignVCenter);
 
     auto* textCol = new QVBoxLayout();
-    textCol->setSpacing(2);
+    textCol->setContentsMargins(0, 0, 0, 0);
+    textCol->setSpacing(3);
+    textCol->addStretch(1);
+
     m_title = new QLabel(QStringLiteral("Study session complete!"), this);
+    m_title->setObjectName(QStringLiteral("toastTitle"));
     m_title->setWordWrap(true);
-    m_title->setStyleSheet(QStringLiteral(
-        "QLabel {"
-        "  color: #654C43;"
-        "  font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;"
-        "  font-size: 13px;"
-        "  font-weight: 700;"
-        "  background: transparent;"
-        "}"));
+
     m_subtitle = new QLabel(QStringLiteral("Time for a break."), this);
+    m_subtitle->setObjectName(QStringLiteral("muted"));
     m_subtitle->setWordWrap(true);
-    m_subtitle->setStyleSheet(QStringLiteral(
-        "QLabel {"
-        "  color: #967F73;"
-        "  font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;"
-        "  font-size: 11px;"
-        "  background: transparent;"
-        "}"));
+
     textCol->addWidget(m_title);
     textCol->addWidget(m_subtitle);
     textCol->addStretch(1);
@@ -69,34 +62,14 @@ CompletionToast::CompletionToast(QWidget* parent)
     root->addLayout(top);
 
     auto* actions = new QHBoxLayout();
+    actions->setContentsMargins(0, 0, 0, 0);
     actions->setSpacing(8);
     actions->addStretch(1);
 
     m_dismissBtn = new QPushButton(QStringLiteral("Dismiss"), this);
-    m_againBtn = new QPushButton(QStringLiteral("Start again"), this);
+    m_againBtn = new QPushButton(QStringLiteral("Start Again"), this);
     m_againBtn->setObjectName(QStringLiteral("primary"));
 
-    const QString buttonStyle = QStringLiteral(
-        "QPushButton {"
-        "  background: #FFF0E6;"
-        "  color: #654C43;"
-        "  border: 2px solid #DDBFB3;"
-        "  border-radius: 4px;"
-        "  padding: 4px 10px;"
-        "  font-size: 11px;"
-        "  font-weight: 700;"
-        "  font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;"
-        "}"
-        "QPushButton:hover { background: #F7C2B5; border-color: #DF9B92; }"
-        "QPushButton:pressed { background: #F3A6A0; color: #FFFFFF; }"
-        "QPushButton#primary {"
-        "  background: #F3A6A0;"
-        "  color: #FFFFFF;"
-        "  border-color: #DC8981;"
-        "}"
-        "QPushButton#primary:hover { background: #F7C2B5; color: #654C43; }");
-    m_dismissBtn->setStyleSheet(buttonStyle);
-    m_againBtn->setStyleSheet(buttonStyle);
     m_dismissBtn->setCursor(Qt::PointingHandCursor);
     m_againBtn->setCursor(Qt::PointingHandCursor);
     m_dismissBtn->setFocusPolicy(Qt::NoFocus);
@@ -359,22 +332,5 @@ void CompletionToast::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing, false);
-
-    const QRect card = rect().adjusted(2, 2, -2, -2);
-
-    // Subtle soft shadow
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(101, 76, 67, 26));
-    p.drawRoundedRect(card.translated(0, 2), 6, 6);
-
-    // Warm cream fill + crisp pixel-style border
-    p.setBrush(QColor(QStringLiteral("#FFF9F2")));
-    p.setPen(QPen(QColor(QStringLiteral("#DDBFB3")), 2));
-    p.drawRoundedRect(card, 5, 5);
-
-    // Subtle pastel accent bar along top edge
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(QStringLiteral("#F3A6A0")));
-    p.fillRect(card.left() + 12, card.top() + 3, card.width() - 24, 3, QColor(QStringLiteral("#F3A6A0")));
+    PixelTheme::paintPixelCard(p, rect(), PixelTheme::kBackground, PixelTheme::kBorder, 4);
 }

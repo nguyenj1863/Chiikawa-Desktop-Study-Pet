@@ -350,6 +350,11 @@ QString styleSheet()
             font-weight: 700;
             letter-spacing: 0.4px;
         }
+        QLabel#toastTitle {
+            color: #654C43;
+            font-size: 13px;
+            font-weight: 700;
+        }
         QLabel#sectionTitle {
             color: #654C43;
             font-size: 12px;
