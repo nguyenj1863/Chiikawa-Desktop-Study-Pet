@@ -132,6 +132,8 @@ chiikawa_add_test(test_alarm_and_settings
     include/PixelTheme.h
     src/CollapsibleSection.cpp
     include/CollapsibleSection.h
+    src/CompletionToast.cpp
+    include/CompletionToast.h
     src/SettingsPanel.cpp
     include/SettingsPanel.h
     src/StartupManager.cpp

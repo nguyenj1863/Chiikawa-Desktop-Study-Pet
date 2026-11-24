@@ -104,6 +104,7 @@ void TestAppSettings::persistsDesktopAndAlarmPreferences()
         s.setAlarmNotificationEnabled(false);
         s.setSnoozeMinutes(15);
         s.setAlarmUse24Hour(true);
+        s.setButtonSoundsEnabled(false);
         s.setAlarmConfigured(true);
         s.setAlarmEnabled(true);
         s.setAlarmTime(QTime(17, 30));
@@ -118,6 +119,8 @@ void TestAppSettings::persistsDesktopAndAlarmPreferences()
         QCOMPARE(s.alarmNotificationEnabled(), false);
         QCOMPARE(s.snoozeMinutes(), 15);
         QCOMPARE(s.alarmUse24Hour(), true);
+        QCOMPARE(s.buttonSoundsEnabled(), false);
+        QCOMPARE(s.soundEnabled(), true); // independent of buttonSoundsEnabled
         QCOMPARE(s.hasAlarmConfigured(), true);
         QCOMPARE(s.alarmEnabled(), true);
         QCOMPARE(s.alarmTime(), QTime(17, 30));
@@ -143,6 +146,7 @@ void TestAppSettings::restoreDefaultsPreservesActiveSessionsAndAlarms()
     s.setAutoAnimationEnabled(false);
     s.setDesktopOnlyMode(true);
     s.setSoundEnabled(false);
+    s.setButtonSoundsEnabled(false);
     s.setAlarmSoundId(QStringLiteral("cozy_pop"));
     s.setAlarmVolume(0.8);
     s.setAlarmNotificationEnabled(false);
@@ -163,6 +167,7 @@ void TestAppSettings::restoreDefaultsPreservesActiveSessionsAndAlarms()
     QCOMPARE(s.autoAnimationEnabled(), SettingsDefaults::kAutoAnimationEnabled);
     QCOMPARE(s.desktopOnlyMode(), SettingsDefaults::kDesktopOnlyMode);
     QCOMPARE(s.soundEnabled(), SettingsDefaults::kSoundEnabled);
+    QCOMPARE(s.buttonSoundsEnabled(), SettingsDefaults::kButtonSoundsEnabled);
     QCOMPARE(s.alarmSoundId(), SettingsDefaults::defaultAlarmSoundId());
     QVERIFY(qAbs(s.alarmVolume() - SettingsDefaults::kAlarmVolume) < 0.001);
     QCOMPARE(s.alarmNotificationEnabled(), SettingsDefaults::kAlarmNotificationEnabled);

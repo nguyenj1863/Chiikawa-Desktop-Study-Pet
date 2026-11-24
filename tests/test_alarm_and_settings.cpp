@@ -2,12 +2,17 @@
 #include "AlarmSoundManager.h"
 #include "AppSettings.h"
 #include "CollapsibleSection.h"
+#include "CompletionToast.h"
 #include "SettingsDefaults.h"
 #include "SettingsPanel.h"
 #include "StudyTimer.h"
+#include "UISoundManager.h"
 
+#include <QCheckBox>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDateTime>
+#include <QEnterEvent>
 #include <QLabel>
 #include <QPushButton>
 #include <QSettings>
@@ -68,6 +73,8 @@ private slots:
     void studyTimerAndAlarmRemainIndependent();
     void soundManagerPreferencesAndStop();
     void collapsibleHeadersAndCompactSettingsLayout();
+    void completionToastPositioningHoverTimeoutAndActions();
+    void uiSoundManagerThrottlingAndUserOnlyPlayback();
 };
 
 void TestAlarmAndSettings::init()
@@ -518,6 +525,115 @@ void TestAlarmAndSettings::collapsibleHeadersAndCompactSettingsLayout()
         QVERIFY(sb->isVisibleTo(&panel));
         QVERIFY(sb->geometry().right() <= sb->parentWidget()->width());
     }
+}
+
+void TestAlarmAndSettings::completionToastPositioningHoverTimeoutAndActions()
+{
+    // 1. Verify bottom-right calculation respects taskbar (1920x1040 work area, 20px margin)
+    const QRect workArea(0, 0, 1920, 1040);
+    const QSize toastSize(272, 110);
+    const QPoint pos = CompletionToast::calculateBottomRightPosition(workArea, toastSize, 20);
+    QCOMPARE(pos.x(), 1920 - 272 - 20);
+    QCOMPARE(pos.y(), 1040 - 110 - 20);
+
+    // 2. Verify offset multi-monitor work area
+    const QRect secondMonitor(1920, 0, 1920, 1040);
+    const QPoint pos2 = CompletionToast::calculateBottomRightPosition(secondMonitor, toastSize, 20);
+    QCOMPARE(pos2.x(), 1920 + 1920 - 272 - 20);
+    QCOMPARE(pos2.y(), 1040 - 110 - 20);
+
+    // 3. Verify 12-second default duration, hover pause/resume preserving remaining time, and actions
+    CompletionToast toast;
+    QCOMPARE(CompletionToast::kDefaultDisplayDurationMs, 12000);
+
+    toast.showNotification(12000);
+    QVERIFY(toast.isVisible());
+    QVERIFY(toast.remainingDismissMs() > 11000 && toast.remainingDismissMs() <= 12000);
+
+    QTest::qWait(120);
+    QEnterEvent enterEvt(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
+    QCoreApplication::sendEvent(&toast, &enterEvt);
+    QCOMPARE(toast.isAutoHidePaused(), true);
+    const int pausedRemaining = toast.remainingDismissMs();
+    QVERIFY(pausedRemaining < 12000);
+
+    // While hovered, remaining timeout stays frozen
+    QTest::qWait(120);
+    QCOMPARE(toast.remainingDismissMs(), pausedRemaining);
+
+    // Leaving resumes from remaining time (does not reset back to 12000)
+    QEvent leaveEvt(QEvent::Leave);
+    QCoreApplication::sendEvent(&toast, &leaveEvt);
+    QCOMPARE(toast.isAutoHidePaused(), false);
+    QVERIFY(toast.remainingDismissMs() <= pausedRemaining);
+
+    // Start Again emits signal once and initiates dismissal
+    QSignalSpy againSpy(&toast, &CompletionToast::startAgainRequested);
+    auto* againBtn = toast.findChild<QPushButton*>(QStringLiteral("primary"));
+    QVERIFY(againBtn != nullptr);
+    againBtn->click();
+    QCOMPARE(againSpy.count(), 1);
+}
+
+void TestAlarmAndSettings::uiSoundManagerThrottlingAndUserOnlyPlayback()
+{
+    UISoundManager uiSound;
+    QVERIFY(uiSound.isLoaded());
+    QCOMPARE(uiSound.isEnabled(), true);
+    QVERIFY(qAbs(uiSound.volume() - UISoundManager::kDefaultVolume) < 0.001);
+
+    // Silent volume for automated test runs while still exercising playback counting & throttling
+    uiSound.setVolume(0.0);
+    uiSound.resetPlayCount();
+
+    // First click plays; immediate rapid repeat within 45ms is throttled
+    uiSound.playClick();
+    uiSound.playClick();
+    QCOMPARE(uiSound.playCount(), 1);
+
+    // After throttle window passes, next click plays
+    QTest::qWait(static_cast<int>(UISoundManager::kMinClickIntervalMs) + 15);
+    uiSound.playClick();
+    QCOMPARE(uiSound.playCount(), 2);
+
+    // Disabled UISoundManager produces zero clicks
+    uiSound.setEnabled(false);
+    QTest::qWait(static_cast<int>(UISoundManager::kMinClickIntervalMs) + 15);
+    uiSound.playClick();
+    QCOMPARE(uiSound.playCount(), 2);
+
+    // Programmatic UI syncing must NEVER trigger click sounds
+    uiSound.setEnabled(true);
+    uiSound.resetPlayCount();
+
+    AppSettings settings;
+    StudyTimer timer;
+    AlarmScheduler scheduler(&settings);
+    AlarmSoundManager alarmSound;
+
+    SettingsPanel panel(&settings, &timer, &scheduler, &alarmSound, &uiSound);
+    panel.syncFromSettings();
+    panel.syncFromTimer();
+    panel.syncFromAlarm();
+    panel.setUse24Hour(true);
+    QCOMPARE(uiSound.playCount(), 0);
+
+    // User-initiated button click triggers exactly one click sound
+    auto* countdownBtn = panel.findChild<QPushButton*>(QStringLiteral("countdownDisplay"));
+    QVERIFY(countdownBtn != nullptr);
+    countdownBtn->click();
+    QCOMPARE(uiSound.playCount(), 1);
+
+    // Disabled control must not produce click sound
+    countdownBtn->setEnabled(false);
+    QTest::qWait(static_cast<int>(UISoundManager::kMinClickIntervalMs) + 15);
+    countdownBtn->click();
+    QCOMPARE(uiSound.playCount(), 1);
+
+    // Button Sounds checkbox exists and defaults to checked
+    auto* btnSoundsCheck = panel.findChild<QCheckBox*>(QStringLiteral("buttonSoundsCheck"));
+    QVERIFY(btnSoundsCheck != nullptr);
+    QCOMPARE(btnSoundsCheck->isChecked(), true);
 }
 
 QTEST_MAIN(TestAlarmAndSettings)
