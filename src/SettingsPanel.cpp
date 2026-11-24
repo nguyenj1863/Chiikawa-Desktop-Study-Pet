@@ -21,6 +21,7 @@
 #include <QDateTime>
 #include <QFrame>
 #include <QGuiApplication>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QLabel>
@@ -259,7 +260,7 @@ void SettingsPanel::buildUi()
     timerTitleRow->setContentsMargins(0, 0, 0, 0);
     auto* timerTitle = new QLabel(QStringLiteral("Study Timer"), timerCard);
     timerTitle->setObjectName(QStringLiteral("sectionTitle"));
-    m_editDurationBtn = new PixelIconButton(PixelIcon::Edit, 22, 11, false, timerCard);
+    m_editDurationBtn = new PixelIconButton(PixelIcon::Edit, 28, 16, false, timerCard);
     m_editDurationBtn->setToolTip(QStringLiteral("Edit custom duration"));
     m_editDurationBtn->setAccessibleName(QStringLiteral("Edit custom duration"));
     connect(m_editDurationBtn, &QPushButton::clicked, this, &SettingsPanel::onToggleDurationEditor);
@@ -280,25 +281,46 @@ void SettingsPanel::buildUi()
     // Compact custom duration editor (fits cleanly inside timer card without widening popup)
     m_durationEditor = new QWidget(timerCard);
     m_durationEditor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    auto* editRow = new QHBoxLayout(m_durationEditor);
-    editRow->setContentsMargins(0, 0, 0, 0);
-    editRow->setSpacing(6);
+    auto* editGrid = new QGridLayout(m_durationEditor);
+    editGrid->setContentsMargins(0, 2, 0, 2);
+    editGrid->setHorizontalSpacing(6);
+    editGrid->setVerticalSpacing(2);
 
-    auto configureSpin = [](QSpinBox* sb, int maxVal, const QString& suffix) {
+    auto configureSpin = [](QSpinBox* sb,
+                            int maxVal,
+                            const QString& suffix,
+                            const QString& accessibleName,
+                            const QString& tooltip) {
         sb->setRange(0, maxVal);
         sb->setSuffix(suffix);
         sb->setAlignment(Qt::AlignCenter);
+        sb->setCursor(Qt::PointingHandCursor);
+        sb->setAccessibleName(accessibleName);
+        sb->setToolTip(tooltip);
         sb->setMinimumWidth(0);
         sb->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-        sb->setFixedHeight(26);
+        sb->setFixedHeight(32);
+    };
+
+    auto makeFieldLabel = [this](const QString& caption) -> QLabel* {
+        auto* lbl = new QLabel(caption, m_durationEditor);
+        lbl->setObjectName(QStringLiteral("mutedLabel"));
+        lbl->setAlignment(Qt::AlignCenter);
+        return lbl;
     };
 
     m_hours = new QSpinBox(m_durationEditor);
-    configureSpin(m_hours, 23, QStringLiteral("h"));
+    configureSpin(m_hours, 23, QStringLiteral(" h"),
+                  QStringLiteral("Hours"),
+                  QStringLiteral("Hours (0–23): use arrows, scroll, or type"));
     m_minutes = new QSpinBox(m_durationEditor);
-    configureSpin(m_minutes, 59, QStringLiteral("m"));
+    configureSpin(m_minutes, 59, QStringLiteral(" m"),
+                  QStringLiteral("Minutes"),
+                  QStringLiteral("Minutes (0–59): use arrows, scroll, or type"));
     m_seconds = new QSpinBox(m_durationEditor);
-    configureSpin(m_seconds, 59, QStringLiteral("s"));
+    configureSpin(m_seconds, 59, QStringLiteral(" s"),
+                  QStringLiteral("Seconds"),
+                  QStringLiteral("Seconds (0–59): use arrows, scroll, or type"));
 
     connect(m_hours, &QSpinBox::valueChanged, this, &SettingsPanel::onDurationInputsChanged);
     connect(m_minutes, &QSpinBox::valueChanged, this, &SettingsPanel::onDurationInputsChanged);
@@ -307,9 +329,15 @@ void SettingsPanel::buildUi()
     connect(m_minutes, &QAbstractSpinBox::editingFinished, this, &SettingsPanel::playUiClick);
     connect(m_seconds, &QAbstractSpinBox::editingFinished, this, &SettingsPanel::playUiClick);
 
-    editRow->addWidget(m_hours, 1);
-    editRow->addWidget(m_minutes, 1);
-    editRow->addWidget(m_seconds, 1);
+    editGrid->addWidget(makeFieldLabel(QStringLiteral("Hours")), 0, 0);
+    editGrid->addWidget(makeFieldLabel(QStringLiteral("Minutes")), 0, 1);
+    editGrid->addWidget(makeFieldLabel(QStringLiteral("Seconds")), 0, 2);
+    editGrid->addWidget(m_hours, 1, 0);
+    editGrid->addWidget(m_minutes, 1, 1);
+    editGrid->addWidget(m_seconds, 1, 2);
+    editGrid->setColumnStretch(0, 1);
+    editGrid->setColumnStretch(1, 1);
+    editGrid->setColumnStretch(2, 1);
     m_durationEditor->hide();
     timerCardLayout->addWidget(m_durationEditor);
 
@@ -922,6 +950,14 @@ void SettingsPanel::refreshTimerUi()
     m_countdownBtn->setEnabled(!active);
     m_countdownBtn->setCursor(active ? Qt::ArrowCursor : Qt::PointingHandCursor);
     m_editDurationBtn->setEnabled(!active);
+    m_editDurationBtn->setCursor(active ? Qt::ArrowCursor : Qt::PointingHandCursor);
+    if (running) {
+        m_editDurationBtn->setToolTip(QStringLiteral("Pause or reset the timer to edit the duration"));
+    } else if (m_timer->isPaused()) {
+        m_editDurationBtn->setToolTip(QStringLiteral("Reset the timer to edit the duration"));
+    } else {
+        m_editDurationBtn->setToolTip(QStringLiteral("Edit custom duration"));
+    }
     for (QPushButton* preset : {m_preset25, m_preset45, m_preset60}) {
         preset->setEnabled(!active);
         preset->setCursor(active ? Qt::ArrowCursor : Qt::PointingHandCursor);
