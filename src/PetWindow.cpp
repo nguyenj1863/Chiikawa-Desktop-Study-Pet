@@ -621,8 +621,8 @@ void PetWindow::showCompletionToast()
     if (!m_completionToast) {
         return;
     }
-    // Re-show replaces any lingering toast so completion stays single-shot visually
-    m_completionToast->showNear(frameGeometry());
+    // Single anchored bottom-right toast on the primary monitor; independent of pet position
+    m_completionToast->showNotification();
 }
 
 void PetWindow::onTimerCompleted()
