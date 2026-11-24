@@ -44,6 +44,7 @@ void AppSettings::load()
     m_lastTimerSeconds = settings.value(QStringLiteral("timer/lastDuration"), SettingsDefaults::kTimerSeconds).toInt();
 
     m_soundEnabled = settings.value(QStringLiteral("app/soundEnabled"), SettingsDefaults::kSoundEnabled).toBool();
+    m_buttonSoundsEnabled = settings.value(QStringLiteral("app/buttonSoundsEnabled"), SettingsDefaults::kButtonSoundsEnabled).toBool();
     m_alarmSoundId = settings.value(QStringLiteral("alarm/soundId"), SettingsDefaults::defaultAlarmSoundId()).toString();
     m_alarmVolume = settings.value(QStringLiteral("alarm/volume"), SettingsDefaults::kAlarmVolume).toDouble();
     m_alarmNotificationEnabled = settings.value(QStringLiteral("alarm/notificationEnabled"), SettingsDefaults::kAlarmNotificationEnabled).toBool();
@@ -98,6 +99,7 @@ void AppSettings::save() const
     settings.setValue(QStringLiteral("timer/lastDuration"), m_lastTimerSeconds);
 
     settings.setValue(QStringLiteral("app/soundEnabled"), m_soundEnabled);
+    settings.setValue(QStringLiteral("app/buttonSoundsEnabled"), m_buttonSoundsEnabled);
     settings.setValue(QStringLiteral("alarm/soundId"), m_alarmSoundId);
     settings.setValue(QStringLiteral("alarm/volume"), m_alarmVolume);
     settings.setValue(QStringLiteral("alarm/notificationEnabled"), m_alarmNotificationEnabled);
@@ -133,6 +135,7 @@ void AppSettings::restoreDefaults()
     m_autoAnimationEnabled = SettingsDefaults::kAutoAnimationEnabled;
     m_desktopOnlyMode = SettingsDefaults::kDesktopOnlyMode;
     m_soundEnabled = SettingsDefaults::kSoundEnabled;
+    m_buttonSoundsEnabled = SettingsDefaults::kButtonSoundsEnabled;
     m_alarmSoundId = SettingsDefaults::defaultAlarmSoundId();
     m_alarmVolume = SettingsDefaults::kAlarmVolume;
     m_alarmNotificationEnabled = SettingsDefaults::kAlarmNotificationEnabled;
@@ -190,6 +193,11 @@ void AppSettings::setLastTimerSeconds(int seconds)
 void AppSettings::setSoundEnabled(bool enabled)
 {
     m_soundEnabled = enabled;
+}
+
+void AppSettings::setButtonSoundsEnabled(bool enabled)
+{
+    m_buttonSoundsEnabled = enabled;
 }
 
 void AppSettings::setAlarmSoundId(const QString& soundId)

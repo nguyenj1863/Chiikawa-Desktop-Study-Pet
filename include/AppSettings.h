@@ -65,6 +65,9 @@ public:
     [[nodiscard]] bool soundEnabled() const { return m_soundEnabled; }
     void setSoundEnabled(bool enabled);
 
+    [[nodiscard]] bool buttonSoundsEnabled() const { return m_buttonSoundsEnabled; }
+    void setButtonSoundsEnabled(bool enabled);
+
     [[nodiscard]] QString alarmSoundId() const { return m_alarmSoundId; }
     void setAlarmSoundId(const QString& soundId);
 
@@ -116,6 +119,7 @@ private:
     int m_lastTimerSeconds = SettingsDefaults::kTimerSeconds;
 
     bool m_soundEnabled = SettingsDefaults::kSoundEnabled;
+    bool m_buttonSoundsEnabled = SettingsDefaults::kButtonSoundsEnabled;
     QString m_alarmSoundId = SettingsDefaults::defaultAlarmSoundId();
     double m_alarmVolume = SettingsDefaults::kAlarmVolume;
     bool m_alarmNotificationEnabled = SettingsDefaults::kAlarmNotificationEnabled;
