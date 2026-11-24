@@ -94,12 +94,14 @@ void OnboardingWindow::buildUi()
     m_stack->addWidget(createPageWidget(
         Welcome,
         QStringLiteral("Welcome!"),
+        QStringLiteral("Study Pet"),
         QStringLiteral("Chiikawa is ready to keep you company while you study."),
         m_previews[Welcome]));
 
     m_stack->addWidget(createPageWidget(
         Interact,
         QStringLiteral("Say hello!"),
+        QString(),
         QStringLiteral("<b style='color:#593E35;'>Click</b> to change animations.<br>"
                        "<b style='color:#593E35;'>Double-click</b> to open settings."),
         m_previews[Interact]));
@@ -107,24 +109,28 @@ void OnboardingWindow::buildUi()
     m_stack->addWidget(createPageWidget(
         Drag,
         QStringLiteral("Take me anywhere!"),
+        QString(),
         QStringLiteral("<b style='color:#593E35;'>Drag</b> Chiikawa anywhere on your desktop."),
         m_previews[Drag]));
 
     m_stack->addWidget(createPageWidget(
         StudyTimer,
         QStringLiteral("Time to focus!"),
+        QString(),
         QStringLiteral("Set a <b style='color:#593E35;'>timer</b> and <b style='color:#593E35;'>hover</b> over Chiikawa to check your progress."),
         m_previews[StudyTimer]));
 
     m_stack->addWidget(createPageWidget(
         Alarm,
         QStringLiteral("Don't Forget!"),
+        QString(),
         QStringLiteral("Set an <b style='color:#593E35;'>alarm</b> and <b style='color:#593E35;'>snooze</b> it if you need a little more time."),
         m_previews[Alarm]));
 
     m_stack->addWidget(createPageWidget(
         Complete,
         QStringLiteral("All set!"),
+        QString(),
         QStringLiteral("Chiikawa is ready. Happy studying!"),
         m_previews[Complete]));
 
@@ -183,13 +189,14 @@ void OnboardingWindow::buildUi()
 
 QWidget* OnboardingWindow::createPageWidget(int pageIndex,
                                             const QString& heading,
+                                            const QString& appTitle,
                                             const QString& description,
                                             OnboardingPreview* preview)
 {
     auto* page = new QWidget(m_stack);
     auto* layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
+    layout->setSpacing(appTitle.isEmpty() ? 6 : 2);
 
     const bool isHero = (pageIndex == Welcome || pageIndex == Complete);
 
@@ -198,6 +205,16 @@ QWidget* OnboardingWindow::createPageWidget(int pageIndex,
                                    : QStringLiteral("onboardingHeading"));
     titleLbl->setAlignment(Qt::AlignCenter);
     titleLbl->setWordWrap(true);
+    layout->addWidget(titleLbl);
+
+    if (!appTitle.isEmpty()) {
+        auto* appTitleLbl = new QLabel(appTitle, page);
+        appTitleLbl->setObjectName(QStringLiteral("onboardingAppTitle"));
+        appTitleLbl->setAlignment(Qt::AlignCenter);
+        appTitleLbl->setWordWrap(true);
+        layout->addWidget(appTitleLbl);
+        layout->addSpacing(4);
+    }
 
     auto* bodyLbl = new QLabel(description, page);
     bodyLbl->setObjectName(QStringLiteral("onboardingBody"));
@@ -205,7 +222,6 @@ QWidget* OnboardingWindow::createPageWidget(int pageIndex,
     bodyLbl->setAlignment(Qt::AlignCenter);
     bodyLbl->setWordWrap(true);
 
-    layout->addWidget(titleLbl);
     layout->addWidget(bodyLbl);
     layout->addSpacing(8);
     layout->addWidget(preview);

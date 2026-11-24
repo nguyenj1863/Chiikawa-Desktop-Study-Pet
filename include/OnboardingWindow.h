@@ -72,6 +72,7 @@ private:
     void buildUi();
     QWidget* createPageWidget(int pageIndex,
                               const QString& heading,
+                              const QString& appTitle,
                               const QString& description,
                               OnboardingPreview* preview);
     void playUiClick();
