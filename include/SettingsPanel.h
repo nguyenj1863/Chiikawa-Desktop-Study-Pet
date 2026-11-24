@@ -9,10 +9,12 @@ class QSlider;
 class QCheckBox;
 class QPushButton;
 class QLabel;
+class QScrollArea;
+class QScreen;
 
 /**
- * Compact floating settings panel with pastel minimalist styling.
- * Closing this panel hides settings only; use Quit to stop the app.
+ * Compact floating settings panel with soft pastel styling.
+ * Automatically sizes to fit its content without unnecessary scrollbars.
  */
 class SettingsPanel : public QWidget {
     Q_OBJECT
@@ -23,6 +25,7 @@ public:
     void showNear(const QRect& petGlobalGeometry);
     void syncFromSettings();
     void syncFromTimer();
+    void updateLayoutSize(const QScreen* screen = nullptr);
 
 signals:
     void settingsApplied();
@@ -45,6 +48,7 @@ private slots:
     void onApplyPetSettings();
     void onClosePanel();
     void refreshTimerButtons();
+    void updatePresetSelection();
 
 private:
     void buildUi();
@@ -56,9 +60,16 @@ private:
     AppSettings* m_settings = nullptr;
     StudyTimer* m_timer = nullptr;
 
+    QWidget* m_headerWidget = nullptr;
+    QScrollArea* m_scrollArea = nullptr;
+    QWidget* m_contentWidget = nullptr;
+
     QSpinBox* m_hours = nullptr;
     QSpinBox* m_minutes = nullptr;
     QSpinBox* m_seconds = nullptr;
+    QPushButton* m_preset25 = nullptr;
+    QPushButton* m_preset45 = nullptr;
+    QPushButton* m_preset60 = nullptr;
     QPushButton* m_startBtn = nullptr;
     QPushButton* m_pauseBtn = nullptr;
     QPushButton* m_resetBtn = nullptr;
