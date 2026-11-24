@@ -1,0 +1,276 @@
+name: Build, Test, and Release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QT_VERSION: '6.8.3'
+
+jobs:
+  windows-x64:
+    name: Windows x64 (MSVC 2022)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          modules: qtmultimedia
+
+      - name: Setup MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="$env:Qt6_DIR"
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build build --parallel
+
+      - name: Run automated tests
+        shell: pwsh
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package portable Windows ZIP
+        shell: pwsh
+        run: .\scripts\package.ps1 -QtPrefix "$env:Qt6_DIR"
+
+      - name: Verify ZIP contents
+        shell: pwsh
+        run: |
+          $zip = "dist\ChiikawaStudyPet-Windows-x64.zip"
+          if (-not (Test-Path $zip)) { throw "Missing $zip" }
+          $size = (Get-Item $zip).Length
+          Write-Host "ZIP size: $size bytes"
+          if ($size -lt 5000000) { throw "ZIP unexpectedly small: $size bytes" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $entries = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip)).Entries | ForEach-Object { $_.FullName }
+          foreach ($req in @(
+            "ChiikawaStudyPet-Windows-x64/ChiikawaStudyPet.exe",
+            "ChiikawaStudyPet-Windows-x64/Qt6Core.dll",
+            "ChiikawaStudyPet-Windows-x64/Qt6Widgets.dll",
+            "ChiikawaStudyPet-Windows-x64/Qt6Multimedia.dll",
+            "ChiikawaStudyPet-Windows-x64/platforms/qwindows.dll",
+            "ChiikawaStudyPet-Windows-x64/imageformats/qgif.dll",
+            "ChiikawaStudyPet-Windows-x64/LICENSE",
+            "ChiikawaStudyPet-Windows-x64/THIRD_PARTY_NOTICES.md"
+          )) {
+            if ($entries -notcontains $req) { throw "Missing entry in ZIP: $req" }
+          }
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChiikawaStudyPet-Windows-x64
+          path: dist/ChiikawaStudyPet-Windows-x64.zip
+          if-no-files-found: error
+
+  macos-arm64:
+    name: macOS Apple Silicon (arm64)
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: mac
+          target: desktop
+          arch: clang_64
+          modules: qtmultimedia
+
+      - name: Configure CMake (arm64)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_PREFIX_PATH="${Qt6_DIR}"
+
+      - name: Build Release
+        run: cmake --build build --parallel
+
+      - name: Run automated tests (offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package macOS arm64 DMG
+        env:
+          CMAKE_PREFIX_PATH: ${{ env.Qt6_DIR }}
+        run: |
+          chmod +x scripts/package_macos.sh
+          ./scripts/package_macos.sh arm64 build
+
+      - name: Launch smoke test (offscreen)
+        run: |
+          MOUNT_DIR="$(mktemp -d)"
+          hdiutil attach dist/ChiikawaStudyPet-macOS-arm64.dmg -mountpoint "${MOUNT_DIR}" -nobrowse -readonly
+          ls -la "${MOUNT_DIR}"
+          test -d "${MOUNT_DIR}/ChiikawaStudyPet.app"
+          test -f "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/MacOS/ChiikawaStudyPet"
+          test -f "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/Info.plist"
+          QT_QPA_PLATFORM=offscreen "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/MacOS/ChiikawaStudyPet" &
+          APP_PID=$!
+          sleep 3
+          if ! kill -0 "${APP_PID}" 2>/dev/null; then
+            hdiutil detach "${MOUNT_DIR}" -quiet || true
+            echo "Error: ChiikawaStudyPet exited prematurely during launch smoke test" >&2
+            exit 1
+          fi
+          kill "${APP_PID}" 2>/dev/null || true
+          wait "${APP_PID}" 2>/dev/null || true
+          hdiutil detach "${MOUNT_DIR}" -quiet
+          rmdir "${MOUNT_DIR}"
+
+      - name: Upload macOS arm64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChiikawaStudyPet-macOS-arm64
+          path: dist/ChiikawaStudyPet-macOS-arm64.dmg
+          if-no-files-found: error
+
+  macos-x64:
+    name: macOS Intel (x86_64)
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: mac
+          target: desktop
+          arch: clang_64
+          modules: qtmultimedia
+
+      - name: Configure CMake (x86_64)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_PREFIX_PATH="${Qt6_DIR}"
+
+      - name: Build Release
+        run: cmake --build build --parallel
+
+      - name: Run automated tests (offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package macOS x64 DMG
+        env:
+          CMAKE_PREFIX_PATH: ${{ env.Qt6_DIR }}
+        run: |
+          chmod +x scripts/package_macos.sh
+          ./scripts/package_macos.sh x64 build
+
+      - name: Launch smoke test (offscreen)
+        run: |
+          MOUNT_DIR="$(mktemp -d)"
+          hdiutil attach dist/ChiikawaStudyPet-macOS-x64.dmg -mountpoint "${MOUNT_DIR}" -nobrowse -readonly
+          ls -la "${MOUNT_DIR}"
+          test -d "${MOUNT_DIR}/ChiikawaStudyPet.app"
+          test -f "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/MacOS/ChiikawaStudyPet"
+          test -f "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/Info.plist"
+          QT_QPA_PLATFORM=offscreen "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/MacOS/ChiikawaStudyPet" &
+          APP_PID=$!
+          sleep 3
+          if ! kill -0 "${APP_PID}" 2>/dev/null; then
+            hdiutil detach "${MOUNT_DIR}" -quiet || true
+            echo "Error: ChiikawaStudyPet exited prematurely during launch smoke test" >&2
+            exit 1
+          fi
+          kill "${APP_PID}" 2>/dev/null || true
+          wait "${APP_PID}" 2>/dev/null || true
+          hdiutil detach "${MOUNT_DIR}" -quiet
+          rmdir "${MOUNT_DIR}"
+
+      - name: Upload macOS x64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChiikawaStudyPet-macOS-x64
+          path: dist/ChiikawaStudyPet-macOS-x64.dmg
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [ windows-x64, macos-arm64, macos-x64 ]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        working-directory: release-assets
+        run: |
+          sha256sum ChiikawaStudyPet-Windows-x64.zip \
+            ChiikawaStudyPet-macOS-arm64.dmg \
+            ChiikawaStudyPet-macOS-x64.dmg > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          cat > release_notes.md <<'EOF'
+          I made this while I was supposed to be studying, so I figured I might as well make it downloadable.
+
+          It's a small desktop pet built with C++20 and Qt 6. Chiikawa wanders around your screen, switches animations, and comes with a study timer and one-time alarm.
+
+          This is the first release, so there may still be a few things to fix.
+
+          ### Downloads
+
+          **Windows (64-bit)**
+          Download `ChiikawaStudyPet-Windows-x64.zip`, extract it, and double-click `ChiikawaStudyPet.exe`.
+
+          **macOS (Apple Silicon & Intel)**
+          - Apple Silicon (M1 / M2 / M3 / M4): download `ChiikawaStudyPet-macOS-arm64.dmg`
+          - Intel Mac: download `ChiikawaStudyPet-macOS-x64.dmg`
+
+          Open the DMG and drag `ChiikawaStudyPet.app` into **Applications**.
+
+          ### Notes & Known Limitations
+
+          - **macOS signing:** The macOS builds are currently unsigned (ad-hoc signed, not notarized with an Apple Developer ID). On first launch, macOS Gatekeeper may warn that the app is from an unidentified developer; you can open it via **Right-click → Open** or **System Settings → Privacy & Security → Open Anyway**.
+          - **Desktop-Only Mode:** Currently supported on Windows only (disabled on macOS in this release).
+          - **Checksums:** Verify downloads with `SHA256SUMS.txt`.
+          EOF
+
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" release-assets/* --clobber
+          else
+            gh release create "${TAG_NAME}" release-assets/* \
+              --title "Study Pet ${TAG_NAME}" \
+              --notes-file release_notes.md
+          fi

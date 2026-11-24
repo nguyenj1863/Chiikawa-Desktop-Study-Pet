@@ -576,7 +576,7 @@ void TestAlarmAndSettings::completionToastPositioningHoverTimeoutAndActions()
         QVERIFY(toast.rect().contains(btn->geometry()));
     }
 
-    QTest::qWait(120);
+    QTest::qWait(260);
     QEnterEvent enterEvt(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
     QCoreApplication::sendEvent(&toast, &enterEvt);
     QCOMPARE(toast.isAutoHidePaused(), true);
