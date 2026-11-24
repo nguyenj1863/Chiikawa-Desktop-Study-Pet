@@ -47,6 +47,17 @@ inline const QColor kDangerText{0x8F, 0x43, 0x40};      // #8F4340
 [[nodiscard]] QIcon icon(PixelIcon kind, const QColor& color = kPrimaryText, int logicalSize = 14);
 
 /**
+ * Loads bundled SIL OFL fonts (Pixelify Sans & Nunito) once into QFontDatabase.
+ */
+void ensureFontsLoaded();
+
+/** Resolved pixel display font family (Pixelify Sans, falling back to Segoe UI). */
+[[nodiscard]] QString displayFontFamily();
+
+/** Resolved friendly body font family (Nunito, falling back to Segoe UI). */
+[[nodiscard]] QString bodyFontFamily();
+
+/**
  * Paints a kawaii pixel-stepped card frame with subtle pixel shadow and inner highlight.
  */
 void paintPixelCard(QPainter& p,

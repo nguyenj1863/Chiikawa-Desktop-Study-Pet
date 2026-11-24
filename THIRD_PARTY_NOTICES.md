@@ -47,3 +47,12 @@ When packaged with `windeployqt`, Qt Multimedia's FFmpeg plugin may deploy dynam
 
 - Qt's official prebuilt Windows Qt 6 Multimedia binaries ship FFmpeg built under the **GNU Lesser General Public License v2.1 or later (LGPLv2.1+)**.
 - FFmpeg remains subject to its own license terms (<https://ffmpeg.org/legal.html>) and is dynamically linked so the DLLs remain replaceable.
+
+---
+
+## Bundled Open-Source Fonts (SIL Open Font License 1.1)
+
+The onboarding interface bundles two open-source typefaces in `assets/fonts/` under the **SIL Open Font License, Version 1.1** (<https://openfontlicense.org/>):
+
+- **Pixelify Sans** (`assets/fonts/PixelifySans.ttf`) — Copyright 2023 The Pixelify Sans Project Authors (<https://github.com/eifetx/Pixelify-Sans>). Licensed under SIL OFL 1.1.
+- **Nunito** (`assets/fonts/Nunito.ttf`) — Copyright 2014 The Nunito Project Authors (<https://github.com/googlefonts/nunito>). Licensed under SIL OFL 1.1.

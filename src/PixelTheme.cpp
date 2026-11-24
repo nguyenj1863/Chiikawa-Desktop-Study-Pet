@@ -2,6 +2,7 @@
 
 #include <QEnterEvent>
 #include <QEvent>
+#include <QFontDatabase>
 #include <QHash>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -228,6 +229,54 @@ PixelGrid gridFor(PixelIcon kind)
 
 namespace PixelTheme {
 
+namespace {
+bool g_fontsLoaded = false;
+QString g_displayFamily;
+QString g_bodyFamily;
+} // namespace
+
+void ensureFontsLoaded()
+{
+    if (g_fontsLoaded) {
+        return;
+    }
+    g_fontsLoaded = true;
+
+    const int displayId = QFontDatabase::addApplicationFont(QStringLiteral(":/assets/fonts/PixelifySans.ttf"));
+    if (displayId >= 0) {
+        const QStringList families = QFontDatabase::applicationFontFamilies(displayId);
+        if (!families.isEmpty()) {
+            g_displayFamily = families.first();
+        }
+    }
+    if (g_displayFamily.isEmpty()) {
+        g_displayFamily = QStringLiteral("Segoe UI");
+    }
+
+    const int bodyId = QFontDatabase::addApplicationFont(QStringLiteral(":/assets/fonts/Nunito.ttf"));
+    if (bodyId >= 0) {
+        const QStringList families = QFontDatabase::applicationFontFamilies(bodyId);
+        if (!families.isEmpty()) {
+            g_bodyFamily = families.first();
+        }
+    }
+    if (g_bodyFamily.isEmpty()) {
+        g_bodyFamily = QStringLiteral("Segoe UI");
+    }
+}
+
+QString displayFontFamily()
+{
+    ensureFontsLoaded();
+    return g_displayFamily;
+}
+
+QString bodyFontFamily()
+{
+    ensureFontsLoaded();
+    return g_bodyFamily;
+}
+
 QIcon icon(PixelIcon kind, const QColor& color, int logicalSize)
 {
     static QHash<QString, QIcon> cache;
@@ -370,16 +419,99 @@ QString styleSheet()
             font-size: 13px;
             font-weight: 700;
         }
+        QLabel#onboardingWelcomeHeading {
+            color: #593E35;
+            font-family: '%1', 'Segoe UI', sans-serif;
+            font-size: 34px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+        }
         QLabel#onboardingHeading {
-            color: #654C43;
-            font-size: 18px;
+            color: #593E35;
+            font-family: '%1', 'Segoe UI', sans-serif;
+            font-size: 28px;
             font-weight: 700;
             letter-spacing: 0.3px;
         }
         QLabel#onboardingBody {
-            color: #967F73;
-            font-size: 12px;
+            color: #6F574D;
+            font-family: '%2', 'Segoe UI', 'Yu Gothic UI', sans-serif;
+            font-size: 17px;
             font-weight: 500;
+        }
+        QLabel#onboardingProgress {
+            color: #7D6459;
+            font-family: '%2', 'Segoe UI', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        QPushButton#onboardingPrimary {
+            background: #F3A6A0;
+            color: #FFFFFF;
+            border: 2px solid #DC8981;
+            border-radius: 6px;
+            padding: 7px 20px;
+            font-family: '%2', 'Segoe UI', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            min-height: 24px;
+        }
+        QPushButton#onboardingPrimary:hover {
+            background: #EA9891;
+            border-color: #D27C74;
+        }
+        QPushButton#onboardingPrimary:pressed {
+            background: #DF8880;
+            border-color: #C76D65;
+        }
+        QPushButton#onboardingPrimary:focus {
+            border-color: #654C43;
+        }
+        QPushButton#onboardingSecondary {
+            background: #FFF0E6;
+            color: #593E35;
+            border: 2px solid #DDBFB3;
+            border-radius: 6px;
+            padding: 7px 18px;
+            font-family: '%2', 'Segoe UI', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            min-height: 24px;
+        }
+        QPushButton#onboardingSecondary:hover {
+            background: #F7C2B5;
+            border-color: #DF9B92;
+        }
+        QPushButton#onboardingSecondary:pressed {
+            background: #F3A6A0;
+            color: #FFFFFF;
+            border-color: #DC8981;
+        }
+        QPushButton#onboardingSecondary:focus {
+            border-color: #F3A6A0;
+        }
+        QPushButton#onboardingSkip {
+            background: #FFF9F2;
+            color: #7D6459;
+            border: 2px solid #E8C7B7;
+            border-radius: 6px;
+            padding: 7px 16px;
+            font-family: '%2', 'Segoe UI', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            min-height: 24px;
+        }
+        QPushButton#onboardingSkip:hover {
+            background: #FFF0E6;
+            color: #593E35;
+            border-color: #DDBFB3;
+        }
+        QPushButton#onboardingSkip:pressed {
+            background: #F7C2B5;
+            color: #593E35;
+        }
+        QPushButton#onboardingSkip:focus {
+            border-color: #F3A6A0;
         }
         QLabel#sectionTitle {
             color: #654C43;
@@ -691,7 +823,7 @@ QString styleSheet()
         QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
             background: none;
         }
-    )");
+    )").arg(displayFontFamily(), bodyFontFamily());
 }
 
 } // namespace PixelTheme

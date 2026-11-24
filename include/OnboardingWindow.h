@@ -32,7 +32,7 @@ public:
         PageCount = 6
     };
 
-    static constexpr int kDefaultWidth = 452;
+    static constexpr int kDefaultWidth = 492;
     static constexpr int kStepCount = 4;
     static constexpr int kTransitionMs = 160;
 

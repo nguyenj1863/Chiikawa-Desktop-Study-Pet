@@ -10,5 +10,7 @@
         <file alias="assets/sounds/tiny_bell.wav">../assets/sounds/tiny_bell.wav</file>
         <file alias="assets/sounds/cozy_pop.wav">../assets/sounds/cozy_pop.wav</file>
         <file alias="assets/sounds/soft_pixel_pop.wav">../assets/sounds/soft_pixel_pop.wav</file>
+        <file alias="assets/fonts/PixelifySans.ttf">../assets/fonts/PixelifySans.ttf</file>
+        <file alias="assets/fonts/Nunito.ttf">../assets/fonts/Nunito.ttf</file>
     </qresource>
 </RCC>

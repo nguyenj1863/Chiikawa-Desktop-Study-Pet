@@ -23,6 +23,7 @@ OnboardingWindow::OnboardingWindow(UISoundManager* uiSound, QWidget* parent)
     : QWidget(parent, Qt::Window | Qt::FramelessWindowHint)
     , m_uiSound(uiSound)
 {
+    PixelTheme::ensureFontsLoaded();
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_DeleteOnClose, false);
     setWindowTitle(QStringLiteral("Chiikawa — Welcome"));
@@ -41,12 +42,13 @@ OnboardingWindow::~OnboardingWindow()
 void OnboardingWindow::buildUi()
 {
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(22, 18, 24, 20);
-    root->setSpacing(12);
+    root->setContentsMargins(24, 18, 26, 22);
+    root->setSpacing(10);
 
-    // Top bar: compact progress indicator (on steps 1..4) + close button
+    // Top bar: fixed-height header with compact progress indicator + close button
     m_headerWidget = new QWidget(this);
     m_headerWidget->setObjectName(QStringLiteral("header"));
+    m_headerWidget->setFixedHeight(28);
     auto* headerLayout = new QHBoxLayout(m_headerWidget);
     headerLayout->setContentsMargins(0, 0, 0, 0);
     headerLayout->setSpacing(8);
@@ -54,28 +56,28 @@ void OnboardingWindow::buildUi()
     m_progressContainer = new QWidget(m_headerWidget);
     auto* progLayout = new QHBoxLayout(m_progressContainer);
     progLayout->setContentsMargins(0, 0, 0, 0);
-    progLayout->setSpacing(6);
+    progLayout->setSpacing(7);
 
     for (int i = 0; i < kStepCount; ++i) {
         auto* dot = new QWidget(m_progressContainer);
         dot->setFixedSize(10, 10);
         m_progressDots[static_cast<std::size_t>(i)] = dot;
-        progLayout->addWidget(dot);
+        progLayout->addWidget(dot, 0, Qt::AlignVCenter);
     }
 
     m_progressLabel = new QLabel(QStringLiteral("1 / 4"), m_progressContainer);
-    m_progressLabel->setObjectName(QStringLiteral("sectionSummary"));
-    m_progressLabel->setContentsMargins(4, 0, 0, 0);
-    progLayout->addWidget(m_progressLabel);
+    m_progressLabel->setObjectName(QStringLiteral("onboardingProgress"));
+    m_progressLabel->setContentsMargins(6, 0, 0, 0);
+    progLayout->addWidget(m_progressLabel, 0, Qt::AlignVCenter);
 
-    m_closeBtn = new PixelIconButton(PixelIcon::Close, 26, 12, false, m_headerWidget);
+    m_closeBtn = new PixelIconButton(PixelIcon::Close, 28, 12, false, m_headerWidget);
     m_closeBtn->setToolTip(QStringLiteral("Skip tutorial (Esc)"));
     m_closeBtn->setAccessibleName(QStringLiteral("Skip tutorial"));
     connect(m_closeBtn, &QPushButton::clicked, this, &OnboardingWindow::onSkipClicked);
 
-    headerLayout->addWidget(m_progressContainer);
+    headerLayout->addWidget(m_progressContainer, 0, Qt::AlignVCenter);
     headerLayout->addStretch(1);
-    headerLayout->addWidget(m_closeBtn);
+    headerLayout->addWidget(m_closeBtn, 0, Qt::AlignVCenter);
     root->addWidget(m_headerWidget);
 
     // Stacked pages
@@ -98,25 +100,26 @@ void OnboardingWindow::buildUi()
     m_stack->addWidget(createPageWidget(
         Interact,
         QStringLiteral("Say hello!"),
-        QStringLiteral("Click to change animations. Double-click to open settings."),
+        QStringLiteral("<b style='color:#593E35;'>Click</b> to change animations.<br>"
+                       "<b style='color:#593E35;'>Double-click</b> to open settings."),
         m_previews[Interact]));
 
     m_stack->addWidget(createPageWidget(
         Drag,
         QStringLiteral("Take me anywhere!"),
-        QStringLiteral("Drag Chiikawa anywhere on your desktop."),
+        QStringLiteral("<b style='color:#593E35;'>Drag</b> Chiikawa anywhere on your desktop."),
         m_previews[Drag]));
 
     m_stack->addWidget(createPageWidget(
         StudyTimer,
         QStringLiteral("Time to focus!"),
-        QStringLiteral("Set a timer and hover over Chiikawa to check your progress."),
+        QStringLiteral("Set a <b style='color:#593E35;'>timer</b> and <b style='color:#593E35;'>hover</b> over Chiikawa to check your progress."),
         m_previews[StudyTimer]));
 
     m_stack->addWidget(createPageWidget(
         Alarm,
         QStringLiteral("Don't forget!"),
-        QStringLiteral("Set an alarm and snooze it if you need a little more time."),
+        QStringLiteral("Set an <b style='color:#593E35;'>alarm</b> and <b style='color:#593E35;'>snooze</b> it if you need a little more time."),
         m_previews[Alarm]));
 
     m_stack->addWidget(createPageWidget(
@@ -135,24 +138,25 @@ void OnboardingWindow::buildUi()
 
     root->addWidget(m_stack, 1);
 
-    // Footer navigation bar
+    // Footer navigation bar (consistent positioning across all screens)
     auto* nav = new QHBoxLayout();
-    nav->setContentsMargins(0, 4, 0, 0);
-    nav->setSpacing(8);
+    nav->setContentsMargins(0, 6, 0, 0);
+    nav->setSpacing(10);
 
     m_skipBtn = new QPushButton(QStringLiteral("Skip"), this);
-    m_skipBtn->setObjectName(QStringLiteral("subtle"));
+    m_skipBtn->setObjectName(QStringLiteral("onboardingSkip"));
     m_skipBtn->setCursor(Qt::PointingHandCursor);
     m_skipBtn->setToolTip(QStringLiteral("Skip tutorial and go straight to Chiikawa"));
     connect(m_skipBtn, &QPushButton::clicked, this, &OnboardingWindow::onSkipClicked);
 
     m_backBtn = new QPushButton(QStringLiteral("Back"), this);
+    m_backBtn->setObjectName(QStringLiteral("onboardingSecondary"));
     m_backBtn->setCursor(Qt::PointingHandCursor);
     m_backBtn->setToolTip(QStringLiteral("Return to previous step"));
     connect(m_backBtn, &QPushButton::clicked, this, &OnboardingWindow::onBackClicked);
 
     m_primaryBtn = new QPushButton(QStringLiteral("Get Started"), this);
-    m_primaryBtn->setObjectName(QStringLiteral("primary"));
+    m_primaryBtn->setObjectName(QStringLiteral("onboardingPrimary"));
     m_primaryBtn->setCursor(Qt::PointingHandCursor);
     m_primaryBtn->setDefault(true);
     m_primaryBtn->setAutoDefault(true);
@@ -175,25 +179,28 @@ QWidget* OnboardingWindow::createPageWidget(int pageIndex,
                                             const QString& description,
                                             OnboardingPreview* preview)
 {
-    Q_UNUSED(pageIndex);
     auto* page = new QWidget(m_stack);
     auto* layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(10);
+    layout->setSpacing(6);
+
+    const bool isHero = (pageIndex == Welcome || pageIndex == Complete);
 
     auto* titleLbl = new QLabel(heading, page);
-    titleLbl->setObjectName(QStringLiteral("onboardingHeading"));
+    titleLbl->setObjectName(isHero ? QStringLiteral("onboardingWelcomeHeading")
+                                   : QStringLiteral("onboardingHeading"));
     titleLbl->setAlignment(Qt::AlignCenter);
     titleLbl->setWordWrap(true);
 
     auto* bodyLbl = new QLabel(description, page);
     bodyLbl->setObjectName(QStringLiteral("onboardingBody"));
+    bodyLbl->setTextFormat(Qt::RichText);
     bodyLbl->setAlignment(Qt::AlignCenter);
     bodyLbl->setWordWrap(true);
 
     layout->addWidget(titleLbl);
     layout->addWidget(bodyLbl);
-    layout->addSpacing(2);
+    layout->addSpacing(8);
     layout->addWidget(preview);
     return page;
 }
@@ -206,7 +213,7 @@ void OnboardingWindow::openOnboarding(bool replay)
     int targetWidth = kDefaultWidth;
     if (QScreen* screen = QGuiApplication::primaryScreen()) {
         const QRect avail = screen->availableGeometry();
-        targetWidth = std::clamp(kDefaultWidth, 320, std::max(320, avail.width() - 32));
+        targetWidth = std::clamp(kDefaultWidth, 340, std::max(340, avail.width() - 32));
     }
     setFixedWidth(targetWidth);
 
@@ -283,10 +290,10 @@ void OnboardingWindow::updateNavigationState()
             const bool active = (i == stepIndex);
             const bool done = (i < stepIndex);
             const QString bg = active ? QStringLiteral("#F3A6A0")
-                                      : (done ? QStringLiteral("#F7C2B5") : QStringLiteral("#E8C7B7"));
+                                      : (done ? QStringLiteral("#F7C2B5") : QStringLiteral("#FFF0E6"));
             const QString border = active ? QStringLiteral("#DC8981") : QStringLiteral("#DDBFB3");
             dot->setStyleSheet(QStringLiteral(
-                "background: %1; border: 2px solid %2; border-radius: 3px;").arg(bg, border));
+                "background: %1; border: 2px solid %2; border-radius: 5px;").arg(bg, border));
         }
     }
 
