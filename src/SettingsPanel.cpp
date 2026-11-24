@@ -337,8 +337,8 @@ void SettingsPanel::playUiClick()
 void SettingsPanel::buildUi()
 {
     auto* shell = new QVBoxLayout(this);
-    shell->setContentsMargins(10, 8, 10, 8);
-    shell->setSpacing(5);
+    shell->setContentsMargins(15, 13, 15, 13);
+    shell->setSpacing(6);
 
     // --- Header (draggable, sticky outside scroll area) ---
     m_headerWidget = new QWidget(this);
