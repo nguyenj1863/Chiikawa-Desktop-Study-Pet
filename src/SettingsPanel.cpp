@@ -3,6 +3,9 @@
 #include "StudyTimer.h"
 #include "StartupManager.h"
 
+#include <QAbstractButton>
+#include <QAbstractSlider>
+#include <QAbstractSpinBox>
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -14,12 +17,15 @@
 #include <QHideEvent>
 #include <QIcon>
 #include <QLabel>
+#include <QLineEdit>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSizePolicy>
 #include <QSlider>
 #include <QSpinBox>
@@ -258,6 +264,8 @@ void SettingsPanel::buildUi()
     // --- Header ---
     m_headerWidget = new QWidget(this);
     m_headerWidget->setObjectName(QStringLiteral("header"));
+    m_headerWidget->setCursor(Qt::OpenHandCursor);
+    m_headerWidget->setToolTip(QStringLiteral("Drag to move settings and Chiikawa"));
     auto* titleRow = new QHBoxLayout(m_headerWidget);
     titleRow->setContentsMargins(0, 0, 0, 2);
     titleRow->setSpacing(8);
@@ -710,16 +718,41 @@ void SettingsPanel::updateLayoutSize(const QScreen* screen)
     }
 }
 
-void SettingsPanel::showNear(const QRect& petGlobalGeometry)
+void SettingsPanel::prepareToShow(const QScreen* screen)
 {
     syncFromSettings();
     syncFromTimer();
+    updateLayoutSize(screen);
+}
 
+void SettingsPanel::setAlwaysOnTop(bool enabled)
+{
+    const bool currentlyOnTop = windowFlags().testFlag(Qt::WindowStaysOnTopHint);
+    if (currentlyOnTop == enabled) {
+        return;
+    }
+    const bool wasVisible = isVisible();
+    const QPoint savedPos = pos();
+    Qt::WindowFlags flags = Qt::Tool | Qt::FramelessWindowHint;
+    if (enabled) {
+        flags |= Qt::WindowStaysOnTopHint;
+    }
+    setWindowFlags(flags);
+    setAttribute(Qt::WA_TranslucentBackground);
+    if (wasVisible) {
+        move(savedPos);
+        show();
+        raise();
+    }
+}
+
+void SettingsPanel::showNear(const QRect& petGlobalGeometry)
+{
     QScreen* screen = QGuiApplication::screenAt(petGlobalGeometry.center());
     if (!screen) {
         screen = QGuiApplication::primaryScreen();
     }
-    updateLayoutSize(screen);
+    prepareToShow(screen);
 
     QPoint pos(petGlobalGeometry.right() + 12, petGlobalGeometry.top());
     clampToScreen(pos);
@@ -844,6 +877,55 @@ void SettingsPanel::onClosePanel()
 {
     hide();
     emit closedByUser();
+}
+
+void SettingsPanel::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton) {
+        QWidget* hit = childAt(event->position().toPoint());
+        bool interactive = false;
+        for (QWidget* w = hit; w && w != this; w = w->parentWidget()) {
+            if (qobject_cast<QAbstractButton*>(w)
+                || qobject_cast<QAbstractSlider*>(w)
+                || qobject_cast<QAbstractSpinBox*>(w)
+                || qobject_cast<QScrollBar*>(w)
+                || qobject_cast<QLineEdit*>(w)) {
+                interactive = true;
+                break;
+            }
+        }
+        if (!interactive) {
+            m_dragging = true;
+            m_dragOffset = event->globalPosition().toPoint() - frameGeometry().topLeft();
+            setCursor(Qt::ClosedHandCursor);
+            event->accept();
+            return;
+        }
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void SettingsPanel::mouseMoveEvent(QMouseEvent* event)
+{
+    if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+        const QPoint desiredTopLeft = event->globalPosition().toPoint() - m_dragOffset;
+        emit dragRequested(desiredTopLeft);
+        event->accept();
+        return;
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void SettingsPanel::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton && m_dragging) {
+        m_dragging = false;
+        unsetCursor();
+        emit dragFinished();
+        event->accept();
+        return;
+    }
+    QWidget::mouseReleaseEvent(event);
 }
 
 void SettingsPanel::closeEvent(QCloseEvent* event)

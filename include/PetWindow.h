@@ -18,6 +18,7 @@ class TimerBubble;
 class SettingsPanel;
 class SystemTrayManager;
 class CompletionToast;
+class WindowCoordinator;
 
 /**
  * Frameless translucent desktop pet window.
@@ -82,6 +83,7 @@ private:
     std::unique_ptr<MovementController> m_movement;
     std::unique_ptr<TimerBubble> m_bubble;
     std::unique_ptr<SettingsPanel> m_settingsPanel;
+    std::unique_ptr<WindowCoordinator> m_coordinator;
     std::unique_ptr<SystemTrayManager> m_tray;
     std::unique_ptr<CompletionToast> m_completionToast;
 

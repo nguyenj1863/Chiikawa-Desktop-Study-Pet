@@ -34,6 +34,7 @@ set(CHIICAWA_SOURCES
     src/SettingsPanel.cpp
     src/SystemTrayManager.cpp
     src/StartupManager.cpp
+    src/WindowCoordinator.cpp
     src/PetWindow.cpp
     resources/resources.qrc
 )
@@ -48,6 +49,7 @@ set(CHIICAWA_HEADERS
     include/SettingsPanel.h
     include/SystemTrayManager.h
     include/StartupManager.h
+    include/WindowCoordinator.h
     include/PetWindow.h
 )
 

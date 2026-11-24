@@ -8,6 +8,7 @@
 #include "StudyTimer.h"
 #include "SystemTrayManager.h"
 #include "TimerBubble.h"
+#include "WindowCoordinator.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -54,6 +55,7 @@ PetWindow::PetWindow(QWidget* parent)
 
     m_bubble = std::make_unique<TimerBubble>(nullptr);
     m_settingsPanel = std::make_unique<SettingsPanel>(m_settings.get(), m_timer.get(), nullptr);
+    m_coordinator = std::make_unique<WindowCoordinator>(this, m_settingsPanel.get(), this);
     m_completionToast = std::make_unique<CompletionToast>(nullptr);
     connect(m_completionToast.get(), &CompletionToast::startAgainRequested, this, [this]() {
         m_completionHandled = false;
@@ -88,6 +90,16 @@ PetWindow::PetWindow(QWidget* parent)
             m_movement->resume();
         }
     });
+    connect(m_settingsPanel.get(), &SettingsPanel::dragRequested,
+            m_coordinator.get(), &WindowCoordinator::moveSettingsTo);
+    connect(m_settingsPanel.get(), &SettingsPanel::dragFinished, this, [this]() {
+        if (m_settings) {
+            m_settings->setLastPosition(pos());
+            m_settings->save();
+        }
+    });
+    connect(m_coordinator.get(), &WindowCoordinator::petMoved,
+            this, &PetWindow::onPositionMoved);
 
     connect(m_tray.get(), &SystemTrayManager::showPetRequested, this, &PetWindow::showPet);
     connect(m_tray.get(), &SystemTrayManager::hidePetRequested, this, &PetWindow::hidePet);
@@ -228,21 +240,30 @@ void PetWindow::applySettings()
         }
     }
 
-    Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Tool;
-    if (m_settings->alwaysOnTop()) {
-        flags |= Qt::WindowStaysOnTopHint;
+    const bool wantOnTop = m_settings->alwaysOnTop();
+    if (windowFlags().testFlag(Qt::WindowStaysOnTopHint) != wantOnTop) {
+        Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Tool;
+        if (wantOnTop) {
+            flags |= Qt::WindowStaysOnTopHint;
+        }
+        const bool visible = isVisible();
+        setWindowFlags(flags);
+        setAttribute(Qt::WA_TranslucentBackground);
+        if (visible) {
+            show();
+        }
     }
-    const bool visible = isVisible();
-    setWindowFlags(flags);
-    setAttribute(Qt::WA_TranslucentBackground);
-    if (visible) {
-        show();
+    if (m_settingsPanel) {
+        m_settingsPanel->setAlwaysOnTop(wantOnTop);
     }
 
     if (m_gearButton) {
         m_gearButton->move(width() - m_gearButton->width() - 2, 2);
     }
     m_movement->constrainToScreen();
+    if (m_coordinator) {
+        m_coordinator->realignSettings();
+    }
     updateHitMask();
 }
 
@@ -276,7 +297,22 @@ void PetWindow::openSettings()
         m_movement->pause();
     }
     hideGear();
-    m_settingsPanel->showNear(frameGeometry());
+    if (!m_settingsPanel) {
+        return;
+    }
+
+    QScreen* screen = QGuiApplication::screenAt(frameGeometry().center());
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    m_settingsPanel->setAlwaysOnTop(m_settings->alwaysOnTop());
+    m_settingsPanel->prepareToShow(screen);
+    if (m_coordinator) {
+        m_coordinator->attachSettings();
+    }
+    m_settingsPanel->show();
+    m_settingsPanel->raise();
+    m_settingsPanel->activateWindow();
 }
 
 void PetWindow::startTimerFromTray()
@@ -365,9 +401,13 @@ void PetWindow::mouseMoveEvent(QMouseEvent* event)
 {
     if (m_dragging && (event->buttons() & Qt::LeftButton)) {
         const QPoint newPos = event->globalPosition().toPoint() - m_dragOffset;
-        move(newPos);
-        if (m_movement) {
-            m_movement->constrainToScreen();
+        if (m_coordinator) {
+            m_coordinator->movePetTo(newPos);
+        } else {
+            move(newPos);
+            if (m_movement) {
+                m_movement->constrainToScreen();
+            }
         }
         m_dragMoved = true;
         event->accept();

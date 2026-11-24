@@ -23,6 +23,8 @@ public:
     SettingsPanel(AppSettings* settings, StudyTimer* timer, QWidget* parent = nullptr);
 
     void showNear(const QRect& petGlobalGeometry);
+    void prepareToShow(const QScreen* screen = nullptr);
+    void setAlwaysOnTop(bool enabled);
     void syncFromSettings();
     void syncFromTimer();
     void updateLayoutSize(const QScreen* screen = nullptr);
@@ -31,8 +33,13 @@ signals:
     void settingsApplied();
     void exitApplicationRequested();
     void closedByUser();
+    void dragRequested(const QPoint& desiredTopLeft);
+    void dragFinished();
 
 protected:
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void hideEvent(QHideEvent* event) override;
@@ -84,4 +91,7 @@ private:
     QCheckBox* m_topCheck = nullptr;
     QCheckBox* m_startupCheck = nullptr;
     QCheckBox* m_soundCheck = nullptr;
+
+    bool m_dragging = false;
+    QPoint m_dragOffset;
 };
