@@ -1,27 +1,32 @@
 #include "SettingsPanel.h"
+
+#include "AlarmScheduler.h"
+#include "AlarmSoundManager.h"
 #include "AppSettings.h"
-#include "StudyTimer.h"
+#include "CollapsibleSection.h"
+#include "PixelTheme.h"
+#include "SettingsDefaults.h"
 #include "StartupManager.h"
+#include "StudyTimer.h"
 
 #include <QAbstractButton>
+#include <QAbstractItemView>
 #include <QAbstractSlider>
 #include <QAbstractSpinBox>
 #include <QApplication>
-#include <QCheckBox>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QCoreApplication>
-#include <QEnterEvent>
+#include <QDateTime>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHideEvent>
-#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
-#include <QPixmap>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
@@ -30,256 +35,101 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStyle>
+#include <QTimeEdit>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <chrono>
 
 namespace {
 
-class PastelCheckBox final : public QCheckBox {
-public:
-    explicit PastelCheckBox(const QString& text, QWidget* parent = nullptr)
-        : QCheckBox(text, parent)
-    {
-        setCursor(Qt::PointingHandCursor);
-        setMouseTracking(true);
-        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        setFocusPolicy(Qt::StrongFocus);
-    }
-
-    [[nodiscard]] QSize sizeHint() const override
-    {
-        const QFontMetrics fm(font());
-        const int w = 6 + kBoxSize + kSpacing + fm.horizontalAdvance(text()) + 10;
-        const int h = std::max(26, fm.height() + 8);
-        return {w, h};
-    }
-
-    [[nodiscard]] QSize minimumSizeHint() const override
-    {
-        return sizeHint();
-    }
-
-protected:
-    void enterEvent(QEnterEvent* event) override
-    {
-        m_hovered = true;
-        update();
-        QCheckBox::enterEvent(event);
-    }
-
-    void leaveEvent(QEvent* event) override
-    {
-        m_hovered = false;
-        update();
-        QCheckBox::leaveEvent(event);
-    }
-
-    void paintEvent(QPaintEvent* event) override
-    {
-        Q_UNUSED(event);
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
-
-        const QRectF r = rect();
-        if (m_hovered && isEnabled()) {
-            p.setPen(Qt::NoPen);
-            p.setBrush(QColor(0xF9, 0xEC, 0xE2));
-            p.drawRoundedRect(r.adjusted(0.5, 1.0, -0.5, -1.0), 7.0, 7.0);
-        }
-
-        const qreal boxY = (r.height() - kBoxSize) / 2.0;
-        const QRectF boxRect(5.0, boxY, kBoxSize, kBoxSize);
-
-        if (isChecked()) {
-            QColor fill = isEnabled()
-                ? (isDown() ? QColor(0xDE, 0x87, 0x7A)
-                            : (m_hovered ? QColor(0xEA, 0x97, 0x8B) : QColor(0xF2, 0xA6, 0x9B)))
-                : QColor(0xE0, 0xCE, 0xC4);
-            p.setPen(Qt::NoPen);
-            p.setBrush(fill);
-            p.drawRoundedRect(boxRect, 5.0, 5.0);
-
-            QPen checkPen(Qt::white, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-            p.setPen(checkPen);
-            QPainterPath check;
-            check.moveTo(boxRect.left() + 3.8, boxRect.center().y() + 0.3);
-            check.lineTo(boxRect.left() + 6.8, boxRect.bottom() - 4.0);
-            check.lineTo(boxRect.right() - 3.5, boxRect.top() + 4.2);
-            p.drawPath(check);
-        } else {
-            const QColor fill = m_hovered && isEnabled() ? QColor(0xFF, 0xF3, 0xEB) : QColor(0xFF, 0xFD, 0xFA);
-            const QColor border = m_hovered && isEnabled() ? QColor(0xF2, 0xA6, 0x9B) : QColor(0xD8, 0xC2, 0xB4);
-            p.setBrush(fill);
-            p.setPen(QPen(border, 1.5));
-            p.drawRoundedRect(boxRect.adjusted(0.75, 0.75, -0.75, -0.75), 5.0, 5.0);
-        }
-
-        if (hasFocus()) {
-            p.setBrush(Qt::NoBrush);
-            p.setPen(QPen(QColor(0xF2, 0xA6, 0x9B, 180), 1.2, Qt::DotLine));
-            p.drawRoundedRect(boxRect.adjusted(-2.0, -2.0, 2.0, 2.0), 6.5, 6.5);
-        }
-
-        const QRectF textRect(boxRect.right() + kSpacing, 0.0,
-                              r.width() - boxRect.right() - kSpacing - 4.0, r.height());
-        p.setPen(isEnabled() ? QColor(0x60, 0x4C, 0x43) : QColor(0xB2, 0x9F, 0x94));
-        p.setFont(font());
-        p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, text());
-    }
-
-private:
-    static constexpr int kBoxSize = 16;
-    static constexpr int kSpacing = 9;
-    bool m_hovered = false;
-};
-
-void configureClickableButton(QPushButton* button)
+QFrame* makeDivider(QWidget* parent)
 {
-    button->setCursor(Qt::PointingHandCursor);
-    button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    auto* line = new QFrame(parent);
+    line->setObjectName(QStringLiteral("pixelDivider"));
+    line->setFrameShape(QFrame::HLine);
+    return line;
 }
 
-class CloseIconButton final : public QPushButton {
-public:
-    explicit CloseIconButton(QWidget* parent = nullptr)
-        : QPushButton(parent)
-    {
-        setFixedSize(28, 28);
-        setCursor(Qt::PointingHandCursor);
-        setToolTip(QStringLiteral("Close settings"));
-        setAccessibleName(QStringLiteral("Close settings"));
-        setFocusPolicy(Qt::StrongFocus);
-        setMouseTracking(true);
-    }
-
-protected:
-    void enterEvent(QEnterEvent* event) override
-    {
-        m_hovered = true;
-        update();
-        QPushButton::enterEvent(event);
-    }
-
-    void leaveEvent(QEvent* event) override
-    {
-        m_hovered = false;
-        update();
-        QPushButton::leaveEvent(event);
-    }
-
-    void paintEvent(QPaintEvent* event) override
-    {
-        Q_UNUSED(event);
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
-
-        const QRectF r = QRectF(rect()).adjusted(1.0, 1.0, -1.0, -1.0);
-        const QColor bg = isDown()
-            ? QColor(0xF2, 0xC9, 0xBC)
-            : (m_hovered ? QColor(0xF9, 0xDE, 0xD3) : QColor(0xF6, 0xEC, 0xE4));
-        const QColor border = m_hovered ? QColor(0xE8, 0xB8, 0xA8) : QColor(0xEA, 0xDB, 0xD1);
-
-        p.setBrush(bg);
-        p.setPen(QPen(border, 1.0));
-        p.drawRoundedRect(r, 9.0, 9.0);
-
-        const QColor fg = m_hovered || isDown() ? QColor(0x4A, 0x36, 0x2E) : QColor(0x7E, 0x67, 0x5C);
-        QPen pen(fg, 1.8, Qt::SolidLine, Qt::RoundCap);
-        p.setPen(pen);
-
-        const QPointF c = r.center();
-        const qreal d = 4.6;
-        p.drawLine(QPointF(c.x() - d, c.y() - d), QPointF(c.x() + d, c.y() + d));
-        p.drawLine(QPointF(c.x() + d, c.y() - d), QPointF(c.x() - d, c.y() + d));
-    }
-
-private:
-    bool m_hovered = false;
-};
-
-QIcon createExitIcon()
+void styleChipButton(QPushButton* btn)
 {
-    constexpr int px = 28; // 14x14 logical at 2x DPR
-    QPixmap pm(px, px);
-    pm.fill(Qt::transparent);
-    pm.setDevicePixelRatio(2.0);
-
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing, true);
-    QPen pen(QColor(0x8A, 0x3E, 0x3B), 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-    p.setPen(pen);
-    p.setBrush(Qt::NoBrush);
-
-    // Door frame on the left
-    QPainterPath door;
-    door.moveTo(6.5, 2.5);
-    door.lineTo(3.2, 2.5);
-    door.quadTo(2.0, 2.5, 2.0, 3.7);
-    door.lineTo(2.0, 10.3);
-    door.quadTo(2.0, 11.5, 3.2, 11.5);
-    door.lineTo(6.5, 11.5);
-    p.drawPath(door);
-
-    // Outward arrow on the right
-    p.drawLine(QPointF(5.5, 7.0), QPointF(11.8, 7.0));
-    p.drawLine(QPointF(9.3, 4.6), QPointF(11.8, 7.0));
-    p.drawLine(QPointF(9.3, 9.4), QPointF(11.8, 7.0));
-
-    return QIcon(pm);
+    btn->setObjectName(QStringLiteral("chip"));
+    btn->setProperty("active", false);
+    btn->setCursor(Qt::PointingHandCursor);
+    btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 }
 
 } // namespace
 
-SettingsPanel::SettingsPanel(AppSettings* settings, StudyTimer* timer, QWidget* parent)
+SettingsPanel::SettingsPanel(AppSettings* settings,
+                             StudyTimer* timer,
+                             AlarmScheduler* alarmScheduler,
+                             AlarmSoundManager* soundManager,
+                             QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
     , m_settings(settings)
     , m_timer(timer)
+    , m_alarmScheduler(alarmScheduler)
+    , m_soundManager(soundManager)
 {
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_ShowWithoutActivating, false);
-    setMinimumWidth(316);
-    setMaximumWidth(356);
+    setMinimumWidth(318);
+    setMaximumWidth(352);
     setWindowTitle(QStringLiteral("Study Pet Settings"));
+    setStyleSheet(PixelTheme::styleSheet());
 
     buildUi();
-    applyStyle();
     syncFromSettings();
     syncFromTimer();
+    syncFromAlarm();
     updateLayoutSize();
 
     if (m_timer) {
         connect(m_timer, &StudyTimer::stateChanged, this, [this](StudyTimer::State) {
-            refreshTimerButtons();
+            refreshTimerUi();
         });
+        connect(m_timer, &StudyTimer::remainingChanged, this, [this](std::chrono::milliseconds) {
+            refreshTimerUi();
+        });
+    }
+
+    if (m_alarmScheduler) {
+        connect(m_alarmScheduler, &AlarmScheduler::scheduleUpdated,
+                this, &SettingsPanel::syncFromAlarm);
+        connect(m_alarmScheduler, &AlarmScheduler::stateChanged,
+                this, [this](AlarmScheduler::State) { syncFromAlarm(); });
     }
 }
 
 void SettingsPanel::buildUi()
 {
     auto* shell = new QVBoxLayout(this);
-    shell->setContentsMargins(20, 18, 20, 18);
-    shell->setSpacing(10);
+    shell->setContentsMargins(18, 16, 18, 16);
+    shell->setSpacing(8);
 
-    // --- Header ---
+    // --- Header (draggable) ---
     m_headerWidget = new QWidget(this);
     m_headerWidget->setObjectName(QStringLiteral("header"));
     m_headerWidget->setCursor(Qt::OpenHandCursor);
     m_headerWidget->setToolTip(QStringLiteral("Drag to move settings and Chiikawa"));
+
     auto* titleRow = new QHBoxLayout(m_headerWidget);
-    titleRow->setContentsMargins(0, 0, 0, 2);
+    titleRow->setContentsMargins(2, 0, 0, 2);
     titleRow->setSpacing(8);
 
     auto* title = new QLabel(QStringLiteral("Settings"), m_headerWidget);
     title->setObjectName(QStringLiteral("title"));
-    auto* closeBtn = new CloseIconButton(m_headerWidget);
+
+    auto* closeBtn = new PixelIconButton(PixelIcon::Close, 26, 12, false, m_headerWidget);
+    closeBtn->setToolTip(QStringLiteral("Close settings"));
+    closeBtn->setAccessibleName(QStringLiteral("Close settings"));
     connect(closeBtn, &QPushButton::clicked, this, &SettingsPanel::onClosePanel);
 
     titleRow->addWidget(title, 1);
     titleRow->addWidget(closeBtn);
     shell->addWidget(m_headerWidget);
 
-    // --- Scrollable body (scrollbar shown only when screen height is genuinely too small) ---
+    // --- Body scroll area (vertical scrollbar shown only if screen height is genuinely too small) ---
     m_scrollArea = new QScrollArea(this);
     m_scrollArea->setObjectName(QStringLiteral("bodyScroll"));
     m_scrollArea->setWidgetResizable(true);
@@ -296,151 +146,332 @@ void SettingsPanel::buildUi()
     root->setContentsMargins(0, 2, 0, 2);
     root->setSpacing(10);
 
-    // --- Study Timer ---
-    auto* timerHeader = new QLabel(QStringLiteral("Study Timer"), m_contentWidget);
-    timerHeader->setObjectName(QStringLiteral("section"));
-    root->addWidget(timerHeader);
+    // =========================================================================
+    // SECTION 1: STUDY TIMER (Expanded by default)
+    // =========================================================================
+    auto* timerCard = new QFrame(m_contentWidget);
+    timerCard->setObjectName(QStringLiteral("timerCard"));
+    auto* timerCardLayout = new QVBoxLayout(timerCard);
+    timerCardLayout->setContentsMargins(12, 10, 12, 12);
+    timerCardLayout->setSpacing(8);
 
-    auto* timeRow = new QHBoxLayout();
-    timeRow->setSpacing(8);
-    m_hours = new QSpinBox(m_contentWidget);
+    auto* timerTitleRow = new QHBoxLayout();
+    timerTitleRow->setContentsMargins(0, 0, 0, 0);
+    auto* timerTitle = new QLabel(QStringLiteral("Study Timer"), timerCard);
+    timerTitle->setObjectName(QStringLiteral("sectionTitle"));
+    m_editDurationBtn = new PixelIconButton(PixelIcon::Edit, 24, 12, false, timerCard);
+    m_editDurationBtn->setToolTip(QStringLiteral("Edit custom duration"));
+    m_editDurationBtn->setAccessibleName(QStringLiteral("Edit custom duration"));
+    connect(m_editDurationBtn, &QPushButton::clicked, this, &SettingsPanel::onToggleDurationEditor);
+    timerTitleRow->addWidget(timerTitle, 1);
+    timerTitleRow->addWidget(m_editDurationBtn);
+    timerCardLayout->addLayout(timerTitleRow);
+
+    // Prominent central countdown display (click-to-edit when idle)
+    m_countdownBtn = new QPushButton(QStringLiteral("25:00"), timerCard);
+    m_countdownBtn->setObjectName(QStringLiteral("countdownDisplay"));
+    m_countdownBtn->setCursor(Qt::PointingHandCursor);
+    m_countdownBtn->setToolTip(QStringLiteral("Click to set custom duration"));
+    m_countdownBtn->setAccessibleName(QStringLiteral("Countdown duration"));
+    m_countdownBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(m_countdownBtn, &QPushButton::clicked, this, &SettingsPanel::onToggleDurationEditor);
+    timerCardLayout->addWidget(m_countdownBtn);
+
+    // Compact custom duration editor (hidden until clicked while idle)
+    m_durationEditor = new QWidget(timerCard);
+    auto* editRow = new QHBoxLayout(m_durationEditor);
+    editRow->setContentsMargins(0, 0, 0, 0);
+    editRow->setSpacing(6);
+
+    m_hours = new QSpinBox(m_durationEditor);
     m_hours->setRange(0, 23);
     m_hours->setSuffix(QStringLiteral(" h"));
     m_hours->setAlignment(Qt::AlignCenter);
-    m_hours->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-
-    m_minutes = new QSpinBox(m_contentWidget);
+    m_minutes = new QSpinBox(m_durationEditor);
     m_minutes->setRange(0, 59);
     m_minutes->setSuffix(QStringLiteral(" m"));
     m_minutes->setAlignment(Qt::AlignCenter);
-    m_minutes->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-
-    m_seconds = new QSpinBox(m_contentWidget);
+    m_seconds = new QSpinBox(m_durationEditor);
     m_seconds->setRange(0, 59);
     m_seconds->setSuffix(QStringLiteral(" s"));
     m_seconds->setAlignment(Qt::AlignCenter);
-    m_seconds->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    connect(m_hours, &QSpinBox::valueChanged, this, &SettingsPanel::onDurationInputsChanged);
+    connect(m_minutes, &QSpinBox::valueChanged, this, &SettingsPanel::onDurationInputsChanged);
+    connect(m_seconds, &QSpinBox::valueChanged, this, &SettingsPanel::onDurationInputsChanged);
 
-    connect(m_hours, &QSpinBox::valueChanged, this, &SettingsPanel::updatePresetSelection);
-    connect(m_minutes, &QSpinBox::valueChanged, this, &SettingsPanel::updatePresetSelection);
-    connect(m_seconds, &QSpinBox::valueChanged, this, &SettingsPanel::updatePresetSelection);
+    editRow->addWidget(m_hours, 1);
+    editRow->addWidget(m_minutes, 1);
+    editRow->addWidget(m_seconds, 1);
+    m_durationEditor->hide();
+    timerCardLayout->addWidget(m_durationEditor);
 
-    timeRow->addWidget(m_hours);
-    timeRow->addWidget(m_minutes);
-    timeRow->addWidget(m_seconds);
-    root->addLayout(timeRow);
-
-    auto* presets = new QHBoxLayout();
-    presets->setSpacing(8);
-    m_preset25 = new QPushButton(QStringLiteral("25 min"), m_contentWidget);
-    m_preset45 = new QPushButton(QStringLiteral("45 min"), m_contentWidget);
-    m_preset60 = new QPushButton(QStringLiteral("60 min"), m_contentWidget);
+    // Preset chips (25m / 45m / 60m)
+    auto* presetsRow = new QHBoxLayout();
+    presetsRow->setSpacing(6);
+    m_preset25 = new QPushButton(QStringLiteral("25m"), timerCard);
+    m_preset45 = new QPushButton(QStringLiteral("45m"), timerCard);
+    m_preset60 = new QPushButton(QStringLiteral("60m"), timerCard);
     for (QPushButton* btn : {m_preset25, m_preset45, m_preset60}) {
-        btn->setObjectName(QStringLiteral("preset"));
-        btn->setProperty("active", false);
-        configureClickableButton(btn);
+        styleChipButton(btn);
     }
     connect(m_preset25, &QPushButton::clicked, this, &SettingsPanel::onPreset25);
     connect(m_preset45, &QPushButton::clicked, this, &SettingsPanel::onPreset45);
     connect(m_preset60, &QPushButton::clicked, this, &SettingsPanel::onPreset60);
-    presets->addWidget(m_preset25);
-    presets->addWidget(m_preset45);
-    presets->addWidget(m_preset60);
-    root->addLayout(presets);
+    presetsRow->addWidget(m_preset25);
+    presetsRow->addWidget(m_preset45);
+    presetsRow->addWidget(m_preset60);
+    timerCardLayout->addLayout(presetsRow);
 
-    auto* controls = new QHBoxLayout();
-    controls->setSpacing(6);
-    m_startBtn = new QPushButton(QStringLiteral("Start"), m_contentWidget);
-    m_startBtn->setObjectName(QStringLiteral("primary"));
-    m_pauseBtn = new QPushButton(QStringLiteral("Pause"), m_contentWidget);
-    m_resetBtn = new QPushButton(QStringLiteral("Reset"), m_contentWidget);
-    m_cancelBtn = new QPushButton(QStringLiteral("Cancel"), m_contentWidget);
-    for (QPushButton* btn : {m_startBtn, m_pauseBtn, m_resetBtn, m_cancelBtn}) {
-        configureClickableButton(btn);
+    // Dynamic icon controls: Play/Pause + Reset (Cancel removed)
+    auto* iconControls = new QHBoxLayout();
+    iconControls->setSpacing(10);
+    iconControls->addStretch(1);
+
+    m_playPauseBtn = new PixelIconButton(PixelIcon::Play, 38, 16, true, timerCard);
+    m_playPauseBtn->setToolTip(QStringLiteral("Start timer"));
+    m_playPauseBtn->setAccessibleName(QStringLiteral("Start timer"));
+    connect(m_playPauseBtn, &QPushButton::clicked, this, &SettingsPanel::onPlayPauseClicked);
+
+    m_resetBtn = new PixelIconButton(PixelIcon::Reset, 38, 16, false, timerCard);
+    m_resetBtn->setToolTip(QStringLiteral("Reset timer"));
+    m_resetBtn->setAccessibleName(QStringLiteral("Reset timer"));
+    connect(m_resetBtn, &QPushButton::clicked, this, &SettingsPanel::onResetClicked);
+
+    iconControls->addWidget(m_playPauseBtn);
+    iconControls->addWidget(m_resetBtn);
+    iconControls->addStretch(1);
+    timerCardLayout->addLayout(iconControls);
+
+    root->addWidget(timerCard);
+
+    // =========================================================================
+    // SECTION 2: ALARM (Collapsed by default)
+    // =========================================================================
+    m_alarmSection = new CollapsibleSection(QStringLiteral("Alarm"), false, m_contentWidget);
+    connect(m_alarmSection, &CollapsibleSection::heightChanged, this, [this]() {
+        updateLayoutSize();
+        emit panelResized();
+    });
+
+    auto* alarmBody = new QVBoxLayout();
+    alarmBody->setSpacing(8);
+
+    // Time picker + Enable + Save Alarm (single daily alarm)
+    auto* alarmTimeRow = new QHBoxLayout();
+    alarmTimeRow->setSpacing(6);
+
+    auto* bellLbl = new QLabel(m_contentWidget);
+    bellLbl->setFixedSize(16, 16);
+    bellLbl->setPixmap(PixelTheme::icon(PixelIcon::Bell, PixelTheme::kPrimaryAccent, 14).pixmap(14, 14));
+
+    m_alarmTimeEdit = new QTimeEdit(m_contentWidget);
+    m_alarmTimeEdit->setDisplayFormat(QLocale::system().timeFormat(QLocale::ShortFormat));
+    m_alarmTimeEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_alarmTimeEdit->setToolTip(QStringLiteral("Daily alarm time"));
+
+    m_saveAlarmBtn = new QPushButton(QStringLiteral("Save Alarm"), m_contentWidget);
+    m_saveAlarmBtn->setObjectName(QStringLiteral("primary"));
+    m_saveAlarmBtn->setCursor(Qt::PointingHandCursor);
+    m_saveAlarmBtn->setToolTip(QStringLiteral("Save daily alarm time and schedule"));
+    connect(m_saveAlarmBtn, &QPushButton::clicked, this, &SettingsPanel::onSaveAlarmClicked);
+
+    alarmTimeRow->addWidget(bellLbl);
+    alarmTimeRow->addWidget(m_alarmTimeEdit, 1);
+    alarmTimeRow->addWidget(m_saveAlarmBtn);
+    alarmBody->addLayout(alarmTimeRow);
+
+    m_alarmEnableCheck = new PixelCheckBox(QStringLiteral("Enable daily alarm"), m_contentWidget);
+    connect(m_alarmEnableCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_syncingUi || !m_alarmScheduler) {
+            return;
+        }
+        m_alarmScheduler->configureAlarm(m_alarmTimeEdit->time(), checked);
+        refreshAlarmSummary();
+    });
+    alarmBody->addWidget(m_alarmEnableCheck);
+
+    m_soundCheck = new PixelCheckBox(QStringLiteral("Completion & alarm sound"), m_contentWidget);
+    connect(m_soundCheck, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
+    alarmBody->addWidget(m_soundCheck);
+
+    // Sound selector dropdown + Preview button
+    auto* soundRow = new QHBoxLayout();
+    soundRow->setSpacing(6);
+
+    m_soundCombo = new QComboBox(m_contentWidget);
+    m_soundCombo->setCursor(Qt::PointingHandCursor);
+    m_soundCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    for (const auto& opt : AlarmSoundManager::availableSounds()) {
+        m_soundCombo->addItem(opt.label, opt.id);
     }
-    connect(m_startBtn, &QPushButton::clicked, this, &SettingsPanel::onStart);
-    connect(m_pauseBtn, &QPushButton::clicked, this, &SettingsPanel::onPauseResume);
-    connect(m_resetBtn, &QPushButton::clicked, this, &SettingsPanel::onReset);
-    connect(m_cancelBtn, &QPushButton::clicked, this, &SettingsPanel::onCancel);
-    controls->addWidget(m_startBtn);
-    controls->addWidget(m_pauseBtn);
-    controls->addWidget(m_resetBtn);
-    controls->addWidget(m_cancelBtn);
-    root->addLayout(controls);
+    if (m_soundCombo->view()) {
+        m_soundCombo->view()->setCursor(Qt::PointingHandCursor);
+    }
+    connect(m_soundCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
 
-    // --- Pet Preferences ---
-    auto* petHeader = new QLabel(QStringLiteral("Pet Preferences"), m_contentWidget);
-    petHeader->setObjectName(QStringLiteral("section"));
-    root->addWidget(petHeader);
+    m_previewSoundBtn = new PixelIconButton(PixelIcon::Preview, 30, 14, false, m_contentWidget);
+    m_previewSoundBtn->setToolTip(QStringLiteral("Preview sound"));
+    m_previewSoundBtn->setAccessibleName(QStringLiteral("Preview sound"));
+    connect(m_previewSoundBtn, &QPushButton::clicked, this, &SettingsPanel::onPreviewSoundClicked);
+
+    soundRow->addWidget(m_soundCombo, 1);
+    soundRow->addWidget(m_previewSoundBtn);
+    alarmBody->addLayout(soundRow);
+
+    // Volume slider
+    auto* volRow = new QHBoxLayout();
+    volRow->setSpacing(8);
+    auto* volIcon = new QLabel(m_contentWidget);
+    volIcon->setFixedSize(16, 16);
+    volIcon->setPixmap(PixelTheme::icon(PixelIcon::Volume, PixelTheme::kSecondaryText, 14).pixmap(14, 14));
+    m_volumeSlider = new QSlider(Qt::Horizontal, m_contentWidget);
+    m_volumeSlider->setRange(0, 100);
+    m_volumeSlider->setCursor(Qt::PointingHandCursor);
+    m_volumeSlider->setFocusPolicy(Qt::StrongFocus);
+    m_volumeValue = new QLabel(QStringLiteral("25%"), m_contentWidget);
+    m_volumeValue->setObjectName(QStringLiteral("valueBadge"));
+    m_volumeValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_volumeValue->setFixedWidth(36);
+    connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int v) {
+        m_volumeValue->setText(QStringLiteral("%1%").arg(v));
+        onPreferenceChanged();
+    });
+    volRow->addWidget(volIcon);
+    volRow->addWidget(m_volumeSlider, 1);
+    volRow->addWidget(m_volumeValue);
+    alarmBody->addLayout(volRow);
+
+    // Notification toggle
+    m_notifyCheck = new PixelCheckBox(QStringLiteral("Show alarm notification"), m_contentWidget);
+    connect(m_notifyCheck, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
+    alarmBody->addWidget(m_notifyCheck);
+
+    // Snooze duration selector (5m / 10m / 15m)
+    auto* snoozeRow = new QHBoxLayout();
+    snoozeRow->setSpacing(6);
+    auto* snoozeLbl = new QLabel(QStringLiteral("Snooze"), m_contentWidget);
+    snoozeLbl->setFixedWidth(48);
+    m_snooze5Btn = new QPushButton(QStringLiteral("5m"), m_contentWidget);
+    m_snooze10Btn = new QPushButton(QStringLiteral("10m"), m_contentWidget);
+    m_snooze15Btn = new QPushButton(QStringLiteral("15m"), m_contentWidget);
+    for (QPushButton* btn : {m_snooze5Btn, m_snooze10Btn, m_snooze15Btn}) {
+        styleChipButton(btn);
+    }
+    auto bindSnooze = [this](QPushButton* btn, int mins) {
+        connect(btn, &QPushButton::clicked, this, [this, mins]() {
+            if (!m_settings) {
+                return;
+            }
+            m_settings->setSnoozeMinutes(mins);
+            m_settings->save();
+            updateSnoozeChips();
+            emit settingsApplied();
+        });
+    };
+    bindSnooze(m_snooze5Btn, 5);
+    bindSnooze(m_snooze10Btn, 10);
+    bindSnooze(m_snooze15Btn, 15);
+
+    snoozeRow->addWidget(snoozeLbl);
+    snoozeRow->addWidget(m_snooze5Btn);
+    snoozeRow->addWidget(m_snooze10Btn);
+    snoozeRow->addWidget(m_snooze15Btn);
+    alarmBody->addLayout(snoozeRow);
+
+    m_alarmSection->setContentLayout(alarmBody);
+    root->addWidget(m_alarmSection);
+
+    // =========================================================================
+    // SECTION 3: PET PREFERENCES (Collapsed by default, auto-persisted)
+    // =========================================================================
+    m_petSection = new CollapsibleSection(QStringLiteral("Pet Preferences"), false, m_contentWidget);
+    connect(m_petSection, &CollapsibleSection::heightChanged, this, [this]() {
+        updateLayoutSize();
+        emit panelResized();
+    });
+
+    auto* petBody = new QVBoxLayout();
+    petBody->setSpacing(6);
 
     auto* sizeRow = new QHBoxLayout();
-    sizeRow->setSpacing(10);
+    sizeRow->setSpacing(8);
     auto* sizeLabel = new QLabel(QStringLiteral("Size"), m_contentWidget);
     sizeLabel->setFixedWidth(44);
     m_sizeSlider = new QSlider(Qt::Horizontal, m_contentWidget);
-    m_sizeSlider->setRange(AppSettings::kMinPetSize, AppSettings::kMaxPetSize);
+    m_sizeSlider->setRange(SettingsDefaults::kMinPetSize, SettingsDefaults::kMaxPetSize);
     m_sizeSlider->setCursor(Qt::PointingHandCursor);
     m_sizeSlider->setFocusPolicy(Qt::StrongFocus);
     m_sizeValue = new QLabel(m_contentWidget);
     m_sizeValue->setObjectName(QStringLiteral("valueBadge"));
     m_sizeValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_sizeValue->setFixedWidth(42);
+    connect(m_sizeSlider, &QSlider::valueChanged, this, [this](int v) {
+        m_sizeValue->setText(QStringLiteral("%1px").arg(v));
+        onPreferenceChanged();
+    });
     sizeRow->addWidget(sizeLabel);
     sizeRow->addWidget(m_sizeSlider, 1);
     sizeRow->addWidget(m_sizeValue);
-    root->addLayout(sizeRow);
-    connect(m_sizeSlider, &QSlider::valueChanged, this, [this](int v) {
-        m_sizeValue->setText(QStringLiteral("%1px").arg(v));
-    });
+    petBody->addLayout(sizeRow);
 
     auto* speedRow = new QHBoxLayout();
-    speedRow->setSpacing(10);
+    speedRow->setSpacing(8);
     auto* speedLabel = new QLabel(QStringLiteral("Speed"), m_contentWidget);
     speedLabel->setFixedWidth(44);
     m_speedSlider = new QSlider(Qt::Horizontal, m_contentWidget);
-    m_speedSlider->setRange(25, 300); // 0.25x – 3.00x * 100
+    m_speedSlider->setRange(25, 300);
     m_speedSlider->setCursor(Qt::PointingHandCursor);
     m_speedSlider->setFocusPolicy(Qt::StrongFocus);
     m_speedValue = new QLabel(m_contentWidget);
     m_speedValue->setObjectName(QStringLiteral("valueBadge"));
     m_speedValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_speedValue->setFixedWidth(42);
+    connect(m_speedSlider, &QSlider::valueChanged, this, [this](int v) {
+        m_speedValue->setText(QStringLiteral("%1x").arg(v / 100.0, 0, 'f', 2));
+        onPreferenceChanged();
+    });
     speedRow->addWidget(speedLabel);
     speedRow->addWidget(m_speedSlider, 1);
     speedRow->addWidget(m_speedValue);
-    root->addLayout(speedRow);
-    connect(m_speedSlider, &QSlider::valueChanged, this, [this](int v) {
-        m_speedValue->setText(QStringLiteral("%1x").arg(v / 100.0, 0, 'f', 2));
-    });
+    petBody->addLayout(speedRow);
 
-    auto* togglesBox = new QVBoxLayout();
-    togglesBox->setContentsMargins(0, 2, 0, 2);
-    togglesBox->setSpacing(2);
-    m_moveCheck = new PastelCheckBox(QStringLiteral("Autonomous movement"), m_contentWidget);
-    m_animCheck = new PastelCheckBox(QStringLiteral("Random animations"), m_contentWidget);
-    m_topCheck = new PastelCheckBox(QStringLiteral("Always on top"), m_contentWidget);
-    m_startupCheck = new PastelCheckBox(QStringLiteral("Launch on Windows startup"), m_contentWidget);
-    m_soundCheck = new PastelCheckBox(QStringLiteral("Completion sound"), m_contentWidget);
-    togglesBox->addWidget(m_moveCheck);
-    togglesBox->addWidget(m_animCheck);
-    togglesBox->addWidget(m_topCheck);
-    togglesBox->addWidget(m_startupCheck);
-    togglesBox->addWidget(m_soundCheck);
-    root->addLayout(togglesBox);
+    m_moveCheck = new PixelCheckBox(QStringLiteral("Autonomous movement"), m_contentWidget);
+    m_animCheck = new PixelCheckBox(QStringLiteral("Random animations"), m_contentWidget);
+    m_desktopOnlyCheck = new PixelCheckBox(QStringLiteral("Desktop-Only Mode"), m_contentWidget);
+    m_desktopOnlyCheck->setToolTip(
+        QStringLiteral("Keep Chiikawa on your desktop, behind other application windows."));
+    m_startupCheck = new PixelCheckBox(QStringLiteral("Launch on Windows startup"), m_contentWidget);
 
-    auto* applyBtn = new QPushButton(QStringLiteral("Apply Pet Settings"), m_contentWidget);
-    applyBtn->setObjectName(QStringLiteral("primary"));
-    configureClickableButton(applyBtn);
-    connect(applyBtn, &QPushButton::clicked, this, &SettingsPanel::onApplyPetSettings);
-    root->addWidget(applyBtn);
+    for (QCheckBox* cb : {m_moveCheck, m_animCheck, m_desktopOnlyCheck, m_startupCheck}) {
+        connect(cb, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
+        petBody->addWidget(cb);
+    }
 
-    // --- Footer ---
-    root->addSpacing(4);
-    auto* exitBtn = new QPushButton(createExitIcon(), QStringLiteral(" Exit Chiikawa"), m_contentWidget);
+    auto* restoreBtn = new QPushButton(
+        PixelTheme::icon(PixelIcon::RestoreDefaults, PixelTheme::kSecondaryText, 12),
+        QStringLiteral(" Restore Defaults"), m_contentWidget);
+    restoreBtn->setObjectName(QStringLiteral("subtle"));
+    restoreBtn->setIconSize(QSize(12, 12));
+    restoreBtn->setCursor(Qt::PointingHandCursor);
+    restoreBtn->setToolTip(QStringLiteral("Reset pet and sound preferences to defaults"));
+    connect(restoreBtn, &QPushButton::clicked, this, &SettingsPanel::onRestoreDefaultsClicked);
+    petBody->addWidget(restoreBtn);
+
+    m_petSection->setContentLayout(petBody);
+    root->addWidget(m_petSection);
+
+    // =========================================================================
+    // FOOTER: Single Exit Application action
+    // =========================================================================
+    root->addWidget(makeDivider(m_contentWidget));
+
+    auto* exitBtn = new QPushButton(
+        PixelTheme::icon(PixelIcon::Exit, PixelTheme::kDangerText, 12),
+        QStringLiteral(" Exit Application"), m_contentWidget);
     exitBtn->setObjectName(QStringLiteral("danger"));
-    exitBtn->setIconSize(QSize(14, 14));
+    exitBtn->setIconSize(QSize(12, 12));
+    exitBtn->setCursor(Qt::PointingHandCursor);
     exitBtn->setToolTip(QStringLiteral("Exit Chiikawa Study Pet"));
-    configureClickableButton(exitBtn);
     connect(exitBtn, &QPushButton::clicked, this, &SettingsPanel::exitApplicationRequested);
     root->addWidget(exitBtn);
 
@@ -448,218 +479,76 @@ void SettingsPanel::buildUi()
     shell->addWidget(m_scrollArea, 1);
 }
 
-void SettingsPanel::applyStyle()
-{
-    setStyleSheet(QStringLiteral(R"(
-        QWidget#header, QWidget#scrollContent, QScrollArea#bodyScroll {
-            background: transparent;
-        }
-        QLabel {
-            color: #604C43;
-            font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
-            font-size: 12px;
-            background: transparent;
-        }
-        QLabel#title {
-            color: #604C43;
-            font-size: 16px;
-            font-weight: 700;
-        }
-        QLabel#section {
-            color: #927A6E;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 0.3px;
-            margin-top: 4px;
-        }
-        QLabel#valueBadge {
-            color: #927A6E;
-            font-size: 11px;
-            font-weight: 600;
-        }
-        QSpinBox {
-            background: #FFFFFF;
-            border: 1px solid #EADBD1;
-            border-radius: 8px;
-            padding: 4px 6px;
-            color: #604C43;
-            font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
-            font-size: 12px;
-            font-weight: 600;
-            min-height: 22px;
-            selection-background-color: #F9DED3;
-            selection-color: #604C43;
-        }
-        QSpinBox:hover {
-            border-color: #DFC3B3;
-            background: #FFFCFA;
-        }
-        QSpinBox:focus {
-            border-color: #F2A69B;
-            background: #FFFFFF;
-        }
-        QSpinBox::up-button, QSpinBox::down-button {
-            width: 16px;
-            border: none;
-            background: transparent;
-        }
-        QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-            background: #F9DED3;
-            border-radius: 4px;
-        }
-        QSlider {
-            background: transparent;
-            min-height: 22px;
-        }
-        QSlider::groove:horizontal {
-            height: 6px;
-            background: #EFE2D8;
-            border-radius: 3px;
-        }
-        QSlider::sub-page:horizontal {
-            background: #F2A69B;
-            border-radius: 3px;
-        }
-        QSlider::handle:horizontal {
-            background: #FFF8F2;
-            border: 2px solid #F2A69B;
-            width: 14px;
-            height: 14px;
-            margin: -5px 0;
-            border-radius: 9px;
-        }
-        QSlider::handle:horizontal:hover {
-            background: #F9DED3;
-            border-color: #E58C7E;
-        }
-        QSlider::handle:horizontal:pressed {
-            background: #F2A69B;
-            border-color: #DC8073;
-        }
-        QPushButton {
-            background: #F5E9E0;
-            color: #604C43;
-            border: 1px solid #EADBD1;
-            border-radius: 10px;
-            padding: 6px 8px;
-            font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
-            font-size: 11px;
-            font-weight: 600;
-            min-height: 20px;
-        }
-        QPushButton:hover {
-            background: #F9DED3;
-            border-color: #E4C2B3;
-        }
-        QPushButton:pressed {
-            background: #F2C9BC;
-            border-color: #DDAFA0;
-        }
-        QPushButton:disabled {
-            background: #F5EFEA;
-            color: #B8A79D;
-            border-color: #EFE5DE;
-        }
-        QPushButton#preset {
-            background: #F7ECE4;
-            color: #604C43;
-            border: 1px solid #EADBD1;
-            border-radius: 12px;
-            padding: 5px 10px;
-        }
-        QPushButton#preset:hover {
-            background: #F9DED3;
-            border-color: #E8B8A8;
-        }
-        QPushButton#preset:pressed {
-            background: #F2C9BC;
-        }
-        QPushButton#preset[active="true"] {
-            background: #F2A69B;
-            color: #FFFFFF;
-            border-color: #E58F83;
-        }
-        QPushButton#preset[active="true"]:hover {
-            background: #EA988C;
-            border-color: #DC8073;
-        }
-        QPushButton#primary {
-            background: #F2A69B;
-            color: #FFFFFF;
-            border: 1px solid #E69488;
-        }
-        QPushButton#primary:hover {
-            background: #EB9689;
-            border-color: #DD8476;
-        }
-        QPushButton#primary:pressed {
-            background: #E08779;
-        }
-        QPushButton#danger {
-            background: #FBE3E0;
-            color: #8A3E3B;
-            border: 1px solid #ECC5BF;
-        }
-        QPushButton#danger:hover {
-            background: #F6CEC9;
-            border-color: #E2B0A8;
-        }
-        QPushButton#danger:pressed {
-            background: #EEB8B1;
-        }
-        QScrollBar:vertical {
-            background: transparent;
-            width: 6px;
-            margin: 2px 0 2px 2px;
-        }
-        QScrollBar::handle:vertical {
-            background: #DFC9BC;
-            min-height: 28px;
-            border-radius: 3px;
-        }
-        QScrollBar::handle:vertical:hover {
-            background: #F2A69B;
-        }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-            height: 0px;
-            border: none;
-            background: none;
-        }
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-            background: none;
-        }
-    )"));
-}
-
 void SettingsPanel::syncFromSettings()
 {
     if (!m_settings) {
         return;
     }
+    m_syncingUi = true;
+
     m_sizeSlider->setValue(m_settings->petSize());
     m_sizeValue->setText(QStringLiteral("%1px").arg(m_settings->petSize()));
     m_speedSlider->setValue(static_cast<int>(m_settings->movementSpeed() * 100.0));
     m_speedValue->setText(QStringLiteral("%1x").arg(m_settings->movementSpeed(), 0, 'f', 2));
     m_moveCheck->setChecked(m_settings->movementEnabled());
     m_animCheck->setChecked(m_settings->autoAnimationEnabled());
-    m_topCheck->setChecked(m_settings->alwaysOnTop());
+    m_desktopOnlyCheck->setChecked(m_settings->desktopOnlyMode());
     m_startupCheck->setChecked(m_settings->launchOnStartup());
+
     m_soundCheck->setChecked(m_settings->soundEnabled());
-    setDurationInputs(m_settings->lastTimerSeconds());
+    const int idx = m_soundCombo->findData(m_settings->alarmSoundId());
+    m_soundCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+    const int volPct = qRound(m_settings->alarmVolume() * 100.0);
+    m_volumeSlider->setValue(volPct);
+    m_volumeValue->setText(QStringLiteral("%1%").arg(volPct));
+    m_notifyCheck->setChecked(m_settings->alarmNotificationEnabled());
+
+    if (!m_timer || !m_timer->isActive()) {
+        setDurationInputs(m_settings->lastTimerSeconds());
+    }
+
+    m_syncingUi = false;
+    updatePresetChips();
+    updateSnoozeChips();
+    refreshPetSummary();
+    refreshAlarmSummary();
 }
 
 void SettingsPanel::syncFromTimer()
 {
-    refreshTimerButtons();
+    refreshTimerUi();
+}
+
+void SettingsPanel::syncFromAlarm()
+{
+    m_syncingUi = true;
+    if (m_alarmScheduler && m_alarmScheduler->isConfigured()) {
+        m_alarmTimeEdit->setTime(m_alarmScheduler->alarmTime());
+        m_alarmEnableCheck->setChecked(m_alarmScheduler->isEnabled());
+    } else if (m_settings && m_settings->hasAlarmConfigured() && m_settings->alarmTime().isValid()) {
+        m_alarmTimeEdit->setTime(m_settings->alarmTime());
+        m_alarmEnableCheck->setChecked(m_settings->alarmEnabled());
+    } else {
+        // New alarm defaults to current computer local time (editable, NOT auto-enabled)
+        const QTime nowTime = QDateTime::currentDateTime().time();
+        m_alarmTimeEdit->setTime(QTime(nowTime.hour(), nowTime.minute(), 0));
+        m_alarmEnableCheck->setChecked(false);
+    }
+    m_syncingUi = false;
+    refreshAlarmSummary();
 }
 
 void SettingsPanel::setDurationInputs(int totalSeconds)
 {
-    totalSeconds = std::max(0, totalSeconds);
+    totalSeconds = std::clamp(totalSeconds, SettingsDefaults::kMinTimerSeconds, SettingsDefaults::kMaxTimerSeconds);
+    const bool prev = m_syncingUi;
+    m_syncingUi = true;
     m_hours->setValue(totalSeconds / 3600);
     m_minutes->setValue((totalSeconds % 3600) / 60);
     m_seconds->setValue(totalSeconds % 60);
-    updatePresetSelection();
+    m_syncingUi = prev;
+    updatePresetChips();
+    refreshTimerUi();
 }
 
 int SettingsPanel::durationFromInputs() const
@@ -667,23 +556,123 @@ int SettingsPanel::durationFromInputs() const
     return m_hours->value() * 3600 + m_minutes->value() * 60 + m_seconds->value();
 }
 
-void SettingsPanel::updatePresetSelection()
+void SettingsPanel::setChipActive(QPushButton* btn, bool active)
+{
+    if (!btn) {
+        return;
+    }
+    if (btn->property("active").toBool() != active) {
+        btn->setProperty("active", active);
+        btn->style()->unpolish(btn);
+        btn->style()->polish(btn);
+        btn->update();
+    }
+}
+
+void SettingsPanel::updatePresetChips()
 {
     const int secs = durationFromInputs();
-    auto setActive = [](QPushButton* btn, bool active) {
-        if (!btn) {
-            return;
+    setChipActive(m_preset25, secs == 25 * 60);
+    setChipActive(m_preset45, secs == 45 * 60);
+    setChipActive(m_preset60, secs == 60 * 60);
+}
+
+void SettingsPanel::updateSnoozeChips()
+{
+    const int mins = m_settings ? m_settings->snoozeMinutes() : SettingsDefaults::kSnoozeMinutes;
+    setChipActive(m_snooze5Btn, mins == 5);
+    setChipActive(m_snooze10Btn, mins == 10);
+    setChipActive(m_snooze15Btn, mins == 15);
+}
+
+void SettingsPanel::setDurationEditorVisible(bool visible)
+{
+    if (!m_durationEditor || m_durationEditor->isVisible() == visible) {
+        return;
+    }
+    m_durationEditor->setVisible(visible);
+    updateLayoutSize();
+    emit panelResized();
+}
+
+void SettingsPanel::refreshTimerUi()
+{
+    if (!m_timer) {
+        return;
+    }
+
+    const bool running = m_timer->isRunning();
+    const bool active = m_timer->isActive();
+
+    if (active) {
+        m_countdownBtn->setText(StudyTimer::formatRemaining(m_timer->remaining()));
+        if (m_durationEditor->isVisible()) {
+            setDurationEditorVisible(false);
         }
-        if (btn->property("active").toBool() != active) {
-            btn->setProperty("active", active);
-            btn->style()->unpolish(btn);
-            btn->style()->polish(btn);
-            btn->update();
-        }
-    };
-    setActive(m_preset25, secs == 25 * 60);
-    setActive(m_preset45, secs == 45 * 60);
-    setActive(m_preset60, secs == 60 * 60);
+    } else {
+        const auto secs = std::max(1, durationFromInputs());
+        m_countdownBtn->setText(StudyTimer::formatRemaining(std::chrono::seconds{secs}));
+    }
+
+    // Prevent accidental duration edits while timer is running or paused
+    m_countdownBtn->setEnabled(!active);
+    m_countdownBtn->setCursor(active ? Qt::ArrowCursor : Qt::PointingHandCursor);
+    m_editDurationBtn->setEnabled(!active);
+    for (QPushButton* preset : {m_preset25, m_preset45, m_preset60}) {
+        preset->setEnabled(!active);
+        preset->setCursor(active ? Qt::ArrowCursor : Qt::PointingHandCursor);
+    }
+
+    if (running) {
+        m_playPauseBtn->setPixelIcon(PixelIcon::Pause);
+        m_playPauseBtn->setToolTip(QStringLiteral("Pause timer"));
+        m_playPauseBtn->setAccessibleName(QStringLiteral("Pause timer"));
+    } else if (m_timer->isPaused()) {
+        m_playPauseBtn->setPixelIcon(PixelIcon::Play);
+        m_playPauseBtn->setToolTip(QStringLiteral("Resume timer"));
+        m_playPauseBtn->setAccessibleName(QStringLiteral("Resume timer"));
+    } else {
+        m_playPauseBtn->setPixelIcon(PixelIcon::Play);
+        m_playPauseBtn->setToolTip(QStringLiteral("Start timer"));
+        m_playPauseBtn->setAccessibleName(QStringLiteral("Start timer"));
+    }
+}
+
+void SettingsPanel::refreshAlarmSummary()
+{
+    if (!m_alarmSection) {
+        return;
+    }
+    const bool enabled = m_alarmScheduler ? m_alarmScheduler->isEnabled() : false;
+    const QTime t = (m_alarmScheduler && m_alarmScheduler->isConfigured())
+        ? m_alarmScheduler->alarmTime()
+        : m_alarmTimeEdit->time();
+    const QString soundTag = (m_settings && m_settings->soundEnabled())
+        ? QStringLiteral("Sound on")
+        : QStringLiteral("Muted");
+
+    if (!enabled || !t.isValid()) {
+        m_alarmSection->setSummary(QStringLiteral("Off · %1").arg(soundTag));
+        return;
+    }
+
+    const QString timeStr = QLocale::system().toString(t, QLocale::ShortFormat);
+    if (m_alarmScheduler && m_alarmScheduler->state() == AlarmScheduler::State::Snoozed) {
+        m_alarmSection->setSummary(QStringLiteral("%1 · Snoozed").arg(timeStr));
+    } else {
+        m_alarmSection->setSummary(QStringLiteral("%1 · %2").arg(soundTag, timeStr));
+    }
+}
+
+void SettingsPanel::refreshPetSummary()
+{
+    if (!m_petSection || !m_settings) {
+        return;
+    }
+    const QString mode = m_settings->desktopOnlyMode()
+        ? QStringLiteral(" · Desktop-Only")
+        : QString();
+    m_petSection->setSummary(QStringLiteral("Size %1px%2").arg(m_settings->petSize()).arg(mode));
 }
 
 void SettingsPanel::updateLayoutSize(const QScreen* screen)
@@ -692,6 +681,9 @@ void SettingsPanel::updateLayoutSize(const QScreen* screen)
         return;
     }
 
+    if (!screen) {
+        screen = QGuiApplication::screenAt(frameGeometry().center());
+    }
     if (!screen) {
         screen = QGuiApplication::primaryScreen();
     }
@@ -722,6 +714,7 @@ void SettingsPanel::prepareToShow(const QScreen* screen)
 {
     syncFromSettings();
     syncFromTimer();
+    syncFromAlarm();
     updateLayoutSize(screen);
 }
 
@@ -772,41 +765,89 @@ void SettingsPanel::clampToScreen(QPoint& pos) const
         return;
     }
     const QRect avail = screen->availableGeometry();
-    pos.setX(std::clamp(pos.x(), avail.left(), avail.right() - width() + 1));
-    pos.setY(std::clamp(pos.y(), avail.top(), avail.bottom() - height() + 1));
+    pos.setX(std::clamp(pos.x(), avail.left(), std::max(avail.left(), avail.right() - width() + 1)));
+    pos.setY(std::clamp(pos.y(), avail.top(), std::max(avail.top(), avail.bottom() - height() + 1)));
 }
 
-void SettingsPanel::onPreset25() { setDurationInputs(25 * 60); }
-void SettingsPanel::onPreset45() { setDurationInputs(45 * 60); }
-void SettingsPanel::onPreset60() { setDurationInputs(60 * 60); }
-
-void SettingsPanel::onStart()
+void SettingsPanel::onPreset25()
 {
-    if (!m_timer || !m_settings) {
+    if (m_timer && m_timer->isActive()) {
+        return;
+    }
+    setDurationInputs(25 * 60);
+    if (m_settings) {
+        m_settings->setLastTimerSeconds(25 * 60);
+        m_settings->save();
+    }
+}
+
+void SettingsPanel::onPreset45()
+{
+    if (m_timer && m_timer->isActive()) {
+        return;
+    }
+    setDurationInputs(45 * 60);
+    if (m_settings) {
+        m_settings->setLastTimerSeconds(45 * 60);
+        m_settings->save();
+    }
+}
+
+void SettingsPanel::onPreset60()
+{
+    if (m_timer && m_timer->isActive()) {
+        return;
+    }
+    setDurationInputs(60 * 60);
+    if (m_settings) {
+        m_settings->setLastTimerSeconds(60 * 60);
+        m_settings->save();
+    }
+}
+
+void SettingsPanel::onToggleDurationEditor()
+{
+    if (m_timer && m_timer->isActive()) {
+        return;
+    }
+    setDurationEditorVisible(!m_durationEditor->isVisible());
+}
+
+void SettingsPanel::onDurationInputsChanged()
+{
+    if (m_syncingUi) {
         return;
     }
     const int secs = std::max(1, durationFromInputs());
-    m_settings->setLastTimerSeconds(secs);
-    m_settings->save();
-    m_timer->configure(std::chrono::seconds{secs});
-    m_timer->start();
-    refreshTimerButtons();
+    if (m_settings) {
+        m_settings->setLastTimerSeconds(secs);
+        m_settings->save();
+    }
+    updatePresetChips();
+    refreshTimerUi();
 }
 
-void SettingsPanel::onPauseResume()
+void SettingsPanel::onPlayPauseClicked()
 {
-    if (!m_timer) {
+    if (!m_timer || !m_settings) {
         return;
     }
     if (m_timer->isRunning()) {
         m_timer->pause();
     } else if (m_timer->isPaused()) {
         m_timer->resume();
+    } else {
+        setDurationEditorVisible(false);
+        const int secs = std::max(1, durationFromInputs());
+        m_settings->setLastTimerSeconds(secs);
+        m_settings->save();
+        m_timer->configure(std::chrono::seconds{secs});
+        m_timer->start();
     }
-    refreshTimerButtons();
+    refreshTimerUi();
 }
 
-void SettingsPanel::onReset()
+void SettingsPanel::onResetClicked()
 {
     if (!m_timer) {
         return;
@@ -814,62 +855,79 @@ void SettingsPanel::onReset()
     const int secs = std::max(1, durationFromInputs());
     m_timer->configure(std::chrono::seconds{secs});
     m_timer->reset();
-    refreshTimerButtons();
+    refreshTimerUi();
 }
 
-void SettingsPanel::onCancel()
+void SettingsPanel::onSaveAlarmClicked()
 {
-    if (!m_timer) {
+    if (!m_alarmScheduler) {
         return;
     }
-    m_timer->cancel();
-    refreshTimerButtons();
+    const QTime chosen = m_alarmTimeEdit->time();
+    m_alarmScheduler->configureAlarm(chosen, m_alarmEnableCheck->isChecked());
+    refreshAlarmSummary();
 }
 
-void SettingsPanel::refreshTimerButtons()
+void SettingsPanel::onPreviewSoundClicked()
 {
-    if (!m_timer) {
+    if (!m_soundManager) {
         return;
     }
-    const bool active = m_timer->isActive();
-    if (m_timer->isPaused()) {
-        m_pauseBtn->setText(QStringLiteral("Resume"));
-        m_pauseBtn->setEnabled(true);
-    } else if (m_timer->isRunning()) {
-        m_pauseBtn->setText(QStringLiteral("Pause"));
-        m_pauseBtn->setEnabled(true);
-    } else {
-        m_pauseBtn->setText(QStringLiteral("Pause"));
-        m_pauseBtn->setEnabled(false);
-    }
-    m_pauseBtn->setCursor(m_pauseBtn->isEnabled() ? Qt::PointingHandCursor : Qt::ArrowCursor);
-
-    m_cancelBtn->setEnabled(active);
-    m_cancelBtn->setCursor(active ? Qt::PointingHandCursor : Qt::ArrowCursor);
+    const QString soundId = m_soundCombo->currentData().toString();
+    m_soundManager->setVolume(m_volumeSlider->value() / 100.0);
+    m_soundManager->preview(soundId);
 }
 
-void SettingsPanel::onApplyPetSettings()
+void SettingsPanel::onPreferenceChanged()
 {
-    if (!m_settings) {
+    if (m_syncingUi || !m_settings) {
         return;
     }
     m_settings->setPetSize(m_sizeSlider->value());
     m_settings->setMovementSpeed(m_speedSlider->value() / 100.0);
     m_settings->setMovementEnabled(m_moveCheck->isChecked());
     m_settings->setAutoAnimationEnabled(m_animCheck->isChecked());
-    m_settings->setAlwaysOnTop(m_topCheck->isChecked());
-    m_settings->setSoundEnabled(m_soundCheck->isChecked());
+    m_settings->setDesktopOnlyMode(m_desktopOnlyCheck->isChecked());
 
     const bool wantStartup = m_startupCheck->isChecked();
-    m_settings->setLaunchOnStartup(wantStartup);
-    if (wantStartup) {
-        // Allow build-tree paths for local testing; prefer deployed installs for daily use
-        (void)StartupManager::enable(QCoreApplication::applicationFilePath());
-    } else {
-        (void)StartupManager::disable();
+    if (wantStartup != m_settings->launchOnStartup()) {
+        m_settings->setLaunchOnStartup(wantStartup);
+        if (wantStartup) {
+            (void)StartupManager::enable(QCoreApplication::applicationFilePath());
+        } else {
+            (void)StartupManager::disable();
+        }
     }
 
+    m_settings->setSoundEnabled(m_soundCheck->isChecked());
+    m_settings->setAlarmSoundId(m_soundCombo->currentData().toString());
+    m_settings->setAlarmVolume(m_volumeSlider->value() / 100.0);
+    m_settings->setAlarmNotificationEnabled(m_notifyCheck->isChecked());
+
     m_settings->save();
+    refreshPetSummary();
+    refreshAlarmSummary();
+    emit settingsApplied();
+}
+
+void SettingsPanel::onRestoreDefaultsClicked()
+{
+    if (!m_settings) {
+        return;
+    }
+    PixelConfirmDialog dlg(
+        QStringLiteral("Restore default settings?"),
+        QStringLiteral("Pet and sound preferences will reset. Active timers and scheduled alarms stay intact."),
+        QStringLiteral("Restore"),
+        QStringLiteral("Cancel"),
+        this);
+
+    if (dlg.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    m_settings->restoreDefaults();
+    syncFromSettings();
     emit settingsApplied();
 }
 
@@ -888,6 +946,7 @@ void SettingsPanel::mousePressEvent(QMouseEvent* event)
             if (qobject_cast<QAbstractButton*>(w)
                 || qobject_cast<QAbstractSlider*>(w)
                 || qobject_cast<QAbstractSpinBox*>(w)
+                || qobject_cast<QComboBox*>(w)
                 || qobject_cast<QScrollBar*>(w)
                 || qobject_cast<QLineEdit*>(w)) {
                 interactive = true;
@@ -944,21 +1003,5 @@ void SettingsPanel::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing, true);
-
-    const QRectF card = QRectF(rect()).adjusted(4.0, 4.0, -4.0, -4.0);
-    QPainterPath path;
-    path.addRoundedRect(card, 16.0, 16.0);
-
-    // Subtle soft drop shadow outside the opaque card
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(96, 76, 67, 16));
-    p.drawPath(path.translated(0, 3));
-    p.setBrush(QColor(96, 76, 67, 22));
-    p.drawPath(path.translated(0, 1.5));
-
-    // Opaque warm cream background so desktop wallpaper never bleeds through
-    p.setBrush(QColor(0xFF, 0xF8, 0xF2));
-    p.setPen(QPen(QColor(0xEA, 0xDB, 0xD1), 1.2));
-    p.drawPath(path);
+    PixelTheme::paintPixelCard(p, rect(), PixelTheme::kBackground, PixelTheme::kBorder, 4);
 }

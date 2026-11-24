@@ -72,6 +72,7 @@ $required = @(
     "Qt6Core.dll",
     "Qt6Gui.dll",
     "Qt6Widgets.dll",
+    "Qt6Multimedia.dll",
     "platforms\qwindows.dll",
     "imageformats\qgif.dll"
 )

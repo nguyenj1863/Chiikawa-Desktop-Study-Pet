@@ -19,6 +19,11 @@ class SettingsPanel;
 class SystemTrayManager;
 class CompletionToast;
 class WindowCoordinator;
+class AlarmScheduler;
+class AlarmSoundManager;
+class AlarmNotification;
+
+#include "DesktopLayerHelper.h"
 
 /**
  * Frameless translucent desktop pet window.
@@ -59,6 +64,9 @@ protected:
 private slots:
     void onTimerRemaining(std::chrono::milliseconds remaining);
     void onTimerCompleted();
+    void onAlarmTriggered(const QTime& scheduledTime, bool fromSnooze);
+    void onAlarmSnoozed(int minutes);
+    void onAlarmDismissed();
     void onFacingChanged(bool facingLeft);
     void onPositionMoved(const QPoint& pos);
     void hideGear();
@@ -78,6 +86,8 @@ private:
 
     std::unique_ptr<AppSettings> m_settings;
     std::unique_ptr<StudyTimer> m_timer;
+    std::unique_ptr<AlarmScheduler> m_alarmScheduler;
+    std::unique_ptr<AlarmSoundManager> m_soundManager;
     QLabel* m_petLabel = nullptr;
     std::unique_ptr<AnimationManager> m_animations;
     std::unique_ptr<MovementController> m_movement;
@@ -86,11 +96,14 @@ private:
     std::unique_ptr<WindowCoordinator> m_coordinator;
     std::unique_ptr<SystemTrayManager> m_tray;
     std::unique_ptr<CompletionToast> m_completionToast;
+    std::unique_ptr<AlarmNotification> m_alarmNotification;
+    DesktopLayerHelper m_desktopLayer;
 
     QPushButton* m_gearButton = nullptr;
     QGraphicsOpacityEffect* m_gearOpacity = nullptr;
     QPropertyAnimation* m_gearFade = nullptr;
     QTimer m_gearHideTimer;
+    QTimer m_snoozeBubbleTimer;
 
     bool m_dragging = false;
     bool m_dragMoved = false;

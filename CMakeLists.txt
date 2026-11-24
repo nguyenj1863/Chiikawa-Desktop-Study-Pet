@@ -21,7 +21,7 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Test)
 
 set(CHIICAWA_SOURCES
     src/main.cpp
@@ -31,6 +31,12 @@ set(CHIICAWA_SOURCES
     src/StudyTimer.cpp
     src/TimerBubble.cpp
     src/CompletionToast.cpp
+    src/PixelTheme.cpp
+    src/CollapsibleSection.cpp
+    src/AlarmSoundManager.cpp
+    src/AlarmScheduler.cpp
+    src/AlarmNotification.cpp
+    src/DesktopLayerHelper.cpp
     src/SettingsPanel.cpp
     src/SystemTrayManager.cpp
     src/StartupManager.cpp
@@ -40,12 +46,19 @@ set(CHIICAWA_SOURCES
 )
 
 set(CHIICAWA_HEADERS
+    include/SettingsDefaults.h
     include/AppSettings.h
     include/AnimationManager.h
     include/MovementController.h
     include/StudyTimer.h
     include/TimerBubble.h
     include/CompletionToast.h
+    include/PixelTheme.h
+    include/CollapsibleSection.h
+    include/AlarmSoundManager.h
+    include/AlarmScheduler.h
+    include/AlarmNotification.h
+    include/DesktopLayerHelper.h
     include/SettingsPanel.h
     include/SystemTrayManager.h
     include/StartupManager.h
@@ -62,7 +75,7 @@ target_include_directories(ChiikawaStudyPet PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(ChiikawaStudyPet PRIVATE Qt6::Widgets)
+target_link_libraries(ChiikawaStudyPet PRIVATE Qt6::Widgets Qt6::Multimedia)
 
 if(WIN32)
     target_link_libraries(ChiikawaStudyPet PRIVATE user32)
@@ -73,7 +86,7 @@ enable_testing()
 function(chiikawa_add_test name source)
     add_executable(${name} ${source} ${ARGN})
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    target_link_libraries(${name} PRIVATE Qt6::Widgets Qt6::Test)
+    target_link_libraries(${name} PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::Test)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
@@ -87,12 +100,37 @@ chiikawa_add_test(test_app_settings
     tests/test_app_settings.cpp
     src/AppSettings.cpp
     include/AppSettings.h
+    include/SettingsDefaults.h
 )
 
 chiikawa_add_test(test_animation_manager
     tests/test_animation_manager.cpp
     src/AnimationManager.cpp
     include/AnimationManager.h
+    resources/resources.qrc
+)
+
+chiikawa_add_test(test_alarm_and_settings
+    tests/test_alarm_and_settings.cpp
+    src/AppSettings.cpp
+    include/AppSettings.h
+    include/SettingsDefaults.h
+    src/AlarmScheduler.cpp
+    include/AlarmScheduler.h
+    src/AlarmSoundManager.cpp
+    include/AlarmSoundManager.h
+    src/StudyTimer.cpp
+    include/StudyTimer.h
+    src/PixelTheme.cpp
+    include/PixelTheme.h
+    src/CollapsibleSection.cpp
+    include/CollapsibleSection.h
+    src/SettingsPanel.cpp
+    include/SettingsPanel.h
+    src/StartupManager.cpp
+    include/StartupManager.h
+    src/WindowCoordinator.cpp
+    include/WindowCoordinator.h
     resources/resources.qrc
 )
 

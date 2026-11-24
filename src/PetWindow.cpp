@@ -1,5 +1,8 @@
 #include "PetWindow.h"
 
+#include "AlarmNotification.h"
+#include "AlarmScheduler.h"
+#include "AlarmSoundManager.h"
 #include "AnimationManager.h"
 #include "AppSettings.h"
 #include "CompletionToast.h"
@@ -38,6 +41,9 @@ PetWindow::PetWindow(QWidget* parent)
 {
     m_settings = std::make_unique<AppSettings>();
     m_timer = std::make_unique<StudyTimer>(this);
+    m_soundManager = std::make_unique<AlarmSoundManager>(this);
+    m_alarmScheduler = std::make_unique<AlarmScheduler>(
+        m_settings.get(), AlarmScheduler::WallClockFn{}, AlarmScheduler::MonotonicClockFn{}, this);
 
     setupWindowFlags();
     setupUi();
@@ -54,13 +60,30 @@ PetWindow::PetWindow(QWidget* parent)
     m_movement->setSpeedMultiplier(m_settings->movementSpeed());
 
     m_bubble = std::make_unique<TimerBubble>(nullptr);
-    m_settingsPanel = std::make_unique<SettingsPanel>(m_settings.get(), m_timer.get(), nullptr);
+    m_settingsPanel = std::make_unique<SettingsPanel>(
+        m_settings.get(), m_timer.get(), m_alarmScheduler.get(), m_soundManager.get(), nullptr);
     m_coordinator = std::make_unique<WindowCoordinator>(this, m_settingsPanel.get(), this);
     m_completionToast = std::make_unique<CompletionToast>(nullptr);
+    m_alarmNotification = std::make_unique<AlarmNotification>(nullptr);
+
     connect(m_completionToast.get(), &CompletionToast::startAgainRequested, this, [this]() {
         m_completionHandled = false;
         m_timer->configure(std::chrono::seconds{m_settings->lastTimerSeconds()});
         m_timer->start();
+    });
+
+    connect(m_alarmScheduler.get(), &AlarmScheduler::alarmTriggered,
+            this, &PetWindow::onAlarmTriggered);
+    connect(m_alarmNotification.get(), &AlarmNotification::snoozeRequested,
+            this, &PetWindow::onAlarmSnoozed);
+    connect(m_alarmNotification.get(), &AlarmNotification::dismissRequested,
+            this, &PetWindow::onAlarmDismissed);
+
+    m_snoozeBubbleTimer.setSingleShot(true);
+    connect(&m_snoozeBubbleTimer, &QTimer::timeout, this, [this]() {
+        if (m_bubble && !m_hovering) {
+            m_bubble->fadeOut();
+        }
     });
 
     m_tray = std::make_unique<SystemTrayManager>(m_timer.get(), this);
@@ -98,6 +121,8 @@ PetWindow::PetWindow(QWidget* parent)
             m_settings->save();
         }
     });
+    connect(m_settingsPanel.get(), &SettingsPanel::panelResized,
+            m_coordinator.get(), &WindowCoordinator::repositionAfterSettingsResize);
     connect(m_coordinator.get(), &WindowCoordinator::petMoved,
             this, &PetWindow::onPositionMoved);
 
@@ -125,6 +150,7 @@ PetWindow::PetWindow(QWidget* parent)
         m_petLabel->setFixedSize(initialSize, initialSize);
     }
     applySettings();
+    m_alarmScheduler->restoreFromSettings();
 }
 
 PetWindow::~PetWindow()
@@ -138,7 +164,9 @@ PetWindow::~PetWindow()
 void PetWindow::setupWindowFlags()
 {
     Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Tool;
-    if (m_settings->alwaysOnTop()) {
+    if (m_settings->desktopOnlyMode()) {
+        flags |= Qt::WindowStaysOnBottomHint;
+    } else {
         flags |= Qt::WindowStaysOnTopHint;
     }
     setWindowFlags(flags);
@@ -240,21 +268,20 @@ void PetWindow::applySettings()
         }
     }
 
-    const bool wantOnTop = m_settings->alwaysOnTop();
-    if (windowFlags().testFlag(Qt::WindowStaysOnTopHint) != wantOnTop) {
-        Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Tool;
-        if (wantOnTop) {
-            flags |= Qt::WindowStaysOnTopHint;
-        }
-        const bool visible = isVisible();
-        setWindowFlags(flags);
-        setAttribute(Qt::WA_TranslucentBackground);
-        if (visible) {
-            show();
-        }
+    if (m_soundManager) {
+        m_soundManager->setEnabled(m_settings->soundEnabled());
+        m_soundManager->setSelectedSound(m_settings->alarmSoundId());
+        m_soundManager->setVolume(m_settings->alarmVolume());
     }
+    if (m_alarmNotification) {
+        m_alarmNotification->setSnoozeMinutes(m_settings->snoozeMinutes());
+    }
+
+    m_desktopLayer.applyMode(this, m_settings->desktopOnlyMode());
+
+    // Keep settings accessible above normal windows while open even in Desktop-Only Mode
     if (m_settingsPanel) {
-        m_settingsPanel->setAlwaysOnTop(wantOnTop);
+        m_settingsPanel->setAlwaysOnTop(true);
     }
 
     if (m_gearButton) {
@@ -305,7 +332,7 @@ void PetWindow::openSettings()
     if (!screen) {
         screen = QGuiApplication::primaryScreen();
     }
-    m_settingsPanel->setAlwaysOnTop(m_settings->alwaysOnTop());
+    m_settingsPanel->setAlwaysOnTop(true);
     m_settingsPanel->prepareToShow(screen);
     if (m_coordinator) {
         m_coordinator->attachSettings();
@@ -335,6 +362,10 @@ void PetWindow::exitApplication()
 {
     m_gearHideTimer.stop();
     m_singleClickTimer.stop();
+    m_snoozeBubbleTimer.stop();
+    if (m_soundManager) {
+        m_soundManager->stop();
+    }
     if (m_movement) {
         m_movement->pause();
     }
@@ -346,6 +377,9 @@ void PetWindow::exitApplication()
     }
     if (m_settingsPanel) {
         m_settingsPanel->hide();
+    }
+    if (m_alarmNotification) {
+        m_alarmNotification->closeNotification();
     }
     if (m_bubble) {
         m_bubble->hide();
@@ -532,10 +566,54 @@ void PetWindow::playCompletionFeedback()
     if (!m_settings->soundEnabled()) {
         return;
     }
-    // Gentle system beep — no external audio asset required
-#ifdef Q_OS_WIN
-    MessageBeep(MB_OK);
-#endif
+    if (m_soundManager) {
+        m_soundManager->playOnce();
+    }
+}
+
+void PetWindow::onAlarmTriggered(const QTime& scheduledTime, bool fromSnooze)
+{
+    if (m_animations) {
+        m_animations->playCelebration();
+    }
+    if (m_soundManager && m_settings->soundEnabled()) {
+        m_soundManager->playAlarmSequence();
+    }
+    if (m_alarmNotification && m_settings->alarmNotificationEnabled()) {
+        m_alarmNotification->showAlarm(frameGeometry(),
+                                       scheduledTime,
+                                       m_settings->snoozeMinutes(),
+                                       fromSnooze);
+    }
+    if (m_tray) {
+        m_tray->notify(QStringLiteral("Time to go!"),
+                       QStringLiteral("Your Chiikawa alarm is ringing!"));
+    }
+}
+
+void PetWindow::onAlarmSnoozed(int minutes)
+{
+    if (m_soundManager) {
+        m_soundManager->stop();
+    }
+    if (!m_alarmScheduler || !m_alarmScheduler->snooze(minutes)) {
+        return;
+    }
+    if (m_bubble) {
+        m_bubble->updateText(QStringLiteral("Snoozed for %1m... %1 more minutes...").arg(minutes));
+        m_bubble->showNear(frameGeometry());
+        m_snoozeBubbleTimer.start(3500);
+    }
+}
+
+void PetWindow::onAlarmDismissed()
+{
+    if (m_soundManager) {
+        m_soundManager->stop();
+    }
+    if (m_alarmScheduler) {
+        m_alarmScheduler->dismiss();
+    }
 }
 
 void PetWindow::showCompletionToast()
@@ -579,6 +657,9 @@ void PetWindow::resizeEvent(QResizeEvent* event)
 
 bool PetWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
 {
+    if (m_desktopLayer.handleNativeEvent(this, eventType, message, result)) {
+        return true;
+    }
 #ifdef Q_OS_WIN
     if (eventType == "windows_generic_MSG" || eventType == "windows_dispatcher_MSG") {
         auto* msg = static_cast<MSG*>(message);
