@@ -76,7 +76,24 @@ jobs:
             if ($entries -notcontains $req) { throw "Missing entry in ZIP: $req" }
           }
 
-      - name: Upload Windows artifact
+      - name: Build Windows installer (Inno Setup)
+        shell: pwsh
+        env:
+          WINDOWS_SIGN_COMMAND: ${{ secrets.WINDOWS_SIGN_COMMAND }}
+        run: .\scripts\package_installer.ps1 -QtPrefix "$env:Qt6_DIR" -SkipDeploy
+
+      - name: Test Windows installer (fresh, upgrade, uninstall)
+        shell: pwsh
+        run: .\scripts\test_installer.ps1
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChiikawaStudyPet-Setup-x64
+          path: dist/ChiikawaStudyPet-Setup-x64.exe
+          if-no-files-found: error
+
+      - name: Upload Windows portable ZIP artifact
         uses: actions/upload-artifact@v4
         with:
           name: ChiikawaStudyPet-Windows-x64
@@ -232,7 +249,8 @@ jobs:
       - name: Generate SHA256SUMS.txt
         working-directory: release-assets
         run: |
-          sha256sum ChiikawaStudyPet-Windows-x64.zip \
+          sha256sum ChiikawaStudyPet-Setup-x64.exe \
+            ChiikawaStudyPet-Windows-x64.zip \
             ChiikawaStudyPet-macOS-arm64.dmg \
             ChiikawaStudyPet-macOS-x64.dmg > SHA256SUMS.txt
           cat SHA256SUMS.txt
@@ -253,16 +271,18 @@ jobs:
           ### Downloads
 
           **Windows (64-bit)**
-          Download `ChiikawaStudyPet-Windows-x64.zip`, extract it, and double-click `ChiikawaStudyPet.exe`.
+          - **Windows Installer (Recommended):** download `ChiikawaStudyPet-Setup-x64.exe`, run it, and launch **Chiikawa** from the Start Menu (installs per-user under `%LOCALAPPDATA%\Programs\Chiikawa`, no admin required).
+          - **Windows Portable (Advanced / optional):** download `ChiikawaStudyPet-Windows-x64.zip`, extract it, and run `ChiikawaStudyPet.exe`.
 
           **macOS (Apple Silicon & Intel)**
-          - Apple Silicon (M1 / M2 / M3 / M4): download `ChiikawaStudyPet-macOS-arm64.dmg`
-          - Intel Mac: download `ChiikawaStudyPet-macOS-x64.dmg`
+          - **Apple Silicon (M1 / M2 / M3 / M4):** download `ChiikawaStudyPet-macOS-arm64.dmg`
+          - **Intel Mac (x64):** download `ChiikawaStudyPet-macOS-x64.dmg`
 
           Open the DMG and drag `ChiikawaStudyPet.app` into **Applications**.
 
           ### Notes & Known Limitations
 
+          - **Windows SmartScreen:** The Windows installer and executable are not code-signed yet, so Microsoft Defender SmartScreen may show "Windows protected your PC" the first time you run them. This warning does not mean the app is infected. To run anyway, click **More info**, then **Run anyway**.
           - **macOS signing:** The macOS builds are currently unsigned (ad-hoc signed, not notarized with an Apple Developer ID). On first launch, macOS Gatekeeper may warn that the app is from an unidentified developer; you can open it via **Right-click → Open** or **System Settings → Privacy & Security → Open Anyway**.
           - **Desktop-Only Mode:** Currently supported on Windows only (disabled on macOS in this release).
           - **Checksums:** Verify downloads with `SHA256SUMS.txt`.
