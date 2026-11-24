@@ -39,6 +39,8 @@ set(CHIICAWA_SOURCES
     src/AlarmNotification.cpp
     src/DesktopLayerHelper.cpp
     src/WindowsIdentity.cpp
+    src/OnboardingPreview.cpp
+    src/OnboardingWindow.cpp
     src/SettingsPanel.cpp
     src/SystemTrayManager.cpp
     src/StartupManager.cpp
@@ -63,6 +65,8 @@ set(CHIICAWA_HEADERS
     include/AlarmNotification.h
     include/DesktopLayerHelper.h
     include/WindowsIdentity.h
+    include/OnboardingPreview.h
+    include/OnboardingWindow.h
     include/SettingsPanel.h
     include/SystemTrayManager.h
     include/StartupManager.h
@@ -142,6 +146,55 @@ chiikawa_add_test(test_alarm_and_settings
     include/WindowCoordinator.h
     resources/resources.qrc
 )
+
+chiikawa_add_test(test_onboarding
+    tests/test_onboarding.cpp
+    src/AppSettings.cpp
+    include/AppSettings.h
+    include/SettingsDefaults.h
+    src/AnimationManager.cpp
+    include/AnimationManager.h
+    src/MovementController.cpp
+    include/MovementController.h
+    src/StudyTimer.cpp
+    include/StudyTimer.h
+    src/TimerBubble.cpp
+    include/TimerBubble.h
+    src/CompletionToast.cpp
+    include/CompletionToast.h
+    src/PixelTheme.cpp
+    include/PixelTheme.h
+    src/CollapsibleSection.cpp
+    include/CollapsibleSection.h
+    src/AlarmSoundManager.cpp
+    include/AlarmSoundManager.h
+    src/UISoundManager.cpp
+    include/UISoundManager.h
+    src/AlarmScheduler.cpp
+    include/AlarmScheduler.h
+    src/AlarmNotification.cpp
+    include/AlarmNotification.h
+    src/DesktopLayerHelper.cpp
+    include/DesktopLayerHelper.h
+    src/OnboardingPreview.cpp
+    include/OnboardingPreview.h
+    src/OnboardingWindow.cpp
+    include/OnboardingWindow.h
+    src/SettingsPanel.cpp
+    include/SettingsPanel.h
+    src/SystemTrayManager.cpp
+    include/SystemTrayManager.h
+    src/StartupManager.cpp
+    include/StartupManager.h
+    src/WindowCoordinator.cpp
+    include/WindowCoordinator.h
+    src/PetWindow.cpp
+    include/PetWindow.h
+    resources/resources.qrc
+)
+if(WIN32)
+    target_link_libraries(test_onboarding PRIVATE user32)
+endif()
 
 if(WIN32)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS
