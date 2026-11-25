@@ -153,12 +153,16 @@ try {
                 if ($c -and (Test-Path $c)) { $isccExe = $c; break }
             }
         }
+        $nextUpgradeVersion = "1.1.1"
+        if ($uProps.DisplayVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
+            $nextUpgradeVersion = "$($Matches[1]).$($Matches[2]).$([int]$Matches[3] + 1)"
+        }
         $stageDir = Join-Path $Root "dist\ChiikawaStudyPet-Windows-x64"
         if ($isccExe -and (Test-Path $stageDir)) {
-            & $isccExe "/Q" "/DMyAppVersion=1.0.1" "/DSourceDir=$stageDir" "/DOutputDir=$upgradeTempDir" (Join-Path $Root "installer\ChiikawaStudyPet.iss")
+            & $isccExe "/Q" "/DMyAppVersion=$nextUpgradeVersion" "/DSourceDir=$stageDir" "/DOutputDir=$upgradeTempDir" (Join-Path $Root "installer\ChiikawaStudyPet.iss")
             if ($LASTEXITCODE -eq 0) {
                 $upgradeInstaller = Join-Path $upgradeTempDir "ChiikawaStudyPet-Setup-x64.exe"
-                $expectedUpgradeVersion = "1.0.1"
+                $expectedUpgradeVersion = $nextUpgradeVersion
             }
         }
     }

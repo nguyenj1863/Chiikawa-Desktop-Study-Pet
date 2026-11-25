@@ -7,7 +7,7 @@ if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 project(ChiikawaStudyPet
-    VERSION 1.0.0
+    VERSION 1.1.0
     DESCRIPTION "Chiikawa Desktop Study Pet"
     LANGUAGES CXX
 )
@@ -87,6 +87,13 @@ add_executable(ChiikawaStudyPet WIN32 MACOSX_BUNDLE
 
 target_include_directories(ChiikawaStudyPet PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_compile_definitions(ChiikawaStudyPet PRIVATE
+    CHIIKAWA_APP_VERSION="${PROJECT_VERSION}"
+    CHIIKAWA_VER_MAJOR=${PROJECT_VERSION_MAJOR}
+    CHIIKAWA_VER_MINOR=${PROJECT_VERSION_MINOR}
+    CHIIKAWA_VER_PATCH=${PROJECT_VERSION_PATCH}
 )
 
 target_link_libraries(ChiikawaStudyPet PRIVATE Qt6::Widgets Qt6::Multimedia)

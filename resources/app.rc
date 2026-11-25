@@ -1,10 +1,23 @@
 #include <winver.h>
 
+#ifndef CHIIKAWA_VER_MAJOR
+#  define CHIIKAWA_VER_MAJOR 1
+#endif
+#ifndef CHIIKAWA_VER_MINOR
+#  define CHIIKAWA_VER_MINOR 1
+#endif
+#ifndef CHIIKAWA_VER_PATCH
+#  define CHIIKAWA_VER_PATCH 0
+#endif
+#ifndef CHIIKAWA_APP_VERSION
+#  define CHIIKAWA_APP_VERSION "1.1.0"
+#endif
+
 IDI_ICON1 ICON "../assets/chiikawa.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,0
- PRODUCTVERSION 1,0,0,0
+ FILEVERSION CHIIKAWA_VER_MAJOR,CHIIKAWA_VER_MINOR,CHIIKAWA_VER_PATCH,0
+ PRODUCTVERSION CHIIKAWA_VER_MAJOR,CHIIKAWA_VER_MINOR,CHIIKAWA_VER_PATCH,0
  FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
  FILEFLAGS 0x0L
  FILEOS VOS_NT_WINDOWS32
@@ -18,12 +31,12 @@ BEGIN
             VALUE "CompanyName",      "John Nguyen\0"
             VALUE "Author",           "John Nguyen\0"
             VALUE "FileDescription",  "Chiikawa Desktop Study Pet\0"
-            VALUE "FileVersion",      "1.0.0.0\0"
+            VALUE "FileVersion",      CHIIKAWA_APP_VERSION ".0\0"
             VALUE "InternalName",     "ChiikawaStudyPet\0"
             VALUE "LegalCopyright",   "\xA9 2026 John Nguyen (original software code only)\0"
             VALUE "OriginalFilename", "ChiikawaStudyPet.exe\0"
             VALUE "ProductName",      "Chiikawa\0"
-            VALUE "ProductVersion",   "1.0.0\0"
+            VALUE "ProductVersion",   CHIIKAWA_APP_VERSION "\0"
         END
     END
     BLOCK "VarFileInfo"

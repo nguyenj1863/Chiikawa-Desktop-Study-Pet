@@ -240,6 +240,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download all platform artifacts
         uses: actions/download-artifact@v4
         with:
@@ -261,42 +264,33 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          cat > release_notes.md <<'EOF'
-          I made this while I was supposed to be studying, so I figured I might as well make it downloadable.
-
-          It's a small desktop pet built with C++20 and Qt 6. Chiikawa wanders around your screen, switches animations, and comes with a study timer and one-time alarm.
-
-          This is the first release, so there may still be a few things to fix.
+          NOTES_FILE="release-notes/${TAG_NAME}.md"
+          if [ ! -f "${NOTES_FILE}" ]; then
+            NOTES_FILE="release_notes.md"
+            cat > "${NOTES_FILE}" <<EOF
+          Study Pet ${TAG_NAME} release.
 
           ### Downloads
 
           **Windows (64-bit)**
-          - **Windows Installer (Recommended):** download `ChiikawaStudyPet-Setup-x64.exe`, run it, and launch **Chiikawa** from the Start Menu (installs per-user under `%LOCALAPPDATA%\Programs\Chiikawa`, no admin required).
-          - **Windows Portable (Advanced / optional):** download `ChiikawaStudyPet-Windows-x64.zip`, extract it, and run `ChiikawaStudyPet.exe`.
+          - **Windows Installer (Recommended):** \`ChiikawaStudyPet-Setup-x64.exe\`
+          - **Windows Portable:** \`ChiikawaStudyPet-Windows-x64.zip\`
 
-          **macOS 13 (Ventura) or later (Apple Silicon & Intel)**
-          - **Apple Silicon (M1 / M2 / M3 / M4):** download `ChiikawaStudyPet-macOS-arm64.dmg`
-          - **Intel Mac (x64):** download `ChiikawaStudyPet-macOS-x64.dmg`
+          **macOS 13 (Ventura) or later**
+          - **Apple Silicon:** \`ChiikawaStudyPet-macOS-arm64.dmg\`
+          - **Intel Mac (x64):** \`ChiikawaStudyPet-macOS-x64.dmg\`
 
-          Open the DMG and drag `ChiikawaStudyPet.app` into **Applications**.
-
-          ### Notes & Known Limitations
-
-          - **Windows SmartScreen:** The Windows installer and executable are not code-signed yet, so Microsoft Defender SmartScreen may show "Windows protected your PC" the first time you run them. This warning does not mean the app is infected. To run anyway, click **More info**, then **Run anyway**.
-          - **macOS "Apple cannot check it for malicious software":** The macOS builds are not notarized with an Apple Developer ID yet, so Gatekeeper blocks the first launch. To open it:
-            1. Verify the download: `shasum -a 256 ~/Downloads/ChiikawaStudyPet-macOS-*.dmg` and compare with `SHA256SUMS.txt`.
-            2. Drag `ChiikawaStudyPet.app` into **Applications**, double-click it, and click **OK**.
-            3. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the ChiikawaStudyPet message. The button appears for about an hour after the blocked attempt.
-            4. If there is no **Open Anyway** button, run `xattr -dr com.apple.quarantine /Applications/ChiikawaStudyPet.app` in Terminal, then open the app from Applications. Only do this for the official download.
-          - **macOS version:** The macOS builds target macOS 13 (Ventura) and later.
-          - **Desktop-Only Mode:** Currently supported on Windows only (disabled on macOS in this release).
-          - **Checksums:** Verify downloads with `SHA256SUMS.txt`.
+          Verify downloads with \`SHA256SUMS.txt\`.
           EOF
+          fi
 
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release edit "${TAG_NAME}" \
+              --title "Study Pet ${TAG_NAME}" \
+              --notes-file "${NOTES_FILE}"
             gh release upload "${TAG_NAME}" release-assets/* --clobber
           else
             gh release create "${TAG_NAME}" release-assets/* \
               --title "Study Pet ${TAG_NAME}" \
-              --notes-file release_notes.md
+              --notes-file "${NOTES_FILE}"
           fi

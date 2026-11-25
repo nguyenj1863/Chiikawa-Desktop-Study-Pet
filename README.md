@@ -6,14 +6,14 @@
 
 **I was supposed to be studying. So naturally, I built a desktop pet instead.**
 
-[![Release](https://img.shields.io/badge/release-v1.0.0-f4a5a5?style=flat-square)](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/tag/v1.0.0)
+[![Release](https://img.shields.io/badge/release-v1.1.0-f4a5a5?style=flat-square)](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/tag/v1.1.0)
 [![Wiki](https://img.shields.io/badge/docs-GitHub%20Wiki-e89bb0?style=flat-square)](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/wiki)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-6c8ebf?style=flat-square)](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/wiki/Building-from-Source)
 [![Qt 6](https://img.shields.io/badge/Qt-6.8-41cd52?style=flat-square)](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/wiki/Application-Architecture)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS-8d7b68?style=flat-square)](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/wiki/Releases-and-Compatibility)
 [![License](https://img.shields.io/badge/code%20license-MIT-d9a05b?style=flat-square)](LICENSE)
 
-**[⬇️ Download Latest Release (v1.0.0)](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/latest)** · **[📖 Read the Wiki](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/wiki)** · **[🐛 Report an Issue](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/issues)**
+**[⬇️ Download Latest Release (v1.1.0)](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/latest)** · **[📖 Read the Wiki](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/wiki)** · **[🐛 Report an Issue](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/issues)**
 
 </div>
 
@@ -31,10 +31,10 @@ Don't want to compile C++ just to have a little character running around your de
 
 | Platform | Download | Notes |
 |---|---|---|
-| **Windows 10 / 11 (Installer)** | **[ChiikawaStudyPet-Setup-x64.exe](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.0.0/ChiikawaStudyPet-Setup-x64.exe)** | **Recommended.** Per-user install to `%LOCALAPPDATA%\Programs\Chiikawa` (no admin required) |
-| **Windows 10 / 11 (Portable)** | **[ChiikawaStudyPet-Windows-x64.zip](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.0.0/ChiikawaStudyPet-Windows-x64.zip)** | Extract-and-run portable archive |
-| **macOS 13+ (Apple Silicon)** | **[ChiikawaStudyPet-macOS-arm64.dmg](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.0.0/ChiikawaStudyPet-macOS-arm64.dmg)** | Drag `ChiikawaStudyPet.app` into Applications |
-| **macOS 13+ (Intel x64)** | **[ChiikawaStudyPet-macOS-x64.dmg](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.0.0/ChiikawaStudyPet-macOS-x64.dmg)** | Drag `ChiikawaStudyPet.app` into Applications |
+| **Windows 10 / 11 (Installer)** | **[ChiikawaStudyPet-Setup-x64.exe](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.1.0/ChiikawaStudyPet-Setup-x64.exe)** | **Recommended.** Per-user install to `%LOCALAPPDATA%\Programs\Chiikawa` (no admin required) |
+| **Windows 10 / 11 (Portable)** | **[ChiikawaStudyPet-Windows-x64.zip](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.1.0/ChiikawaStudyPet-Windows-x64.zip)** | Extract-and-run portable archive |
+| **macOS 13+ (Apple Silicon)** | **[ChiikawaStudyPet-macOS-arm64.dmg](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.1.0/ChiikawaStudyPet-macOS-arm64.dmg)** | Drag `ChiikawaStudyPet.app` into Applications |
+| **macOS 13+ (Intel x64)** | **[ChiikawaStudyPet-macOS-x64.dmg](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases/download/v1.1.0/ChiikawaStudyPet-macOS-x64.dmg)** | Drag `ChiikawaStudyPet.app` into Applications |
 
 > [!NOTE]
 > **Unsigned builds:** Releases are not yet signed with a paid Windows certificate or notarized with an Apple Developer ID. On Windows SmartScreen, click **More info → Run anyway**. On macOS Gatekeeper, open **System Settings → Privacy & Security → Open Anyway** after your first launch attempt. You can verify every download against `SHA256SUMS.txt` on the [Releases page](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/releases). For detailed steps, see the **[Installation Guide](https://github.com/nguyenj1863/Chiikawa-Desktop-Study-Pet/wiki/Installation)**.
