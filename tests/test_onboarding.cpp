@@ -9,6 +9,8 @@
 #include "UISoundManager.h"
 
 #include <QApplication>
+#include <QImage>
+#include <QPainter>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QPushButton>
@@ -30,6 +32,10 @@ private slots:
     void restoreDefaultsPreservesOnboardingCompleted();
     void fireAndSkipInteractiveHitRegions();
     void petWindowDisablesNativeDropShadow();
+    void typographyPreservedAfterDarkGlassRedesign();
+    void glassMaterialAlphaRanges();
+    void glassCornersStayTransparent();
+    void glassWindowsAreTranslucent();
 };
 
 void TestOnboarding::init()
@@ -336,6 +342,89 @@ void TestOnboarding::petWindowDisablesNativeDropShadow()
     PetWindow pet;
     QVERIFY(pet.windowFlags().testFlag(Qt::FramelessWindowHint));
     QVERIFY(pet.windowFlags().testFlag(Qt::NoDropShadowWindowHint));
+}
+
+void TestOnboarding::typographyPreservedAfterDarkGlassRedesign()
+{
+    // Font families must remain identical to original typography
+    QCOMPARE(PixelTheme::displayFontFamily(), QStringLiteral("Pixelify Sans"));
+    QCOMPARE(PixelTheme::bodyFontFamily(), QStringLiteral("Nunito"));
+
+    const QString qss = PixelTheme::styleSheet();
+
+    // Preserve original typography sizes, weights, and font families
+    QVERIFY(qss.contains(QStringLiteral("font-family: 'Pixelify Sans', 'Segoe UI', sans-serif;")));
+    QVERIFY(qss.contains(QStringLiteral("font-family: 'Nunito', 'Segoe UI', 'Yu Gothic UI', sans-serif;")));
+    QVERIFY(qss.contains(QStringLiteral("font-family: 'Cascadia Mono', 'Consolas', 'Segoe UI', monospace;")));
+    QVERIFY(qss.contains(QStringLiteral("font-size: 44px;")));
+    QVERIFY(qss.contains(QStringLiteral("font-size: 24px;")));
+    QVERIFY(qss.contains(QStringLiteral("font-size: 30px;")));
+    QVERIFY(qss.contains(QStringLiteral("font-size: 28px;")));
+    QVERIFY(qss.contains(QStringLiteral("font-size: 16px;")));
+
+    // Zero leftover pastel cream/pink or dark-brown colors in shared QSS
+    QVERIFY(!qss.contains(QStringLiteral("#FFF9F2"), Qt::CaseInsensitive));
+    QVERIFY(!qss.contains(QStringLiteral("#FFF0E6"), Qt::CaseInsensitive));
+    QVERIFY(!qss.contains(QStringLiteral("#F3A6A0"), Qt::CaseInsensitive));
+    QVERIFY(!qss.contains(QStringLiteral("#F7C2B5"), Qt::CaseInsensitive));
+    QVERIFY(!qss.contains(QStringLiteral("#654C43"), Qt::CaseInsensitive));
+    QVERIFY(!qss.contains(QStringLiteral("#593E35"), Qt::CaseInsensitive));
+
+    // Smoked-black glass palette tokens are active (text colours remain opaque)
+    QCOMPARE(PixelTheme::kBgPrimary, QColor(0x05, 0x06, 0x08));
+    QCOMPARE(PixelTheme::kBackground, QColor(0x0A, 0x0C, 0x10));
+    QCOMPARE(PixelTheme::kPrimaryAccent, QColor(0x6E, 0xA8, 0xFF));
+    QCOMPARE(PixelTheme::kPrimaryAccentHover, QColor(0x8A, 0xB9, 0xFF));
+    QCOMPARE(PixelTheme::kPrimaryText, QColor(0xF3, 0xF6, 0xFC));
+    QCOMPARE(PixelTheme::kSecondaryText, QColor(0xBC, 0xC7, 0xD9));
+    QCOMPARE(PixelTheme::kMutedText, QColor(0x8E, 0x9A, 0xAD));
+    QCOMPARE(PixelTheme::kPrimaryText.alpha(), 255);
+    QCOMPARE(PixelTheme::kSecondaryText.alpha(), 255);
+}
+
+void TestOnboarding::glassMaterialAlphaRanges()
+{
+    // Primary glass sits around 75-80% effective opacity: visibly tinted, not opaque.
+    QVERIFY(PixelTheme::kGlassPrimaryAlpha >= 184 && PixelTheme::kGlassPrimaryAlpha <= 209);
+    QVERIFY(PixelTheme::kGlassPrimaryAlpha <= 230); // never more than ~90%
+    // Secondary is more transparent than primary; compact overlays are denser for contrast.
+    QVERIFY(PixelTheme::kGlassSecondaryAlpha < PixelTheme::kGlassPrimaryAlpha);
+    QVERIFY(PixelTheme::kGlassCompactAlpha >= PixelTheme::kGlassPrimaryAlpha);
+    QVERIFY(PixelTheme::kGlassCompactAlpha <= 235);
+
+    // Nested card washes must stay near-transparent so they do not cancel the glass.
+    QVERIFY(PixelTheme::kCardBg.alpha() >= 26 && PixelTheme::kCardBg.alpha() <= 51);
+
+    // The stylesheet must not reintroduce the old opaque navy fills.
+    const QString qss = PixelTheme::styleSheet();
+    QVERIFY(!qss.contains(QStringLiteral("rgba(11, 20, 36, 2"), Qt::CaseInsensitive));
+    QVERIFY(!qss.contains(QStringLiteral("#0B1424"), Qt::CaseInsensitive));
+    QVERIFY(!qss.contains(QStringLiteral("#568FE5"), Qt::CaseInsensitive));
+}
+
+void TestOnboarding::glassCornersStayTransparent()
+{
+    // Rounded corners must composite to real alpha = 0 (no square artifacts),
+    // while the centre of the surface is the translucent smoked tint.
+    constexpr int kSize = 220;
+    QImage img(kSize, kSize, QImage::Format_ARGB32_Premultiplied);
+    img.fill(Qt::transparent);
+    {
+        QPainter painter(&img);
+        PixelTheme::paintGlassSurface(painter, QRect(0, 0, kSize, kSize),
+                                      PixelTheme::GlassLevel::Primary, PixelTheme::kRadiusWindow, 5);
+    }
+    QCOMPARE(qAlpha(img.pixel(0, 0)), 0);
+    QCOMPARE(qAlpha(img.pixel(kSize - 1, kSize - 1)), 0);
+    QCOMPARE(qAlpha(img.pixel(kSize / 2, kSize / 2)) >= 180, true);
+    QCOMPARE(qAlpha(img.pixel(kSize / 2, kSize / 2)) <= 225, true);
+}
+
+void TestOnboarding::glassWindowsAreTranslucent()
+{
+    OnboardingWindow onboarding;
+    QVERIFY(onboarding.testAttribute(Qt::WA_TranslucentBackground));
+
 }
 
 QTEST_MAIN(TestOnboarding)

@@ -16,6 +16,7 @@
 #include <QEnterEvent>
 #include <QLabel>
 #include <QPushButton>
+#include <QImage>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QSpinBox>
@@ -78,6 +79,7 @@ private slots:
     void completionToastPositioningHoverTimeoutAndActions();
     void uiSoundManagerThrottlingAndUserOnlyPlayback();
     void redesignedTimerAndAlarmControls();
+    void settingsPanelUsesTranslucentGlass();
 };
 
 void TestAlarmAndSettings::init()
@@ -665,6 +667,24 @@ void TestAlarmAndSettings::uiSoundManagerThrottlingAndUserOnlyPlayback()
     QCOMPARE(btnSoundsCheck->isChecked(), true);
 }
 
+void TestAlarmAndSettings::settingsPanelUsesTranslucentGlass()
+{
+    AppSettings settings;
+    StudyTimer timer;
+    AlarmScheduler scheduler(&settings);
+    AlarmSoundManager sound;
+    SettingsPanel panel(&settings, &timer, &scheduler, &sound);
+
+    QVERIFY(panel.testAttribute(Qt::WA_TranslucentBackground));
+
+    // Rounded corners must composite to transparent so the desktop shows through.
+    panel.resize(360, 520);
+    panel.ensurePolished();
+    const QImage img = panel.grab().toImage();
+    QVERIFY(!img.isNull());
+    QCOMPARE(img.pixelColor(0, 0).alpha(), 0);
+    QCOMPARE(img.pixelColor(img.width() - 1, img.height() - 1).alpha(), 0);
+}
 void TestAlarmAndSettings::redesignedTimerAndAlarmControls()
 {
     // Shared directional arrow icon assets load cleanly for Alarm dropdowns, Timer steppers, and Onboarding
@@ -746,8 +766,9 @@ void TestAlarmAndSettings::redesignedTimerAndAlarmControls()
     QCOMPARE(editBtn->isEnabled(), true);
     QCOMPARE(editBtn->toolTip(), QStringLiteral("Edit custom duration"));
 
-    // Study timer up/down buttons have a distinct pastel shade so they stand out
-    QVERIFY(qss.contains(QStringLiteral("background: #F4D5C7;")));
+    // Study timer up/down steppers use a translucent white wash over smoked glass (no pastel fill)
+    QVERIFY(qss.contains(QStringLiteral("background: rgba(255, 255, 255, 26);")));
+    QVERIFY(!qss.contains(QStringLiteral("#F4D5C7"), Qt::CaseInsensitive));
 
     // Sticky footer keeps Exit Application inside panel bounds (never clipped off-screen)
     QPushButton* exitBtn = nullptr;

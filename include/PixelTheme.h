@@ -30,17 +30,48 @@ enum class PixelIcon {
 
 namespace PixelTheme {
 
-inline const QColor kBackground{0xFF, 0xF9, 0xF2};      // #FFF9F2
-inline const QColor kCardBg{0xFF, 0xF0, 0xE6};          // #FFF0E6
-inline const QColor kPrimaryAccent{0xF3, 0xA6, 0xA0};   // #F3A6A0
-inline const QColor kHoverAccent{0xF7, 0xC2, 0xB5};     // #F7C2B5
-inline const QColor kSecondaryAccent{0xE8, 0xC7, 0xB7}; // #E8C7B7
-inline const QColor kBorder{0xDD, 0xBF, 0xB3};          // #DDBFB3
-inline const QColor kPrimaryText{0x65, 0x4C, 0x43};     // #654C43
-inline const QColor kSecondaryText{0x96, 0x7F, 0x73};   // #967F73
-inline const QColor kDisabled{0xE9, 0xDF, 0xDA};        // #E9DFDA
-inline const QColor kDangerBg{0xFC, 0xE4, 0xE1};        // #FCE4E1
-inline const QColor kDangerText{0x8F, 0x43, 0x40};      // #8F4340
+// Smoked-black Liquid Glass palette tokens (Windows Terminal acrylic reference).
+// Surfaces are translucent black; text, icons, and GIFs stay fully opaque.
+inline const QColor kBgPrimary{0x05, 0x06, 0x08};             // #050608 deepest base
+inline const QColor kBackground{0x0A, 0x0C, 0x10};            // #0A0C10 primary glass tint (popups, tooltips)
+inline const QColor kGlassSurface{0x14, 0x18, 0x20};          // #141820 secondary glass tint
+inline const QColor kGlassElevated{0x1C, 0x22, 0x2B};         // #1C222B elevated tint (always used with alpha)
+inline const QColor kCardBg{0x1C, 0x22, 0x2B, 46};            // nested card wash, ~18% (near-transparent)
+inline const QColor kHoverAccent{0xFF, 0xFF, 0xFF, 34};       // hovered control wash, ~13% white
+inline const QColor kPrimaryAccent{0x6E, 0xA8, 0xFF};         // #6EA8FF primary action
+inline const QColor kPrimaryAccentHover{0x8A, 0xB9, 0xFF};    // #8AB9FF hovered primary action
+inline const QColor kPrimaryAccentPressed{0x5A, 0x97, 0xF0};  // #5A97F0 pressed primary action
+inline const QColor kSecondaryAccent{0x29, 0x4B, 0x78};       // #294B78 selected / subtle accent
+inline const QColor kBorder{0xFF, 0xFF, 0xFF, 40};            // white low-alpha glass hairline
+inline const QColor kBorderHighlight{0xFF, 0xFF, 0xFF, 56};   // upper-edge specular hairline
+inline const QColor kPrimaryText{0xF3, 0xF6, 0xFC};           // #F3F6FC primary text (opaque)
+inline const QColor kSecondaryText{0xBC, 0xC7, 0xD9};         // #BCC7D9 descriptions
+inline const QColor kMutedText{0x8E, 0x9A, 0xAD};             // #8E9AAD labels & footers
+inline const QColor kDisabled{0x1C, 0x22, 0x2B, 120};         // disabled control fill
+inline const QColor kDangerBg{0x2B, 0x18, 0x22, 204};         // restrained dark crimson surface
+inline const QColor kDangerText{0xF4, 0x8C, 0x94};            // #F48C94 readable coral-red danger text
+inline const QColor kDangerBorder{0x5E, 0x2C, 0x3B};          // #5E2C3B subtle danger border
+
+// Effective glass opacity per depth tier (alpha / 255). Primary ~78%, Compact ~85%, Secondary ~58%.
+inline constexpr int kGlassPrimaryAlpha = 199;
+inline constexpr int kGlassSecondaryAlpha = 148;
+inline constexpr int kGlassCompactAlpha = 217;
+inline const QColor kGlassPrimaryTint{0x08, 0x0A, 0x0D};      // #080A0D near-black smoked glass
+inline const QColor kGlassCompactTint{0x04, 0x05, 0x07};      // compact overlays: deeper black for contrast
+
+// Shared corner radii
+inline constexpr qreal kRadiusWindow = 20.0;
+inline constexpr qreal kRadiusCard = 14.0;
+inline constexpr qreal kRadiusButton = 10.0;
+inline constexpr qreal kRadiusInput = 10.0;
+inline constexpr qreal kRadiusBubble = 15.0;
+
+/** Glass surface depth tier for floating windows, cards, and compact overlays. */
+enum class GlassLevel {
+    Primary,
+    Secondary,
+    Compact
+};
 
 /**
  * Renders and caches a crisp pixel-art icon on an integer pixel grid at 2x DPR.
@@ -65,7 +96,17 @@ void ensureFontsLoaded();
 [[nodiscard]] QString bodyFontFamily();
 
 /**
- * Paints a kawaii pixel-stepped card frame with subtle pixel shadow and inner highlight.
+ * Paints a smoked-black Liquid Glass floating surface with soft ambient shadow,
+ * subtle vertical gradient, upper-edge glass highlight, and thin rim border.
+ */
+void paintGlassSurface(QPainter& p,
+                       const QRect& bounds,
+                       GlassLevel level = GlassLevel::Primary,
+                       qreal radius = -1.0,
+                       int margin = 5);
+
+/**
+ * Paints a rounded dark glass card frame (compat wrapper around paintGlassSurface).
  */
 void paintPixelCard(QPainter& p,
                     const QRect& bounds,
@@ -74,8 +115,9 @@ void paintPixelCard(QPainter& p,
                     int margin = 4);
 
 /**
- * Shared pixel-art QSS for SettingsPanel, AlarmNotification, and child controls
- * (buttons, combo boxes + popups, spinboxes, time edits, sliders, scrollbars, tooltips).
+ * Shared smoked-black Liquid Glass QSS for SettingsPanel, OnboardingWindow,
+ * AlarmNotification, CompletionToast, and child controls.
+ * Preserves all existing typography (font families, sizes, weights, and spacing).
  */
 [[nodiscard]] QString styleSheet();
 

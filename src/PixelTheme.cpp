@@ -6,7 +6,9 @@
 #include <QHash>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLinearGradient>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QSizePolicy>
 #include <QVBoxLayout>
@@ -477,42 +479,95 @@ void drawDropdownArrow(QPainter& p, const QRectF& area, bool pointingUp, int siz
     p.restore();
 }
 
+void paintGlassSurface(QPainter& p,
+                       const QRect& bounds,
+                       GlassLevel level,
+                       qreal radius,
+                       int margin)
+{
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    const qreal resolvedRadius = (radius >= 0.0)
+        ? radius
+        : (level == GlassLevel::Primary
+           ? kRadiusWindow
+           : (level == GlassLevel::Secondary ? kRadiusCard : kRadiusBubble));
+
+    const QRectF card = QRectF(bounds).adjusted(margin, margin, -margin, -margin);
+    QPainterPath cardPath;
+    cardPath.addRoundedRect(card, resolvedRadius, resolvedRadius);
+
+    // Faint ambient shadow only (no dark halo): keeps edges legible on bright wallpapers.
+    p.setPen(Qt::NoPen);
+    if (level != GlassLevel::Secondary) {
+        for (int i = 3; i >= 1; --i) {
+            const qreal spread = static_cast<qreal>(i) * 1.2;
+            QPainterPath shadowPath;
+            shadowPath.addRoundedRect(card.adjusted(-spread * 0.4, spread * 0.5, spread * 0.4, spread * 1.0),
+                                      resolvedRadius + spread * 0.3, resolvedRadius + spread * 0.3);
+            p.setBrush(QColor(0, 0, 0, 6 + (4 - i) * 4));
+            p.drawPath(shadowPath);
+        }
+    }
+
+    // Flat smoked tint with a barely perceptible top-to-bottom falloff (no navy gradients).
+    const int alpha = level == GlassLevel::Primary
+        ? kGlassPrimaryAlpha
+        : (level == GlassLevel::Secondary ? kGlassSecondaryAlpha : kGlassCompactAlpha);
+    const QColor tint = level == GlassLevel::Primary
+        ? kGlassPrimaryTint
+        : (level == GlassLevel::Secondary ? kGlassSurface : kGlassCompactTint);
+    QColor fillTop = tint;
+    fillTop.setAlpha(std::min(255, alpha + 6));
+    QColor fillBottom = tint;
+    fillBottom.setAlpha(std::max(0, alpha - 6));
+    QLinearGradient fillGrad(card.topLeft(), card.bottomLeft());
+    fillGrad.setColorAt(0.0, fillTop);
+    fillGrad.setColorAt(1.0, fillBottom);
+    p.setBrush(fillGrad);
+    p.setPen(Qt::NoPen);
+    p.drawPath(cardPath);
+
+    // Soft glass sheen and specular top hairline, clipped to the surface.
+    p.save();
+    p.setClipPath(cardPath);
+    const QRectF sheenRect(card.left(), card.top(), card.width(), card.height() * 0.34);
+    QLinearGradient sheenGrad(sheenRect.topLeft(), sheenRect.bottomLeft());
+    const int sheenAlpha = (level == GlassLevel::Secondary) ? 10 : 14;
+    sheenGrad.setColorAt(0.0, QColor(255, 255, 255, sheenAlpha));
+    sheenGrad.setColorAt(1.0, QColor(255, 255, 255, 0));
+    p.fillRect(sheenRect, sheenGrad);
+
+    const QRectF topRimRect = card.adjusted(0.75, 0.75, -0.75, -0.75);
+    QLinearGradient rimGrad(topRimRect.topLeft(), QPointF(topRimRect.left(), topRimRect.top() + 28.0));
+    rimGrad.setColorAt(0.0, QColor(255, 255, 255, level == GlassLevel::Secondary ? 26 : 34));
+    rimGrad.setColorAt(1.0, QColor(255, 255, 255, 0));
+    p.setPen(QPen(QBrush(rimGrad), 1.0));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(topRimRect, std::max<qreal>(1.0, resolvedRadius - 0.75),
+                      std::max<qreal>(1.0, resolvedRadius - 0.75));
+    p.restore();
+
+    // Hairline outer border in low-alpha white.
+    const int borderAlpha = (level == GlassLevel::Compact) ? 40
+        : (level == GlassLevel::Secondary ? 22 : 30);
+    p.setPen(QPen(QColor(255, 255, 255, borderAlpha), 1.0));
+    p.setBrush(Qt::NoBrush);
+    p.drawPath(cardPath);
+
+    p.restore();
+}
+
 void paintPixelCard(QPainter& p,
                     const QRect& bounds,
                     const QColor& fill,
                     const QColor& border,
                     int margin)
 {
-    p.save();
-    p.setRenderHint(QPainter::Antialiasing, false);
-
-    const QRect card = bounds.adjusted(margin, margin, -margin - 2, -margin - 2);
-    const int x = card.x();
-    const int y = card.y();
-    const int w = card.width();
-    const int h = card.height();
-    constexpr int c = 4; // pixel corner step
-
-    auto drawSteppedRect = [&](int ox, int oy, const QColor& col) {
-        p.fillRect(x + ox + c, y + oy, w - 2 * c, h, col);
-        p.fillRect(x + ox, y + oy + c, w, h - 2 * c, col);
-        p.fillRect(x + ox + 2, y + oy + 2, w - 4, h - 4, col);
-    };
-
-    // Soft pixel drop shadow (2px down-right)
-    drawSteppedRect(2, 2, QColor(101, 76, 67, 26));
-
-    // Outer pixel border
-    drawSteppedRect(0, 0, border);
-
-    // Inner fill (2px inset)
-    p.fillRect(x + c, y + 2, w - 2 * c, h - 4, fill);
-    p.fillRect(x + 2, y + c, w - 4, h - 2 * c, fill);
-
-    // Subtle warm top highlight strip inside the card
-    p.fillRect(x + c + 1, y + 2, w - 2 * c - 2, 2, QColor(255, 255, 255, 160));
-
-    p.restore();
+    Q_UNUSED(fill);
+    Q_UNUSED(border);
+    paintGlassSurface(p, bounds, GlassLevel::Primary, kRadiusWindow, margin);
 }
 
 QString styleSheet()
@@ -522,67 +577,67 @@ QString styleSheet()
             background: transparent;
         }
         QLabel {
-            color: #654C43;
+            color: #F3F6FC;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 12px;
             background: transparent;
         }
         QLabel#title {
-            color: #654C43;
+            color: #F3F6FC;
             font-size: 15px;
             font-weight: 700;
             letter-spacing: 0.4px;
         }
         QLabel#toastTitle {
-            color: #654C43;
+            color: #F3F6FC;
             font-size: 13px;
             font-weight: 700;
         }
         QLabel#onboardingWelcomeHeading {
-            color: #593E35;
+            color: #F3F6FC;
             font-family: '%1', 'Segoe UI', sans-serif;
             font-size: 44px;
             font-weight: 500;
             letter-spacing: 0.8px;
         }
         QLabel#onboardingAppTitle {
-            color: #D97F78;
+            color: #8AB9FF;
             font-family: '%1', 'Segoe UI', sans-serif;
             font-size: 24px;
             font-weight: 500;
             letter-spacing: 0.6px;
         }
         QLabel#onboardingHeading {
-            color: #593E35;
+            color: #F3F6FC;
             font-family: '%1', 'Segoe UI', sans-serif;
             font-size: 30px;
             font-weight: 500;
             letter-spacing: 0.6px;
         }
         QLabel#onboardingBody {
-            color: #6F574D;
+            color: #BCC7D9;
             font-family: '%2', 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 16px;
             font-weight: 500;
         }
         QLabel#onboardingProgress {
-            color: #7D6459;
+            color: #BCC7D9;
             font-family: '%2', 'Segoe UI', sans-serif;
             font-size: 14px;
             font-weight: 700;
         }
         QLabel#onboardingFooter {
-            color: #9E867B;
+            color: #8E9AAD;
             font-family: '%2', 'Segoe UI Symbol', 'Segoe UI', sans-serif;
             font-size: 12px;
             font-weight: 600;
             letter-spacing: 0.2px;
         }
         QPushButton#onboardingPrimary {
-            background: #F3A6A0;
+            background: #6EA8FF;
             color: #FFFFFF;
-            border: 2px solid #DC8981;
-            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 77);
+            border-radius: 12px;
             padding: 7px 20px;
             font-family: '%2', 'Segoe UI', sans-serif;
             font-size: 16px;
@@ -590,21 +645,21 @@ QString styleSheet()
             min-height: 24px;
         }
         QPushButton#onboardingPrimary:hover {
-            background: #EA9891;
-            border-color: #D27C74;
+            background: #82B4FF;
+            border-color: rgba(255, 255, 255, 130);
         }
         QPushButton#onboardingPrimary:pressed {
-            background: #DF8880;
-            border-color: #C76D65;
+            background: #5A97F0;
+            border-color: rgba(255, 255, 255, 72);
         }
         QPushButton#onboardingPrimary:focus {
-            border-color: #654C43;
+            border: 1px solid #9CC6FF;
         }
         QPushButton#onboardingSecondary {
-            background: #FFF0E6;
-            color: #593E35;
-            border: 2px solid #DDBFB3;
-            border-radius: 6px;
+            background: rgba(255, 255, 255, 26);
+            color: #F3F6FC;
+            border: 1px solid rgba(255, 255, 255, 31);
+            border-radius: 12px;
             padding: 7px 18px;
             font-family: '%2', 'Segoe UI', sans-serif;
             font-size: 15px;
@@ -612,22 +667,22 @@ QString styleSheet()
             min-height: 24px;
         }
         QPushButton#onboardingSecondary:hover {
-            background: #F7C2B5;
-            border-color: #DF9B92;
+            background: rgba(255, 255, 255, 47);
+            border-color: rgba(255, 255, 255, 55);
         }
         QPushButton#onboardingSecondary:pressed {
-            background: #F3A6A0;
+            background: rgba(41, 75, 120, 235);
             color: #FFFFFF;
-            border-color: #DC8981;
+            border-color: rgba(138, 185, 255, 130);
         }
         QPushButton#onboardingSecondary:focus {
-            border-color: #F3A6A0;
+            border-color: #6EA8FF;
         }
         QPushButton#onboardingSkip {
-            background: #FFF9F2;
-            color: #7D6459;
-            border: 2px solid #E8C7B7;
-            border-radius: 6px;
+            background: rgba(0, 0, 0, 59);
+            color: #BCC7D9;
+            border: 1px solid rgba(255, 255, 255, 23);
+            border-radius: 12px;
             padding: 7px 16px;
             font-family: '%2', 'Segoe UI', sans-serif;
             font-size: 15px;
@@ -635,50 +690,50 @@ QString styleSheet()
             min-height: 24px;
         }
         QPushButton#onboardingSkip:hover {
-            background: #FFF0E6;
-            color: #593E35;
-            border-color: #DDBFB3;
+            background: rgba(255, 255, 255, 42);
+            color: #F3F6FC;
+            border-color: rgba(255, 255, 255, 46);
         }
         QPushButton#onboardingSkip:pressed {
-            background: #F7C2B5;
-            color: #593E35;
+            background: rgba(41, 75, 120, 215);
+            color: #FFFFFF;
         }
         QPushButton#onboardingSkip:focus {
-            border-color: #F3A6A0;
+            border-color: #6EA8FF;
         }
         QLabel#sectionTitle {
-            color: #654C43;
+            color: #F3F6FC;
             font-size: 12px;
             font-weight: 700;
         }
         QLabel#sectionSummary {
-            color: #967F73;
+            color: #BCC7D9;
             font-size: 11px;
             font-weight: 600;
         }
         QLabel#muted {
-            color: #967F73;
+            color: #BCC7D9;
             font-size: 11px;
         }
         QLabel#valueBadge {
-            color: #967F73;
+            color: #BCC7D9;
             font-size: 11px;
             font-weight: 700;
         }
         QFrame#pixelDivider {
-            background: #E8C7B7;
-            max-height: 2px;
-            min-height: 2px;
+            background: rgba(255, 255, 255, 19);
+            max-height: 1px;
+            min-height: 1px;
             border: none;
         }
         QFrame#timerCard {
-            background: #FFF0E6;
-            border: 2px solid #DDBFB3;
-            border-radius: 6px;
+            background: rgba(255, 255, 255, 24);
+            border: 1px solid rgba(255, 255, 255, 26);
+            border-radius: 14px;
         }
         QPushButton#countdownDisplay {
             background: transparent;
-            color: #654C43;
+            color: #F3F6FC;
             border: none;
             font-family: 'Cascadia Mono', 'Consolas', 'Segoe UI', monospace;
             font-size: 28px;
@@ -686,60 +741,60 @@ QString styleSheet()
             padding: 1px 4px;
         }
         QPushButton#countdownDisplay:hover {
-            color: #4D3730;
-            background: rgba(247, 194, 181, 0.35);
-            border-radius: 4px;
+            color: #FFFFFF;
+            background: rgba(110, 168, 255, 0.20);
+            border-radius: 10px;
         }
         QPushButton#countdownDisplay:disabled {
-            color: #654C43;
+            color: #F3F6FC;
             background: transparent;
         }
         QSpinBox, QTimeEdit {
-            background: #FFF9F2;
-            border: 2px solid #DDBFB3;
-            border-radius: 4px;
-            padding: 2px 20px 2px 4px;
-            color: #654C43;
+            background: rgba(0, 0, 0, 104);
+            border: 1px solid rgba(255, 255, 255, 31);
+            border-radius: 10px;
+            padding: 2px 20px 2px 6px;
+            color: #F3F6FC;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 12px;
             font-weight: 700;
             min-height: 24px;
-            selection-background-color: #F7C2B5;
-            selection-color: #654C43;
+            selection-background-color: #294B78;
+            selection-color: #FFFFFF;
         }
         QSpinBox:hover, QTimeEdit:hover {
-            border-color: #F3A6A0;
-            background: #FFFFFF;
+            border-color: rgba(138, 185, 255, 130);
+            background: rgba(0, 0, 0, 84);
         }
         QSpinBox:focus, QTimeEdit:focus {
-            border-color: #F3A6A0;
-            background: #FFFFFF;
+            border-color: #6EA8FF;
+            background: rgba(0, 0, 0, 86);
         }
         QSpinBox::up-button, QTimeEdit::up-button {
             subcontrol-origin: border;
             subcontrol-position: top right;
             width: 19px;
-            border-left: 2px solid #CFA696;
-            border-bottom: 1px solid #CFA696;
-            background: #F4D5C7;
-            border-top-right-radius: 2px;
+            border-left: 1px solid rgba(255, 255, 255, 25);
+            border-bottom: 1px solid rgba(255, 255, 255, 19);
+            background: rgba(255, 255, 255, 26);
+            border-top-right-radius: 9px;
         }
         QSpinBox::down-button, QTimeEdit::down-button {
             subcontrol-origin: border;
             subcontrol-position: bottom right;
             width: 19px;
-            border-left: 2px solid #CFA696;
-            border-top: 1px solid #CFA696;
-            background: #F4D5C7;
-            border-bottom-right-radius: 2px;
+            border-left: 1px solid rgba(255, 255, 255, 25);
+            border-top: 1px solid rgba(255, 255, 255, 19);
+            background: rgba(255, 255, 255, 26);
+            border-bottom-right-radius: 9px;
         }
         QSpinBox::up-button:hover, QSpinBox::down-button:hover,
         QTimeEdit::up-button:hover, QTimeEdit::down-button:hover {
-            background: #F0B9AC;
+            background: rgba(255, 255, 255, 48);
         }
         QSpinBox::up-button:pressed, QSpinBox::down-button:pressed,
         QTimeEdit::up-button:pressed, QTimeEdit::down-button:pressed {
-            background: #EA9891;
+            background: #294B78;
         }
         QSpinBox::up-arrow, QTimeEdit::up-arrow {
             image: url(:/assets/icons/arrow_up.png);
@@ -752,11 +807,11 @@ QString styleSheet()
             height: 9px;
         }
         QComboBox {
-            background: #FFF9F2;
-            border: 2px solid #DDBFB3;
-            border-radius: 4px;
-            padding: 2px 20px 2px 6px;
-            color: #654C43;
+            background: rgba(0, 0, 0, 104);
+            border: 1px solid rgba(255, 255, 255, 31);
+            border-radius: 10px;
+            padding: 2px 20px 2px 8px;
+            color: #F3F6FC;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 11px;
             font-weight: 600;
@@ -772,21 +827,23 @@ QString styleSheet()
             width: 20px;
         }
         QComboBox:hover {
-            border-color: #F3A6A0;
-            background: #FFFFFF;
+            border-color: rgba(138, 185, 255, 130);
+            background: rgba(0, 0, 0, 84);
         }
         QComboBox:focus {
-            border-color: #F3A6A0;
+            border-color: #6EA8FF;
         }
         QComboBox::drop-down {
             subcontrol-origin: padding;
             subcontrol-position: top right;
             width: 20px;
-            border-left: 2px solid #CFA696;
-            background: #F4D5C7;
+            border-left: 1px solid rgba(255, 255, 255, 25);
+            background: rgba(255, 255, 255, 25);
+            border-top-right-radius: 9px;
+            border-bottom-right-radius: 9px;
         }
         QComboBox::drop-down:hover {
-            background: #F0B9AC;
+            background: rgba(255, 255, 255, 47);
         }
         QComboBox::down-arrow {
             image: url(:/assets/icons/arrow_down.png);
@@ -794,13 +851,14 @@ QString styleSheet()
             height: 10px;
         }
         QComboBox QAbstractItemView {
-            background: #FFF9F2;
-            border: 2px solid #DDBFB3;
-            color: #654C43;
-            selection-background-color: #F7C2B5;
-            selection-color: #654C43;
+            background: #0A0C10;
+            border: 1px solid rgba(255, 255, 255, 43);
+            border-radius: 10px;
+            color: #F3F6FC;
+            selection-background-color: #294B78;
+            selection-color: #FFFFFF;
             outline: 0;
-            padding: 2px;
+            padding: 3px;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 12px;
             font-weight: 600;
@@ -808,46 +866,47 @@ QString styleSheet()
         QComboBox QAbstractItemView::item {
             min-height: 24px;
             padding: 3px 8px;
+            border-radius: 6px;
         }
         QComboBox QAbstractItemView::item:hover {
-            background: #FFF0E6;
+            background: #1C222B;
         }
         QSlider {
             background: transparent;
             min-height: 22px;
         }
         QSlider::groove:horizontal {
-            height: 6px;
-            background: #E8C7B7;
-            border: 1px solid #DDBFB3;
+            height: 5px;
+            background: rgba(255, 255, 255, 28);
+            border: none;
             border-radius: 2px;
         }
         QSlider::sub-page:horizontal {
-            background: #F3A6A0;
-            border: 1px solid #DF8F88;
+            background: #6EA8FF;
+            border: none;
             border-radius: 2px;
         }
         QSlider::handle:horizontal {
-            background: #FFF9F2;
-            border: 2px solid #F3A6A0;
+            background: #F3F6FC;
+            border: 2px solid #6EA8FF;
             width: 12px;
             height: 12px;
             margin: -5px 0;
-            border-radius: 3px;
+            border-radius: 7px;
         }
         QSlider::handle:horizontal:hover {
-            background: #F7C2B5;
-            border-color: #E08D86;
+            background: #FFFFFF;
+            border-color: #8AB9FF;
         }
         QSlider::handle:horizontal:pressed {
-            background: #F3A6A0;
-            border-color: #D27D76;
+            background: #8AB9FF;
+            border-color: #FFFFFF;
         }
         QPushButton {
-            background: #FFF0E6;
-            color: #654C43;
-            border: 2px solid #DDBFB3;
-            border-radius: 4px;
+            background: rgba(255, 255, 255, 26);
+            color: #F3F6FC;
+            border: 1px solid rgba(255, 255, 255, 29);
+            border-radius: 10px;
             padding: 4px 8px;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 11px;
@@ -855,111 +914,113 @@ QString styleSheet()
             min-height: 18px;
         }
         QPushButton:hover {
-            background: #F7C2B5;
-            border-color: #DF9B92;
+            background: rgba(255, 255, 255, 47);
+            border-color: rgba(255, 255, 255, 55);
         }
         QPushButton:pressed {
-            background: #F3A6A0;
+            background: #294B78;
             color: #FFFFFF;
-            border-color: #DC8981;
+            border-color: rgba(138, 185, 255, 130);
         }
         QPushButton:focus {
-            border-color: #F3A6A0;
+            border-color: #6EA8FF;
         }
         QPushButton:disabled {
-            background: #E9DFDA;
-            color: #A6958C;
-            border-color: #DFD2CC;
+            background: rgba(255, 255, 255, 8);
+            color: #637289;
+            border-color: rgba(255, 255, 255, 13);
         }
         QPushButton#chip {
-            background: #FFF0E6;
-            color: #654C43;
-            border: 2px solid #DDBFB3;
-            border-radius: 4px;
+            background: rgba(0, 0, 0, 70);
+            color: #C8D4E6;
+            border: 1px solid rgba(255, 255, 255, 25);
+            border-radius: 10px;
             padding: 3px 6px;
             min-height: 16px;
         }
         QPushButton#chip:hover {
-            background: #F7C2B5;
-            border-color: #DF9B92;
+            background: rgba(255, 255, 255, 46);
+            color: #F3F6FC;
+            border-color: rgba(255, 255, 255, 52);
         }
         QPushButton#chip[active="true"] {
-            background: #F3A6A0;
+            background: #294B78;
             color: #FFFFFF;
-            border-color: #DC8981;
+            border-color: rgba(138, 185, 255, 160);
         }
         QPushButton#chip[active="true"]:hover {
-            background: #EA9891;
+            background: #355E94;
         }
         QPushButton#primary {
-            background: #F3A6A0;
+            background: #6EA8FF;
             color: #FFFFFF;
-            border: 2px solid #DC8981;
+            border: 1px solid rgba(255, 255, 255, 77);
         }
         QPushButton#primary:hover {
-            background: #EA9891;
-            border-color: #D27C74;
+            background: #82B4FF;
+            border-color: rgba(255, 255, 255, 130);
         }
         QPushButton#primary:pressed {
-            background: #DF8880;
+            background: #5A97F0;
         }
         QPushButton#iconBtn {
-            background: #FFF0E6;
-            border: 2px solid #DDBFB3;
-            border-radius: 4px;
+            background: rgba(255, 255, 255, 26);
+            border: 1px solid rgba(255, 255, 255, 29);
+            border-radius: 10px;
             padding: 0px;
             min-width: 0px;
             min-height: 0px;
         }
         QPushButton#iconBtn:hover {
-            background: #F7C2B5;
-            border-color: #DF9B92;
+            background: rgba(255, 255, 255, 47);
+            border-color: rgba(255, 255, 255, 58);
         }
         QPushButton#iconBtn:pressed {
-            background: #F3A6A0;
+            background: #294B78;
         }
         QPushButton#iconBtnPrimary {
-            background: #F3A6A0;
-            border: 2px solid #DC8981;
-            border-radius: 4px;
+            background: #6EA8FF;
+            border: 1px solid rgba(255, 255, 255, 77);
+            border-radius: 10px;
             padding: 0px;
             min-width: 0px;
             min-height: 0px;
         }
         QPushButton#iconBtnPrimary:hover {
-            background: #EA9891;
-            border-color: #D27C74;
+            background: #82B4FF;
+            border-color: rgba(255, 255, 255, 130);
         }
         QPushButton#iconBtnPrimary:pressed {
-            background: #DF8880;
+            background: #5A97F0;
         }
         QPushButton#subtle {
-            background: #FFF9F2;
-            color: #967F73;
-            border: 2px solid #E8C7B7;
+            background: rgba(0, 0, 0, 59);
+            color: #BCC7D9;
+            border: 1px solid rgba(255, 255, 255, 22);
         }
         QPushButton#subtle:hover {
-            background: #FFF0E6;
-            color: #654C43;
-            border-color: #DDBFB3;
+            background: rgba(255, 255, 255, 43);
+            color: #F3F6FC;
+            border-color: rgba(255, 255, 255, 46);
         }
         QPushButton#danger {
-            background: #FCE4E1;
-            color: #8F4340;
-            border: 2px solid #EBC2BC;
+            background: rgba(43, 24, 34, 172);
+            color: #F48C94;
+            border: 1px solid rgba(244, 140, 148, 68);
         }
         QPushButton#danger:hover {
-            background: #F7CFC9;
-            border-color: #E0A9A0;
+            background: rgba(66, 32, 46, 188);
+            border-color: rgba(244, 140, 148, 120);
         }
         QPushButton#danger:pressed {
-            background: #F0B8B0;
+            background: rgba(88, 39, 58, 192);
         }
         QToolTip {
-            background: #FFF9F2;
-            color: #654C43;
-            border: 2px solid #DDBFB3;
-            padding: 4px 6px;
+            background: #0A0C10;
+            color: #F3F6FC;
+            border: 1px solid rgba(255, 255, 255, 43);
+            border-radius: 8px;
+            padding: 4px 8px;
             font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
             font-size: 11px;
         }
@@ -969,12 +1030,12 @@ QString styleSheet()
             margin: 2px 0 2px 2px;
         }
         QScrollBar::handle:vertical {
-            background: #DDBFB3;
+            background: rgba(255, 255, 255, 43);
             min-height: 26px;
-            border-radius: 2px;
+            border-radius: 3px;
         }
         QScrollBar::handle:vertical:hover {
-            background: #F3A6A0;
+            background: rgba(138, 185, 255, 140);
         }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
             height: 0px;
@@ -1031,46 +1092,58 @@ void PixelCheckBox::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing, false);
+    p.setRenderHint(QPainter::Antialiasing, true);
 
     const QRect r = rect();
     if (m_hovered && isEnabled()) {
-        p.fillRect(r.adjusted(1, 2, -1, -2), PixelTheme::kCardBg);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0x1C, 0x22, 0x2B, 108));
+        p.drawRoundedRect(r.adjusted(1, 2, -1, -2), 7, 7);
     }
 
     const int boxY = (r.height() - kBoxSize) / 2;
-    const QRect box(4, boxY, kBoxSize, kBoxSize);
+    const QRectF box(4.5, boxY + 0.5, kBoxSize - 1.0, kBoxSize - 1.0);
 
     if (isChecked()) {
         const QColor fill = isEnabled()
-            ? (isDown() ? QColor(0xDF, 0x88, 0x80)
-                        : (m_hovered ? QColor(0xEA, 0x98, 0x91) : PixelTheme::kPrimaryAccent))
+            ? (isDown() ? PixelTheme::kPrimaryAccentPressed
+                        : (m_hovered ? PixelTheme::kPrimaryAccentHover : PixelTheme::kPrimaryAccent))
             : PixelTheme::kDisabled;
-        const QColor border = isEnabled() ? QColor(0xDC, 0x89, 0x81) : PixelTheme::kBorder;
-        p.fillRect(box, border);
-        p.fillRect(box.adjusted(2, 2, -2, -2), fill);
+        const QColor border = isEnabled() ? QColor(0xFF, 0xFF, 0xFF, 72) : PixelTheme::kBorder;
+        p.setPen(QPen(border, 1.0));
+        p.setBrush(fill);
+        p.drawRoundedRect(box, 4.0, 4.0);
 
-        // Crisp pixel checkmark (aligned for 14x14 box)
-        p.fillRect(box.x() + 3, box.y() + 7, 2, 2, Qt::white);
-        p.fillRect(box.x() + 5, box.y() + 9, 2, 2, Qt::white);
-        p.fillRect(box.x() + 7, box.y() + 7, 2, 2, Qt::white);
-        p.fillRect(box.x() + 9, box.y() + 5, 2, 2, Qt::white);
+        // Crisp checkmark inside 14x14 rounded box
+        QPen checkPen(isEnabled() ? Qt::white : PixelTheme::kMutedText, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        p.setPen(checkPen);
+        p.setBrush(Qt::NoBrush);
+        QPainterPath check;
+        check.moveTo(box.left() + 3.0, box.top() + 6.8);
+        check.lineTo(box.left() + 5.6, box.top() + 9.4);
+        check.lineTo(box.left() + 10.2, box.top() + 4.2);
+        p.drawPath(check);
     } else {
-        const QColor fill = m_hovered && isEnabled() ? QColor(0xFF, 0xFF, 0xFF) : PixelTheme::kBackground;
-        const QColor border = m_hovered && isEnabled() ? PixelTheme::kPrimaryAccent : PixelTheme::kBorder;
-        p.fillRect(box, border);
-        p.fillRect(box.adjusted(2, 2, -2, -2), fill);
+        const QColor fill = m_hovered && isEnabled()
+            ? QColor(0x1C, 0x22, 0x2B, 212)
+            : QColor(0x0A, 0x0C, 0x10, 191);
+        const QColor border = m_hovered && isEnabled()
+            ? QColor(0x8A, 0xB9, 0xFF, 165)
+            : QColor(0xFF, 0xFF, 0xFF, 38);
+        p.setPen(QPen(border, 1.0));
+        p.setBrush(fill);
+        p.drawRoundedRect(box, 4.0, 4.0);
     }
 
     if (hasFocus()) {
-        p.setPen(QPen(PixelTheme::kPrimaryAccent, 1, Qt::DotLine));
+        p.setPen(QPen(PixelTheme::kPrimaryAccent, 1.2));
         p.setBrush(Qt::NoBrush);
-        p.drawRect(box.adjusted(-2, -2, 1, 1));
+        p.drawRoundedRect(box.adjusted(-2.0, -2.0, 2.0, 2.0), 5.5, 5.5);
     }
 
-    const QRect textRect(box.right() + kSpacing, 0,
-                         r.width() - box.right() - kSpacing - 4, r.height());
-    p.setPen(isEnabled() ? PixelTheme::kPrimaryText : PixelTheme::kSecondaryText);
+    const QRect textRect(static_cast<int>(box.right()) + kSpacing, 0,
+                         r.width() - static_cast<int>(box.right()) - kSpacing - 4, r.height());
+    p.setPen(isEnabled() ? PixelTheme::kPrimaryText : PixelTheme::kMutedText);
     p.setFont(font());
     p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, text());
 }
@@ -1169,5 +1242,5 @@ void PixelConfirmDialog::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    PixelTheme::paintPixelCard(p, rect(), PixelTheme::kBackground, PixelTheme::kBorder, 4);
+    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Primary, PixelTheme::kRadiusWindow, 5);
 }
