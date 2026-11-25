@@ -677,13 +677,22 @@ void TestAlarmAndSettings::settingsPanelUsesTranslucentGlass()
 
     QVERIFY(panel.testAttribute(Qt::WA_TranslucentBackground));
 
-    // Rounded corners must composite to transparent so the desktop shows through.
+    // Rounded corners must composite to transparent so the desktop shows through,
+    // and the close button uses the minimal floating X style.
+    auto* closeBtn = panel.findChild<QPushButton*>(QStringLiteral("closeBtn"));
+    QVERIFY(closeBtn != nullptr);
+    QVERIFY(closeBtn->width() >= 28 && closeBtn->height() >= 28);
+
     panel.resize(360, 520);
     panel.ensurePolished();
     const QImage img = panel.grab().toImage();
     QVERIFY(!img.isNull());
     QCOMPARE(img.pixelColor(0, 0).alpha(), 0);
     QCOMPARE(img.pixelColor(img.width() - 1, img.height() - 1).alpha(), 0);
+    // Sample a background pixel inside the panel (near top-center margin) to confirm translucency
+    const int bgAlpha = img.pixelColor(img.width() / 2, 12).alpha();
+    QVERIFY2(bgAlpha > 100 && bgAlpha < 200,
+             qPrintable(QStringLiteral("Expected translucent SettingsPanel background alpha, got %1").arg(bgAlpha)));
 }
 void TestAlarmAndSettings::redesignedTimerAndAlarmControls()
 {
@@ -767,7 +776,7 @@ void TestAlarmAndSettings::redesignedTimerAndAlarmControls()
     QCOMPARE(editBtn->toolTip(), QStringLiteral("Edit custom duration"));
 
     // Study timer up/down steppers use a translucent white wash over smoked glass (no pastel fill)
-    QVERIFY(qss.contains(QStringLiteral("background: rgba(255, 255, 255, 26);")));
+    QVERIFY(qss.contains(QStringLiteral("background: rgba(255, 255, 255, 20);")));
     QVERIFY(!qss.contains(QStringLiteral("#F4D5C7"), Qt::CaseInsensitive));
 
     // Sticky footer keeps Exit Application inside panel bounds (never clipped off-screen)

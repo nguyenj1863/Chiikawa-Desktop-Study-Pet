@@ -372,7 +372,7 @@ void TestOnboarding::typographyPreservedAfterDarkGlassRedesign()
 
     // Smoked-black glass palette tokens are active (text colours remain opaque)
     QCOMPARE(PixelTheme::kBgPrimary, QColor(0x05, 0x06, 0x08));
-    QCOMPARE(PixelTheme::kBackground, QColor(0x0A, 0x0C, 0x10));
+    QCOMPARE(PixelTheme::kBackground, QColor(0x08, 0x0A, 0x0C));
     QCOMPARE(PixelTheme::kPrimaryAccent, QColor(0x6E, 0xA8, 0xFF));
     QCOMPARE(PixelTheme::kPrimaryAccentHover, QColor(0x8A, 0xB9, 0xFF));
     QCOMPARE(PixelTheme::kPrimaryText, QColor(0xF3, 0xF6, 0xFC));
@@ -384,28 +384,46 @@ void TestOnboarding::typographyPreservedAfterDarkGlassRedesign()
 
 void TestOnboarding::glassMaterialAlphaRanges()
 {
-    // Primary glass sits around 75-80% effective opacity: visibly tinted, not opaque.
-    QVERIFY(PixelTheme::kGlassPrimaryAlpha >= 184 && PixelTheme::kGlassPrimaryAlpha <= 209);
-    QVERIFY(PixelTheme::kGlassPrimaryAlpha <= 230); // never more than ~90%
-    // Secondary is more transparent than primary; compact overlays are denser for contrast.
-    QVERIFY(PixelTheme::kGlassSecondaryAlpha < PixelTheme::kGlassPrimaryAlpha);
-    QVERIFY(PixelTheme::kGlassCompactAlpha >= PixelTheme::kGlassPrimaryAlpha);
-    QVERIFY(PixelTheme::kGlassCompactAlpha <= 235);
+    // Primary glass sits in 55-65% opacity so wallpaper is clearly recognizable.
+    QVERIFY(PixelTheme::kGlassPrimaryAlpha >= 140 && PixelTheme::kGlassPrimaryAlpha <= 166);
+    // Secondary nested glass sits in 15-35% local opacity so it never cancels translucency.
+    QVERIFY(PixelTheme::kGlassSecondaryAlpha >= 38 && PixelTheme::kGlassSecondaryAlpha <= 90);
+    // Compact floating overlays sit in 60-70% opacity for readability while remaining translucent.
+    QVERIFY(PixelTheme::kGlassCompactAlpha >= 153 && PixelTheme::kGlassCompactAlpha <= 179);
 
-    // Nested card washes must stay near-transparent so they do not cancel the glass.
-    QVERIFY(PixelTheme::kCardBg.alpha() >= 26 && PixelTheme::kCardBg.alpha() <= 51);
+    // Every non-text material token (including primary blue buttons & borders) must be translucent.
+    QVERIFY(PixelTheme::kCardBg.alpha() < 255);
+    QVERIFY(PixelTheme::kControlBg.alpha() < 255);
+    QVERIFY(PixelTheme::kInputBg.alpha() < 255);
+    QVERIFY(PixelTheme::kPrimaryAccentGlass.alpha() < 255);
+    QVERIFY(PixelTheme::kPrimaryAccentGlassHover.alpha() < 255);
+    QVERIFY(PixelTheme::kPrimaryAccentGlassPressed.alpha() < 255);
+    QVERIFY(PixelTheme::kSecondaryAccent.alpha() < 255);
+    QVERIFY(PixelTheme::kBorder.alpha() < 255);
+    QVERIFY(PixelTheme::kBorderSubtle.alpha() < 255);
+    QVERIFY(PixelTheme::kDangerBg.alpha() < 255);
 
-    // The stylesheet must not reintroduce the old opaque navy fills.
+    // Tighter corner radii hierarchy
+    QCOMPARE(PixelTheme::kRadiusOnboarding, 16.0);
+    QCOMPARE(PixelTheme::kRadiusWindow, 14.0);
+    QCOMPARE(PixelTheme::kRadiusCard, 12.0);
+    QCOMPARE(PixelTheme::kRadiusButton, 8.0);
+    QCOMPARE(PixelTheme::kRadiusClose, 6.0);
+
+    // The stylesheet must not contain opaque hex fills on backgrounds or borders,
+    // and must define the minimal transparent close button.
     const QString qss = PixelTheme::styleSheet();
-    QVERIFY(!qss.contains(QStringLiteral("rgba(11, 20, 36, 2"), Qt::CaseInsensitive));
-    QVERIFY(!qss.contains(QStringLiteral("#0B1424"), Qt::CaseInsensitive));
-    QVERIFY(!qss.contains(QStringLiteral("#568FE5"), Qt::CaseInsensitive));
+    QVERIFY(!qss.contains(QStringLiteral("background: #"), Qt::CaseInsensitive));
+    QVERIFY(!qss.contains(QStringLiteral("selection-background-color: #"), Qt::CaseInsensitive));
+    QVERIFY(!qss.contains(QStringLiteral("border-color: #"), Qt::CaseInsensitive));
+    QVERIFY(qss.contains(QStringLiteral("QPushButton#closeBtn")));
+    QVERIFY(qss.contains(QStringLiteral("background: transparent;")));
 }
 
 void TestOnboarding::glassCornersStayTransparent()
 {
     // Rounded corners must composite to real alpha = 0 (no square artifacts),
-    // while the centre of the surface is the translucent smoked tint.
+    // while the centre of the Primary surface sits in the 55-65% translucent band.
     constexpr int kSize = 220;
     QImage img(kSize, kSize, QImage::Format_ARGB32_Premultiplied);
     img.fill(Qt::transparent);
@@ -416,8 +434,9 @@ void TestOnboarding::glassCornersStayTransparent()
     }
     QCOMPARE(qAlpha(img.pixel(0, 0)), 0);
     QCOMPARE(qAlpha(img.pixel(kSize - 1, kSize - 1)), 0);
-    QCOMPARE(qAlpha(img.pixel(kSize / 2, kSize / 2)) >= 180, true);
-    QCOMPARE(qAlpha(img.pixel(kSize / 2, kSize / 2)) <= 225, true);
+    const int centerAlpha = qAlpha(img.pixel(kSize / 2, kSize / 2));
+    QVERIFY2(centerAlpha >= 140 && centerAlpha <= 170,
+             qPrintable(QStringLiteral("Expected 55-65% Primary glass alpha, got %1").arg(centerAlpha)));
 }
 
 void TestOnboarding::glassWindowsAreTranslucent()
@@ -425,6 +444,10 @@ void TestOnboarding::glassWindowsAreTranslucent()
     OnboardingWindow onboarding;
     QVERIFY(onboarding.testAttribute(Qt::WA_TranslucentBackground));
 
+    // Close button uses the minimal floating X style with a comfortable hit target.
+    auto* closeBtn = onboarding.findChild<QPushButton*>(QStringLiteral("closeBtn"));
+    QVERIFY(closeBtn != nullptr);
+    QVERIFY(closeBtn->width() >= 30 && closeBtn->height() >= 30);
 }
 
 QTEST_MAIN(TestOnboarding)
