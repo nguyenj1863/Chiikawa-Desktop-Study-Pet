@@ -9,7 +9,9 @@
 #include "UISoundManager.h"
 
 #include <QApplication>
+#include <QIcon>
 #include <QImage>
+#include <QMovie>
 #include <QPainter>
 #include <QKeyEvent>
 #include <QLabel>
@@ -37,6 +39,8 @@ private slots:
     void glassCornersStayTransparent();
     void glassWindowsAreTranslucent();
     void closeButtonExitsOnStartupOnboardingButClosesOnReplay();
+    void onboardingDraggableFromBodyAndPreservesDragPreview();
+    void appIconLoadsFromSharedTwirlArtwork();
 };
 
 void TestOnboarding::init()
@@ -475,6 +479,100 @@ void TestOnboarding::closeButtonExitsOnStartupOnboardingButClosesOnReplay()
     QCOMPARE(exitSpy.count(), 0);
     QCOMPARE(skipSpy.count(), 1);
     QCOMPARE(skipSpy.first().first().toBool(), true);
+}
+
+void TestOnboarding::onboardingDraggableFromBodyAndPreservesDragPreview()
+{
+    OnboardingWindow onboarding;
+    onboarding.openOnboarding(false);
+    QApplication::processEvents();
+
+    // Dragging from the Welcome preview area (non-header body) should move the window
+    OnboardingPreview* welcomePreview = onboarding.previewForPage(OnboardingWindow::Welcome);
+    QVERIFY(welcomePreview != nullptr);
+
+    const QPoint startPos = onboarding.pos();
+    const QPoint localCenter = welcomePreview->rect().center();
+    const QPoint globalStart = welcomePreview->mapToGlobal(localCenter);
+    const QPoint delta(45, 35);
+
+    QMouseEvent pressEvt(QEvent::MouseButtonPress, localCenter, localCenter, globalStart,
+                         Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(welcomePreview, &pressEvt);
+
+    QMouseEvent moveEvt(QEvent::MouseMove,
+                        onboarding.mapFromGlobal(globalStart + delta),
+                        onboarding.mapFromGlobal(globalStart + delta),
+                        globalStart + delta,
+                        Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&onboarding, &moveEvt);
+
+    QMouseEvent releaseEvt(QEvent::MouseButtonRelease,
+                           onboarding.mapFromGlobal(globalStart + delta),
+                           onboarding.mapFromGlobal(globalStart + delta),
+                           globalStart + delta,
+                           Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&onboarding, &releaseEvt);
+
+    QCOMPARE(onboarding.pos(), startPos + delta);
+
+    // On the interactive Drag tutorial step, dragging inside the preview stage must NOT move the window
+    onboarding.goToPage(OnboardingWindow::Drag, false);
+    QApplication::processEvents();
+    OnboardingPreview* dragPreview = onboarding.previewForPage(OnboardingWindow::Drag);
+    QVERIFY(dragPreview != nullptr);
+
+    const QPoint posBeforeDragStep = onboarding.pos();
+    const QPoint stageCenter = dragPreview->rect().center();
+    const QPoint stageGlobalStart = dragPreview->mapToGlobal(stageCenter);
+
+    QMouseEvent dragPress(QEvent::MouseButtonPress, stageCenter, stageCenter, stageGlobalStart,
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(dragPreview, &dragPress);
+
+    QMouseEvent dragMove(QEvent::MouseMove,
+                         dragPreview->mapFromGlobal(stageGlobalStart + delta),
+                         dragPreview->mapFromGlobal(stageGlobalStart + delta),
+                         stageGlobalStart + delta,
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(dragPreview, &dragMove);
+
+    QMouseEvent dragRelease(QEvent::MouseButtonRelease,
+                            dragPreview->mapFromGlobal(stageGlobalStart + delta),
+                            dragPreview->mapFromGlobal(stageGlobalStart + delta),
+                            stageGlobalStart + delta,
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(dragPreview, &dragRelease);
+
+    QCOMPARE(onboarding.pos(), posBeforeDragStep);
+}
+
+void TestOnboarding::appIconLoadsFromSharedTwirlArtwork()
+{
+    QIcon icon(QStringLiteral(":/assets/chiikawa.ico"));
+    QVERIFY(!icon.isNull());
+
+    const QPixmap iconPm = icon.pixmap(256, 256);
+    QVERIFY(!iconPm.isNull());
+    QCOMPARE(iconPm.size(), QSize(256, 256));
+
+    // Verify the Windows icon matches frame 0 of chiikawa_twirl.gif (shared with macOS chiikawa.icns)
+    QMovie twirl(QStringLiteral(":/assets/chiikawa_twirl.gif"));
+    QVERIFY(twirl.isValid());
+    QVERIFY(twirl.jumpToFrame(0));
+    const QImage gifImg = twirl.currentImage().convertToFormat(QImage::Format_ARGB32);
+    const QImage icoImg = iconPm.toImage().convertToFormat(QImage::Format_ARGB32);
+
+    // Both must have transparent corners and an opaque white body at the center
+    QCOMPARE(qAlpha(icoImg.pixel(0, 0)), 0);
+    QCOMPARE(qAlpha(gifImg.pixel(0, 0)), 0);
+    const QColor icoCenter = icoImg.pixelColor(icoImg.width() / 2, icoImg.height() / 2);
+    const QColor gifCenter = gifImg.pixelColor(gifImg.width() / 2, gifImg.height() / 2);
+    QVERIFY(icoCenter.alpha() > 200);
+    QVERIFY(gifCenter.alpha() > 200);
+    QVERIFY(std::abs(icoCenter.red() - gifCenter.red()) < 15);
+    QVERIFY(std::abs(icoCenter.green() - gifCenter.green()) < 15);
+    QVERIFY(std::abs(icoCenter.blue() - gifCenter.blue()) < 15);
 }
 
 QTEST_MAIN(TestOnboarding)

@@ -3,6 +3,7 @@
 #include "PixelTheme.h"
 #include "UISoundManager.h"
 
+#include <QAbstractButton>
 #include <QCloseEvent>
 #include <QGraphicsOpacityEffect>
 #include <QGuiApplication>
@@ -478,12 +479,20 @@ void OnboardingWindow::keyPressEvent(QKeyEvent* event)
 
 void OnboardingWindow::mousePressEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::LeftButton && m_headerWidget
-        && m_headerWidget->geometry().contains(event->position().toPoint())) {
-        m_dragging = true;
-        m_dragOffset = event->globalPosition().toPoint() - frameGeometry().topLeft();
-        event->accept();
-        return;
+    if (event->button() == Qt::LeftButton) {
+        bool overButton = false;
+        for (const QWidget* w = childAt(event->position().toPoint()); w && w != this; w = w->parentWidget()) {
+            if (qobject_cast<const QAbstractButton*>(w)) {
+                overButton = true;
+                break;
+            }
+        }
+        if (!overButton) {
+            m_dragging = true;
+            m_dragOffset = event->globalPosition().toPoint() - frameGeometry().topLeft();
+            event->accept();
+            return;
+        }
     }
     QWidget::mousePressEvent(event);
 }
