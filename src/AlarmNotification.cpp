@@ -1,4 +1,8 @@
 #include "AlarmNotification.h"
+
+#ifdef Q_OS_MACOS
+#  include "MacWindowHelper.h"
+#endif
 #include "PixelTheme.h"
 #include "SettingsDefaults.h"
 
@@ -131,6 +135,9 @@ void AlarmNotification::showAlarm(const QRect& petGlobalGeometry,
     move(pos);
 
     show();
+#ifdef Q_OS_MACOS
+    MacWindowHelper::configureFloatingOverlay(this, false);
+#endif
     raise();
 
     m_fade->stop();

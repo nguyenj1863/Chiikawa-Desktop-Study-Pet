@@ -37,6 +37,8 @@
 
 #ifdef Q_OS_WIN
 #  include <windows.h>
+#elif defined(Q_OS_MACOS)
+#  include "MacWindowHelper.h"
 #endif
 
 PetWindow::PetWindow(QWidget* parent)
@@ -462,6 +464,9 @@ void PetWindow::openSettings()
         m_coordinator->attachSettings();
     }
     m_settingsPanel->show();
+#ifdef Q_OS_MACOS
+    MacWindowHelper::configureFloatingOverlay(m_settingsPanel.get(), false);
+#endif
     m_settingsPanel->raise();
     m_settingsPanel->activateWindow();
 }
@@ -909,6 +914,9 @@ void PetWindow::hideEvent(QHideEvent* event)
 void PetWindow::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
+#ifdef Q_OS_MACOS
+    MacWindowHelper::configureFloatingOverlay(this, true);
+#endif
     if (m_animations && m_settings) {
         m_animations->setAutoSwitchEnabled(m_settings->autoAnimationEnabled());
     }

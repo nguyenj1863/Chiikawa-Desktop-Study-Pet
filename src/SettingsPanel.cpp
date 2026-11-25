@@ -1,5 +1,9 @@
 #include "SettingsPanel.h"
 
+#ifdef Q_OS_MACOS
+#  include "MacWindowHelper.h"
+#endif
+
 #include "AlarmScheduler.h"
 #include "AlarmSoundManager.h"
 #include "AppSettings.h"
@@ -1270,6 +1274,11 @@ void SettingsPanel::setAlwaysOnTop(bool enabled)
     if (wasVisible) {
         move(savedPos);
         show();
+#ifdef Q_OS_MACOS
+        if (enabled) {
+            MacWindowHelper::configureFloatingOverlay(this, false);
+        }
+#endif
         raise();
     }
 }

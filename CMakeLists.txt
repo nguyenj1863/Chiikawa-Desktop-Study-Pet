@@ -95,6 +95,9 @@ if(WIN32)
     target_sources(ChiikawaStudyPet PRIVATE resources/app.rc)
     target_link_libraries(ChiikawaStudyPet PRIVATE user32 shell32 ole32)
 elseif(APPLE)
+    enable_language(OBJCXX)
+    target_sources(ChiikawaStudyPet PRIVATE src/MacWindowHelper.mm include/MacWindowHelper.h)
+    target_link_libraries(ChiikawaStudyPet PRIVATE "-framework AppKit")
     configure_file(
         "${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in"
         "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
@@ -176,6 +179,10 @@ chiikawa_add_test(test_alarm_and_settings
     include/WindowCoordinator.h
     resources/resources.qrc
 )
+if(APPLE)
+    target_sources(test_alarm_and_settings PRIVATE src/MacWindowHelper.mm include/MacWindowHelper.h)
+    target_link_libraries(test_alarm_and_settings PRIVATE "-framework AppKit")
+endif()
 
 chiikawa_add_test(test_onboarding
     tests/test_onboarding.cpp
@@ -224,6 +231,9 @@ chiikawa_add_test(test_onboarding
 )
 if(WIN32)
     target_link_libraries(test_onboarding PRIVATE user32)
+elseif(APPLE)
+    target_sources(test_onboarding PRIVATE src/MacWindowHelper.mm include/MacWindowHelper.h)
+    target_link_libraries(test_onboarding PRIVATE "-framework AppKit")
 endif()
 
 if(WIN32)

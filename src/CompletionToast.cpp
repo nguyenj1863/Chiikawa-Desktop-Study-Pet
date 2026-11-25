@@ -1,4 +1,8 @@
 #include "CompletionToast.h"
+
+#ifdef Q_OS_MACOS
+#  include "MacWindowHelper.h"
+#endif
 #include "PixelTheme.h"
 
 #include <QEnterEvent>
@@ -214,6 +218,9 @@ void CompletionToast::showNotification(int durationMs)
     }
 
     show();
+#ifdef Q_OS_MACOS
+    MacWindowHelper::configureFloatingOverlay(this, false);
+#endif
     raise();
     startFadeIn(finalPos);
 

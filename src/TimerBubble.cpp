@@ -1,5 +1,9 @@
 #include "TimerBubble.h"
 
+#ifdef Q_OS_MACOS
+#  include "MacWindowHelper.h"
+#endif
+
 #include <QGuiApplication>
 #include <QPainter>
 #include <QPainterPath>
@@ -74,6 +78,9 @@ void TimerBubble::showNear(const QRect& petGlobalGeometry)
 {
     reposition(petGlobalGeometry);
     fadeIn();
+#ifdef Q_OS_MACOS
+    MacWindowHelper::configureFloatingOverlay(this, false);
+#endif
 }
 
 void TimerBubble::fadeIn()

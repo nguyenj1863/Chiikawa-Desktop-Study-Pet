@@ -4,6 +4,8 @@
 
 #ifdef Q_OS_WIN
 #  include <windows.h>
+#elif defined(Q_OS_MACOS)
+#  include "MacWindowHelper.h"
 #endif
 
 DesktopLayerHelper::DesktopLayerHelper()
@@ -74,6 +76,8 @@ void DesktopLayerHelper::applyMode(QWidget* petWindow, bool desktopOnly)
                      0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     }
+#elif defined(Q_OS_MACOS)
+    MacWindowHelper::configureFloatingOverlay(petWindow, true);
 #endif
 }
 
