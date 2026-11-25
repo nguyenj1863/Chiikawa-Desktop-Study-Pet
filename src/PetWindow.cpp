@@ -217,9 +217,11 @@ PetWindow::~PetWindow()
 void PetWindow::setupWindowFlags()
 {
 #ifdef Q_OS_MACOS
-    Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Window;
+    // Qt::NoDropShadowWindowHint disables macOS NSWindow's cached alpha shadow, which
+    // otherwise freezes the first sprite frame's silhouette behind subsequent frames.
+    Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Window | Qt::NoDropShadowWindowHint;
 #else
-    Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Tool;
+    Qt::WindowFlags flags = Qt::FramelessWindowHint | Qt::Tool | Qt::NoDropShadowWindowHint;
 #endif
     if (DesktopLayerHelper::isSupported() && m_settings->desktopOnlyMode()) {
         flags |= Qt::WindowStaysOnBottomHint;

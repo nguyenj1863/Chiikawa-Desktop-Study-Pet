@@ -29,6 +29,7 @@ private slots:
     void replayPreservesTimersAlarmsPositionAndCompletionState();
     void restoreDefaultsPreservesOnboardingCompleted();
     void fireAndSkipInteractiveHitRegions();
+    void petWindowDisablesNativeDropShadow();
 };
 
 void TestOnboarding::init()
@@ -307,6 +308,17 @@ void TestOnboarding::fireAndSkipInteractiveHitRegions()
     // Stomp and Twirl keep default per-pixel alpha behavior (no extra hit rect)
     QVERIFY(PetWindow::computeInteractiveHitRect(skipFrame, AnimationId::Stomp, winSize).isEmpty());
     QVERIFY(PetWindow::computeInteractiveHitRect(skipFrame, AnimationId::Twirl, winSize).isEmpty());
+}
+
+void TestOnboarding::petWindowDisablesNativeDropShadow()
+{
+    AppSettings settings;
+    settings.setOnboardingCompleted(true);
+    settings.save();
+
+    PetWindow pet;
+    QVERIFY(pet.windowFlags().testFlag(Qt::FramelessWindowHint));
+    QVERIFY(pet.windowFlags().testFlag(Qt::NoDropShadowWindowHint));
 }
 
 QTEST_MAIN(TestOnboarding)
