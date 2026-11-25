@@ -6,7 +6,9 @@
 #include <QHideEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPolygonF>
+#include <QRadialGradient>
 #include <algorithm>
 #include <cmath>
 
@@ -318,21 +320,20 @@ void OnboardingPreview::paintEvent(QPaintEvent* event)
 
 void OnboardingPreview::paintStageBackground(QPainter& p, const QRect& stage) const
 {
+    PixelTheme::paintGlassSurface(p, stage, PixelTheme::GlassLevel::Secondary, 16.0, 0);
+
+    // Subtle cool-blue ambient radial accent behind the stage center
     p.save();
-    p.setRenderHint(QPainter::Antialiasing, false);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    QPainterPath clip;
+    clip.addRoundedRect(QRectF(stage).adjusted(1.0, 1.0, -1.0, -1.0), 15.0, 15.0);
+    p.setClipPath(clip);
 
-    // Warm pastel pixel-framed preview stage
-    p.setPen(QPen(PixelTheme::kBorder, 2));
-    p.setBrush(PixelTheme::kCardBg);
-    p.drawRoundedRect(stage, 6, 6);
-
-    // Subtle pastel dot texture
-    p.setPen(Qt::NoPen);
-    for (int y = stage.top() + 16; y < stage.bottom() - 12; y += 20) {
-        for (int x = stage.left() + 18; x < stage.right() - 14; x += 24) {
-            p.fillRect(x, y, 2, 2, QColor(0xE8, 0xC7, 0xB7, 90));
-        }
-    }
+    QRadialGradient glow(QPointF(stage.center()), stage.width() * 0.42);
+    glow.setColorAt(0.0, QColor(0x6E, 0xA8, 0xFF, 28));
+    glow.setColorAt(0.6, QColor(0x29, 0x4B, 0x78, 12));
+    glow.setColorAt(1.0, QColor(0x0A, 0x0C, 0x10, 0));
+    p.fillRect(stage, glow);
     p.restore();
 }
 
@@ -349,7 +350,7 @@ void OnboardingPreview::drawPetSprite(QPainter& p,
     p.save();
     // Soft ground shadow beneath Chiikawa
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor(101, 76, 67, 28));
+    p.setBrush(QColor(3, 8, 18, 92));
     p.setRenderHint(QPainter::Antialiasing, true);
     p.drawEllipse(QPointF(center.x(), center.y() + size * 0.42), size * 0.34, size * 0.10);
 
@@ -390,12 +391,12 @@ void OnboardingPreview::drawPixelCursor(QPainter& p, const QPointF& tip, bool pr
     p.save();
     p.translate(1.2, 1.5);
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor(89, 62, 53, 55));
+    p.setBrush(QColor(2, 6, 14, 120));
     p.drawPolygon(arrow);
     p.restore();
 
-    p.setPen(QPen(QColor(0x59, 0x3E, 0x35), 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    p.setBrush(pressed ? PixelTheme::kHoverAccent : QColor(Qt::white));
+    p.setPen(QPen(QColor(0x0A, 0x0C, 0x10), 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(pressed ? PixelTheme::kPrimaryAccentHover : QColor(0xF3, 0xF6, 0xFC));
     p.drawPolygon(arrow);
     p.restore();
 }
@@ -445,11 +446,11 @@ void OnboardingPreview::drawPillBadge(QPainter& p,
     const int h = 28;
     const QRectF r(center.x() - w * 0.5, center.y() - h * 0.5, w, h);
 
-    p.setPen(QPen(primary ? QColor(0xDC, 0x89, 0x81) : PixelTheme::kBorder, 2.0));
-    p.setBrush(primary ? PixelTheme::kPrimaryAccent : PixelTheme::kBackground);
-    p.drawRoundedRect(r, 6, 6);
+    p.setPen(QPen(primary ? QColor(0xFF, 0xFF, 0xFF, 84) : QColor(0xFF, 0xFF, 0xFF, 38), 1.2));
+    p.setBrush(primary ? PixelTheme::kPrimaryAccent : QColor(0x14, 0x18, 0x20, 197));
+    p.drawRoundedRect(r, 10, 10);
 
-    p.setPen(primary ? QColor(Qt::white) : QColor(0x59, 0x3E, 0x35));
+    p.setPen(primary ? QColor(Qt::white) : PixelTheme::kPrimaryText);
     p.drawText(r, Qt::AlignCenter, text);
     p.restore();
 }
@@ -481,8 +482,8 @@ void OnboardingPreview::drawTwinklingStars(QPainter& p, const QPointF& center, d
             : 0.5 + 0.5 * std::sin((t * s.speed + s.phase) * 6.2831853);
         const double opacity = 0.28 + 0.68 * (wave * wave);
         const int arm = std::max(2, qRound(static_cast<double>(s.maxArm) * (0.72 + 0.28 * wave)));
-        QColor c = s.warmTint ? QColor(0xE8, 0xA8, 0x9A) : PixelTheme::kPrimaryAccent;
-        c.setAlpha(qRound(opacity * 255.0));
+        QColor c = s.warmTint ? QColor(0xBF, 0xD9, 0xFF) : PixelTheme::kPrimaryAccentHover;
+        c.setAlpha(qRound(opacity * 235.0));
 
         const int sx = qRound(center.x() + s.ox);
         const int sy = qRound(center.y() + s.oy);
@@ -490,7 +491,7 @@ void OnboardingPreview::drawTwinklingStars(QPainter& p, const QPointF& center, d
         p.fillRect(sx - arm, sy - 1, arm * 2, 2, c);
         // Subtle bright center pixel at peak twinkle
         if (wave > 0.75) {
-            QColor core(255, 250, 245, qRound((wave - 0.75) * 4.0 * 210.0));
+            QColor core(235, 244, 255, qRound((wave - 0.75) * 4.0 * 210.0));
             p.fillRect(sx - 1, sy - 1, 2, 2, core);
         }
     }
@@ -530,13 +531,15 @@ void OnboardingPreview::drawScrollBubble(QPainter& p,
 
     // Subtle soft shadow
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor(89, 62, 53, 28));
-    p.drawRoundedRect(bubble.translated(0, 2), 6, 6);
+    p.setBrush(QColor(2, 6, 14, 96));
+    p.drawRoundedRect(bubble.translated(0, 2), 9, 9);
 
-    // Bubble fill + pixel border
-    p.setPen(QPen(PixelTheme::kBorder, 2.0));
-    p.setBrush(PixelTheme::kBackground);
-    p.drawRoundedRect(bubble, 6, 6);
+    // Bubble fill + glass border
+    const QColor bubbleFill(0x0F, 0x1B, 0x2F, 242);
+    const QColor bubbleBorder(0xA4, 0xC4, 0xEE, 72);
+    p.setPen(QPen(bubbleBorder, 1.2));
+    p.setBrush(bubbleFill);
+    p.drawRoundedRect(bubble, 9, 9);
 
     // Downward pointer tail aimed at targetField center
     const double tailX = std::clamp(targetField.center().x(), bubble.left() + 14.0, bubble.right() - 14.0);
@@ -545,25 +548,25 @@ void OnboardingPreview::drawScrollBubble(QPainter& p,
          << QPointF(tailX + 5.0, bubble.bottom() - 1.0)
          << QPointF(tailX, bubble.bottom() + tailH);
     p.setPen(Qt::NoPen);
-    p.setBrush(PixelTheme::kBackground);
+    p.setBrush(bubbleFill);
     p.drawPolygon(tail);
-    p.setPen(QPen(PixelTheme::kBorder, 1.8));
+    p.setPen(QPen(bubbleBorder, 1.2));
     p.drawLine(QPointF(tailX - 5.0, bubble.bottom()), QPointF(tailX, bubble.bottom() + tailH));
     p.drawLine(QPointF(tailX + 5.0, bubble.bottom()), QPointF(tailX, bubble.bottom() + tailH));
 
     // Compact pixel mouse body + animated scroll wheel indicator
     const QRectF mouseRect(bubble.left() + 8.0, bubble.center().y() - 8.0, 12.0, 16.0);
-    p.setPen(QPen(QColor(0x59, 0x3E, 0x35), 1.5));
+    p.setPen(QPen(PixelTheme::kSecondaryText, 1.3));
     p.setBrush(PixelTheme::kCardBg);
     p.drawRoundedRect(mouseRect, 5, 5);
 
     const double wheelOffset = m_reducedMotion ? 0.0 : -std::sin(phase * 6.28318) * 1.8;
     p.setPen(Qt::NoPen);
-    p.setBrush(PixelTheme::kPrimaryAccent);
+    p.setBrush(PixelTheme::kPrimaryAccentHover);
     p.drawRoundedRect(QRectF(mouseRect.center().x() - 1.3,
                              mouseRect.top() + 3.5 + wheelOffset, 2.6, 4.5), 1, 1);
 
-    p.setPen(QColor(0x59, 0x3E, 0x35));
+    p.setPen(PixelTheme::kPrimaryText);
     p.drawText(QRectF(mouseRect.right() + 6.0, bubble.top(), bubble.width() - 28.0, bubble.height()),
                Qt::AlignLeft | Qt::AlignVCenter, label);
     p.restore();
@@ -574,8 +577,12 @@ void OnboardingPreview::paintWelcome(QPainter& p, const QRect& stage, double t) 
     const QPointF center(stage.center().x(), stage.center().y() + 2.0);
     p.save();
     p.setRenderHint(QPainter::Antialiasing, true);
-    p.setPen(QPen(PixelTheme::kBorder, 2));
-    p.setBrush(PixelTheme::kBackground);
+    QRadialGradient halo(center, 72.0);
+    halo.setColorAt(0.0, QColor(0xFF, 0xFF, 0xFF, 22));
+    halo.setColorAt(0.7, QColor(0xFF, 0xFF, 0xFF, 9));
+    halo.setColorAt(1.0, QColor(0xFF, 0xFF, 0xFF, 0));
+    p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 30), 1.0));
+    p.setBrush(halo);
     p.drawEllipse(center, 68, 68);
     p.restore();
 
@@ -611,12 +618,12 @@ void OnboardingPreview::paintInteract(QPainter& p, const QRect& stage, double t)
         p.setRenderHint(QPainter::Antialiasing, true);
 
         const QColor btnBg = clickingGear ? PixelTheme::kPrimaryAccent
-                                          : (hoveringGear ? PixelTheme::kHoverAccent : PixelTheme::kBackground);
-        const QColor btnBorder = clickingGear ? QColor(0xDC, 0x89, 0x81)
-                                              : (hoveringGear ? QColor(0xDF, 0x9B, 0x92) : PixelTheme::kBorder);
-        p.setPen(QPen(btnBorder, 2.0));
+                                          : (hoveringGear ? PixelTheme::kHoverAccent : QColor(0x14, 0x18, 0x20, 200));
+        const QColor btnBorder = clickingGear ? QColor(0xFF, 0xFF, 0xFF, 90)
+                                              : (hoveringGear ? QColor(0x8A, 0xB9, 0xFF, 140) : QColor(0xFF, 0xFF, 0xFF, 38));
+        p.setPen(QPen(btnBorder, 1.2));
         p.setBrush(btnBg);
-        p.drawRoundedRect(gearRect, 6, 6);
+        p.drawRoundedRect(gearRect, 9, 9);
 
         const QPixmap gearPm = PixelTheme::icon(
             PixelIcon::Gear, clickingGear ? QColor(Qt::white) : PixelTheme::kPrimaryText, 18).pixmap(18, 18);
@@ -632,36 +639,36 @@ void OnboardingPreview::paintInteract(QPainter& p, const QRect& stage, double t)
         p.setRenderHint(QPainter::Antialiasing, true);
 
         const QRectF miniPanel(petCenter.x() + 74.0, stage.center().y() - 34.0, 126.0, 106.0);
-        p.setPen(QPen(PixelTheme::kBorder, 2));
-        p.setBrush(PixelTheme::kBackground);
-        p.drawRoundedRect(miniPanel, 6, 6);
+        p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 38), 1.2));
+        p.setBrush(QColor(0x0A, 0x0C, 0x10, 204));
+        p.drawRoundedRect(miniPanel, 12, 12);
 
         QFont sf(PixelTheme::bodyFontFamily());
         sf.setPixelSize(12);
         sf.setBold(true);
         p.setFont(sf);
-        p.setPen(QColor(0x59, 0x3E, 0x35));
+        p.setPen(PixelTheme::kPrimaryText);
         p.drawText(QRectF(miniPanel.left() + 10, miniPanel.top() + 8, 106, 16),
                    Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Settings"));
 
-        p.setPen(QPen(PixelTheme::kBorder, 1.5));
+        p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 26), 1.0));
         p.setBrush(PixelTheme::kCardBg);
-        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 28, 106, 28), 4, 4);
+        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 28, 106, 28), 8, 8);
 
         QFont mono(QStringLiteral("Consolas"));
         mono.setPixelSize(14);
         mono.setBold(true);
         p.setFont(mono);
-        p.setPen(QColor(0x59, 0x3E, 0x35));
+        p.setPen(PixelTheme::kPrimaryText);
         p.drawText(QRectF(miniPanel.left() + 10, miniPanel.top() + 28, 106, 28),
                    Qt::AlignCenter, QStringLiteral("25:00"));
 
         p.setPen(Qt::NoPen);
         p.setBrush(PixelTheme::kPrimaryAccent);
-        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 64, 48, 12), 3, 3);
+        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 64, 48, 12), 5, 5);
         p.setBrush(PixelTheme::kSecondaryAccent);
-        p.drawRoundedRect(QRectF(miniPanel.left() + 64, miniPanel.top() + 64, 52, 12), 3, 3);
-        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 82, 106, 12), 3, 3);
+        p.drawRoundedRect(QRectF(miniPanel.left() + 64, miniPanel.top() + 64, 52, 12), 5, 5);
+        p.drawRoundedRect(QRectF(miniPanel.left() + 10, miniPanel.top() + 82, 106, 12), 5, 5);
         p.restore();
     }
 
@@ -754,7 +761,7 @@ void OnboardingPreview::paintDrag(QPainter& p, const QRect& stage, double t) con
             p.save();
             p.setRenderHint(QPainter::Antialiasing, true);
             p.setPen(QPen(PixelTheme::kPrimaryAccent, 2.2, Qt::DashLine));
-            p.setBrush(QColor(243, 166, 160, 26));
+            p.setBrush(QColor(86, 143, 229, 34));
             p.drawEllipse(m_userPetCenter, 48, 48);
             p.restore();
         }
@@ -792,7 +799,7 @@ void OnboardingPreview::paintDrag(QPainter& p, const QRect& stage, double t) con
     if (dragging) {
         p.setRenderHint(QPainter::Antialiasing, true);
         p.setPen(QPen(PixelTheme::kPrimaryAccent, 2.2, Qt::DashLine));
-        p.setBrush(QColor(243, 166, 160, 26));
+        p.setBrush(QColor(86, 143, 229, 34));
         p.drawEllipse(petPos, 48, 48);
     }
     drawPetSprite(p, petPos, 92, false, dragging ? 6.0 : 0.0);
@@ -827,26 +834,26 @@ void OnboardingPreview::paintStudyTimer(QPainter& p, const QRect& stage, double 
         }
     }
 
-    // Real Study Timer card styling (#FFF0E6 fill on #FFF9F2 inset, 2px #DDBFB3 border)
+    // Study Timer glass card styling
     p.save();
     p.setRenderHint(QPainter::Antialiasing, true);
-    p.setPen(QPen(PixelTheme::kBorder, 2));
-    p.setBrush(PixelTheme::kBackground);
-    p.drawRoundedRect(card, 6, 6);
+    p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 31), 1.2));
+    p.setBrush(QColor(0x0A, 0x0C, 0x10, 197));
+    p.drawRoundedRect(card, 14, 14);
 
     // Header row: "Study Timer" + real PixelIcon::Edit button
     QFont headerFont(PixelTheme::bodyFontFamily());
     headerFont.setPixelSize(13);
     headerFont.setBold(true);
     p.setFont(headerFont);
-    p.setPen(QColor(0x59, 0x3E, 0x35));
+    p.setPen(PixelTheme::kPrimaryText);
     p.drawText(QRectF(card.left() + 12, card.top() + 9, card.width() - 44, 20),
                Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Study Timer"));
 
     const QRectF editBtn(card.right() - 34, card.top() + 7, 26, 26);
-    p.setPen(QPen(PixelTheme::kBorder, 1.5));
+    p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 30), 1.0));
     p.setBrush(PixelTheme::kCardBg);
-    p.drawRoundedRect(editBtn, 4, 4);
+    p.drawRoundedRect(editBtn, 8, 8);
     const QPixmap editPm = PixelTheme::icon(PixelIcon::Edit, PixelTheme::kPrimaryText, 14).pixmap(14, 14);
     p.drawPixmap(QPointF(editBtn.center().x() - 7.0, editBtn.center().y() - 7.0), editPm);
 
@@ -856,7 +863,7 @@ void OnboardingPreview::paintStudyTimer(QPainter& p, const QRect& stage, double 
     monoFont.setPixelSize(28);
     monoFont.setBold(true);
     p.setFont(monoFont);
-    p.setPen(QColor(0x59, 0x3E, 0x35));
+    p.setPen(PixelTheme::kPrimaryText);
     p.drawText(QRectF(card.left() + 8, card.top() + 34, card.width() - 16, 38),
                Qt::AlignCenter, countdownText);
 
@@ -872,10 +879,10 @@ void OnboardingPreview::paintStudyTimer(QPainter& p, const QRect& stage, double 
     p.setFont(chipFont);
 
     const auto drawChip = [&](const QRectF& r, const QString& label, bool active) {
-        p.setPen(QPen(active ? QColor(0xDC, 0x89, 0x81) : PixelTheme::kBorder, 2));
-        p.setBrush(active ? PixelTheme::kPrimaryAccent : PixelTheme::kCardBg);
-        p.drawRoundedRect(r, 4, 4);
-        p.setPen(active ? QColor(Qt::white) : QColor(0x59, 0x3E, 0x35));
+        p.setPen(QPen(active ? QColor(0x8A, 0xB9, 0xFF, 165) : QColor(0xFF, 0xFF, 0xFF, 28), 1.2));
+        p.setBrush(active ? PixelTheme::kSecondaryAccent : PixelTheme::kCardBg);
+        p.drawRoundedRect(r, 9, 9);
+        p.setPen(active ? QColor(Qt::white) : PixelTheme::kSecondaryText);
         p.drawText(r, Qt::AlignCenter, label);
     };
     drawChip(chip25, QStringLiteral("25m"), presetSelected);
@@ -887,16 +894,16 @@ void OnboardingPreview::paintStudyTimer(QPainter& p, const QRect& stage, double 
     const QRectF playBtn(card.center().x() - 39, iconY, 34, 34);
     const QRectF resetBtn(card.center().x() + 5, iconY, 34, 34);
 
-    p.setPen(QPen(QColor(0xDC, 0x89, 0x81), 2));
+    p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 72), 1.2));
     p.setBrush(PixelTheme::kPrimaryAccent);
-    p.drawRoundedRect(playBtn, 4, 4);
+    p.drawRoundedRect(playBtn, 10, 10);
     const QPixmap playPm = PixelTheme::icon(
         timerRunning ? PixelIcon::Pause : PixelIcon::Play, Qt::white, 15).pixmap(15, 15);
     p.drawPixmap(QPointF(playBtn.center().x() - 7.5, playBtn.center().y() - 7.5), playPm);
 
-    p.setPen(QPen(PixelTheme::kBorder, 2));
+    p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 29), 1.2));
     p.setBrush(PixelTheme::kCardBg);
-    p.drawRoundedRect(resetBtn, 4, 4);
+    p.drawRoundedRect(resetBtn, 10, 10);
     const QPixmap resetPm = PixelTheme::icon(PixelIcon::Reset, PixelTheme::kPrimaryText, 15).pixmap(15, 15);
     p.drawPixmap(QPointF(resetBtn.center().x() - 7.5, resetBtn.center().y() - 7.5), resetPm);
     p.restore();
@@ -911,15 +918,15 @@ void OnboardingPreview::paintStudyTimer(QPainter& p, const QRect& stage, double 
         p.setRenderHint(QPainter::Antialiasing, true);
 
         const QRectF bubble(petCenter.x() - 74.0, stage.top() + 26.0, 148.0, 34.0);
-        p.setPen(QPen(PixelTheme::kBorder, 2));
-        p.setBrush(PixelTheme::kBackground);
-        p.drawRoundedRect(bubble, 7, 7);
+        p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 43), 1.2));
+        p.setBrush(QColor(0x0A, 0x0C, 0x10, 204));
+        p.drawRoundedRect(bubble, 12, 12);
 
         QFont bf(PixelTheme::bodyFontFamily());
         bf.setPixelSize(13);
         bf.setBold(true);
         p.setFont(bf);
-        p.setPen(QColor(0x59, 0x3E, 0x35));
+        p.setPen(PixelTheme::kPrimaryText);
         p.drawText(bubble, Qt::AlignCenter, QStringLiteral("%1 remaining").arg(countdownText));
         p.restore();
     }
@@ -975,19 +982,19 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         p.setRenderHint(QPainter::Antialiasing, true);
 
         const QRectF card(stage.left() + 26.0, stage.top() + 26.0, stage.width() - 52.0, stage.height() - 46.0);
-        p.setPen(QPen(PixelTheme::kBorder, 2));
-        p.setBrush(PixelTheme::kBackground);
-        p.drawRoundedRect(card, 6, 6);
+        p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 31), 1.2));
+        p.setBrush(QColor(0x0A, 0x0C, 0x10, 197));
+        p.drawRoundedRect(card, 14, 14);
 
         // Row 1: Bell + "Alarm Time" + [12h] [24h] format toggle
-        const QPixmap bellPm = PixelTheme::icon(PixelIcon::Bell, PixelTheme::kPrimaryAccent, 15).pixmap(15, 15);
+        const QPixmap bellPm = PixelTheme::icon(PixelIcon::Bell, PixelTheme::kPrimaryAccentHover, 15).pixmap(15, 15);
         p.drawPixmap(QPointF(card.left() + 14, card.top() + 13), bellPm);
 
         QFont secFont(PixelTheme::bodyFontFamily());
         secFont.setPixelSize(14);
         secFont.setBold(true);
         p.setFont(secFont);
-        p.setPen(QColor(0x59, 0x3E, 0x35));
+        p.setPen(PixelTheme::kPrimaryText);
         p.drawText(QRectF(card.left() + 34, card.top() + 10, 140, 22),
                    Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Alarm Time"));
 
@@ -998,16 +1005,16 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         chipFont.setBold(true);
         p.setFont(chipFont);
 
-        p.setPen(QPen(QColor(0xDC, 0x89, 0x81), 1.8));
-        p.setBrush(PixelTheme::kPrimaryAccent);
-        p.drawRoundedRect(btn12, 4, 4);
+        p.setPen(QPen(QColor(0x8A, 0xB9, 0xFF, 165), 1.2));
+        p.setBrush(PixelTheme::kSecondaryAccent);
+        p.drawRoundedRect(btn12, 8, 8);
         p.setPen(Qt::white);
         p.drawText(btn12, Qt::AlignCenter, QStringLiteral("12h"));
 
-        p.setPen(QPen(PixelTheme::kBorder, 1.8));
+        p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 28), 1.2));
         p.setBrush(PixelTheme::kCardBg);
-        p.drawRoundedRect(btn24, 4, 4);
-        p.setPen(QColor(0x59, 0x3E, 0x35));
+        p.drawRoundedRect(btn24, 8, 8);
+        p.setPen(PixelTheme::kSecondaryText);
         p.drawText(btn24, Qt::AlignCenter, QStringLiteral("24h"));
 
         // Row 2: Separate Hour : Minute [AM/PM] dropdowns
@@ -1031,16 +1038,16 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         const QString periodVal = (t >= 0.41) ? QStringLiteral("PM") : QStringLiteral("AM");
 
         const auto drawCombo = [&](const QRectF& r, const QString& val, bool focused) {
-            p.setPen(QPen(focused ? PixelTheme::kPrimaryAccent : PixelTheme::kBorder, 2));
-            p.setBrush(focused ? QColor(Qt::white) : PixelTheme::kBackground);
-            p.drawRoundedRect(r, 4, 4);
+            p.setPen(QPen(focused ? PixelTheme::kPrimaryAccent : QColor(0xFF, 0xFF, 0xFF, 31), 1.2));
+            p.setBrush(focused ? QColor(0x14, 0x18, 0x20, 216) : QColor(0x0A, 0x0C, 0x10, 200));
+            p.drawRoundedRect(r, 9, 9);
 
             // Drop-down strip matching QComboBox#timeSelect
-            const QRectF dd(r.right() - 22, r.top() + 2, 20, r.height() - 4);
+            const QRectF dd(r.right() - 22, r.top() + 1.5, 20.5, r.height() - 3.0);
             p.setPen(Qt::NoPen);
             p.setBrush(focused ? PixelTheme::kHoverAccent : PixelTheme::kCardBg);
-            p.drawRect(dd);
-            p.setPen(QPen(PixelTheme::kSecondaryAccent, 1.5));
+            p.drawRoundedRect(dd, 7, 7);
+            p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 25), 1.0));
             p.drawLine(QPointF(dd.left(), r.top() + 2), QPointF(dd.left(), r.bottom() - 2));
 
             PixelTheme::drawDropdownArrow(p, dd, false, 10);
@@ -1049,7 +1056,7 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
             cf.setPixelSize(16);
             cf.setBold(true);
             p.setFont(cf);
-            p.setPen(QColor(0x59, 0x3E, 0x35));
+            p.setPen(PixelTheme::kPrimaryText);
             p.drawText(QRectF(r.left() + 4, r.top(), r.width() - 26, r.height()),
                        Qt::AlignCenter, val);
         };
@@ -1059,7 +1066,7 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         colonFont.setPixelSize(18);
         colonFont.setBold(true);
         p.setFont(colonFont);
-        p.setPen(QColor(0x59, 0x3E, 0x35));
+        p.setPen(PixelTheme::kSecondaryText);
         p.drawText(QRectF(hourBox.right(), rowY, 20, 36), Qt::AlignCenter, QStringLiteral(":"));
 
         drawCombo(minBox, minVal, minActive);
@@ -1073,14 +1080,14 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         statusFont.setPixelSize(13);
         statusFont.setBold(true);
         p.setFont(statusFont);
-        p.setPen(saved ? QColor(0x59, 0x3E, 0x35) : PixelTheme::kSecondaryText);
+        p.setPen(saved ? PixelTheme::kPrimaryAccentHover : PixelTheme::kSecondaryText);
         p.drawText(QRectF(card.left() + 14, actY, saveBtn.left() - card.left() - 22, 34),
                    Qt::AlignLeft | Qt::AlignVCenter,
                    saved ? QStringLiteral("Today at 5:30 PM") : QStringLiteral("Not scheduled"));
 
-        p.setPen(QPen(QColor(0xDC, 0x89, 0x81), 2));
+        p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 72), 1.2));
         p.setBrush(PixelTheme::kPrimaryAccent);
-        p.drawRoundedRect(saveBtn, 5, 5);
+        p.drawRoundedRect(saveBtn, 10, 10);
         p.setPen(Qt::white);
         p.drawText(saveBtn, Qt::AlignCenter, QStringLiteral("Save Alarm"));
 
@@ -1131,24 +1138,24 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
 
         const bool snoozed = (t >= 0.76);
         const QRect notifRect(stage.left() + 44, stage.top() + 26, stage.width() - 88, 134);
-        PixelTheme::paintPixelCard(p, notifRect, PixelTheme::kBackground, PixelTheme::kBorder, 2);
+        PixelTheme::paintGlassSurface(p, notifRect, PixelTheme::GlassLevel::Compact, 16.0, 2);
 
         // Header: Bell + "Time to go!" + pixel Close button
-        const QPixmap bellPm = PixelTheme::icon(PixelIcon::Bell, PixelTheme::kPrimaryAccent, 18).pixmap(18, 18);
+        const QPixmap bellPm = PixelTheme::icon(PixelIcon::Bell, PixelTheme::kPrimaryAccentHover, 18).pixmap(18, 18);
         p.drawPixmap(QPointF(notifRect.left() + 18, notifRect.top() + 16), bellPm);
 
         QFont titleFont(PixelTheme::bodyFontFamily());
         titleFont.setPixelSize(16);
         titleFont.setBold(true);
         p.setFont(titleFont);
-        p.setPen(QColor(0x59, 0x3E, 0x35));
+        p.setPen(PixelTheme::kPrimaryText);
         p.drawText(QRectF(notifRect.left() + 42, notifRect.top() + 13, notifRect.width() - 84, 24),
                    Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Time to go!"));
 
         const QRectF closeRect(notifRect.right() - 40, notifRect.top() + 13, 24, 24);
-        p.setPen(QPen(PixelTheme::kBorder, 1.6));
+        p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 30), 1.0));
         p.setBrush(PixelTheme::kCardBg);
-        p.drawRoundedRect(closeRect, 4, 4);
+        p.drawRoundedRect(closeRect, 8, 8);
         const QPixmap closePm = PixelTheme::icon(PixelIcon::Close, PixelTheme::kPrimaryText, 11).pixmap(11, 11);
         p.drawPixmap(QPointF(closeRect.center().x() - 5.5, closeRect.center().y() - 5.5), closePm);
 
@@ -1170,19 +1177,18 @@ void OnboardingPreview::paintAlarm(QPainter& p, const QRect& stage, double t) co
         btnFont.setBold(true);
         p.setFont(btnFont);
 
-        p.setPen(QPen(QColor(0xDC, 0x89, 0x81), 2));
-        p.setBrush(snoozed ? PixelTheme::kHoverAccent : PixelTheme::kPrimaryAccent);
-        p.drawRoundedRect(snoozeBtn, 5, 5);
-        const QPixmap snoozePm = PixelTheme::icon(
-            PixelIcon::Snooze, snoozed ? PixelTheme::kPrimaryText : QColor(Qt::white), 13).pixmap(13, 13);
+        p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 72), 1.2));
+        p.setBrush(snoozed ? PixelTheme::kSecondaryAccent : PixelTheme::kPrimaryAccent);
+        p.drawRoundedRect(snoozeBtn, 10, 10);
+        const QPixmap snoozePm = PixelTheme::icon(PixelIcon::Snooze, QColor(Qt::white), 13).pixmap(13, 13);
         p.drawPixmap(QPointF(snoozeBtn.left() + 16, snoozeBtn.center().y() - 6.5), snoozePm);
-        p.setPen(snoozed ? QColor(0x59, 0x3E, 0x35) : QColor(Qt::white));
+        p.setPen(QColor(Qt::white));
         p.drawText(snoozeBtn.adjusted(14, 0, 0, 0), Qt::AlignCenter, QStringLiteral("Snooze 5m"));
 
-        p.setPen(QPen(PixelTheme::kBorder, 2));
+        p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 29), 1.2));
         p.setBrush(PixelTheme::kCardBg);
-        p.drawRoundedRect(dismissBtn, 5, 5);
-        p.setPen(QColor(0x59, 0x3E, 0x35));
+        p.drawRoundedRect(dismissBtn, 10, 10);
+        p.setPen(PixelTheme::kPrimaryText);
         p.drawText(dismissBtn, Qt::AlignCenter, QStringLiteral("Dismiss"));
 
         // Brief snooze confirmation pill below notification
@@ -1213,8 +1219,12 @@ void OnboardingPreview::paintComplete(QPainter& p, const QRect& stage, double t)
     const QPointF center(stage.center().x(), stage.center().y() + 2.0);
     p.save();
     p.setRenderHint(QPainter::Antialiasing, true);
-    p.setPen(QPen(PixelTheme::kBorder, 2));
-    p.setBrush(PixelTheme::kBackground);
+    QRadialGradient halo(center, 72.0);
+    halo.setColorAt(0.0, QColor(0xFF, 0xFF, 0xFF, 22));
+    halo.setColorAt(0.7, QColor(0xFF, 0xFF, 0xFF, 9));
+    halo.setColorAt(1.0, QColor(0xFF, 0xFF, 0xFF, 0));
+    p.setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 30), 1.0));
+    p.setBrush(halo);
     p.drawEllipse(center, 68, 68);
     p.restore();
 
