@@ -236,6 +236,18 @@ private:
     QElapsedTimer m_typeTimer;
 };
 
+void configureTranslucentPopup(QComboBox* combo)
+{
+    if (!combo || !combo->view()) {
+        return;
+    }
+    combo->view()->setCursor(Qt::PointingHandCursor);
+    if (QWidget* popup = combo->view()->window()) {
+        popup->setWindowFlags(popup->windowFlags() | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
+        popup->setAttribute(Qt::WA_TranslucentBackground, true);
+    }
+}
+
 void styleTimeCombo(QComboBox* combo)
 {
     combo->setObjectName(QStringLiteral("timeSelect"));
@@ -243,9 +255,7 @@ void styleTimeCombo(QComboBox* combo)
     combo->setMinimumWidth(0);
     combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     combo->setMaxVisibleItems(10);
-    if (combo->view()) {
-        combo->view()->setCursor(Qt::PointingHandCursor);
-    }
+    configureTranslucentPopup(combo);
 }
 
 } // namespace
@@ -362,7 +372,7 @@ void SettingsPanel::buildUi()
     auto* title = new QLabel(QStringLiteral("Settings"), m_headerWidget);
     title->setObjectName(QStringLiteral("title"));
 
-    auto* closeBtn = new PixelIconButton(PixelIcon::Close, 22, 10, false, m_headerWidget);
+    auto* closeBtn = new PixelIconButton(PixelIcon::Close, 30, 11, false, m_headerWidget);
     closeBtn->setToolTip(QStringLiteral("Close settings"));
     closeBtn->setAccessibleName(QStringLiteral("Close settings"));
     connect(closeBtn, &QPushButton::clicked, this, &SettingsPanel::onClosePanel);
@@ -673,9 +683,7 @@ void SettingsPanel::buildUi()
     for (const auto& opt : AlarmSoundManager::availableSounds()) {
         m_soundCombo->addItem(opt.label, opt.id);
     }
-    if (m_soundCombo->view()) {
-        m_soundCombo->view()->setCursor(Qt::PointingHandCursor);
-    }
+    configureTranslucentPopup(m_soundCombo);
     connect(m_soundCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
     connect(m_soundCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
 
@@ -1587,5 +1595,5 @@ void SettingsPanel::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Primary, 20.0, 5);
+    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Primary, PixelTheme::kRadiusWindow, 5);
 }
