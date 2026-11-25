@@ -260,18 +260,18 @@ void PetWindow::setupUi()
     m_gearButton->setAccessibleName(QStringLiteral("Open settings"));
     m_gearButton->setStyleSheet(QStringLiteral(
         "QPushButton {"
-        "  background: #FFF9F2;"
-        "  border: 2px solid #DDBFB3;"
-        "  border-radius: 6px;"
+        "  background: rgba(0, 0, 0, 104);"
+        "  border: 1px solid rgba(255, 255, 255, 43);"
+        "  border-radius: 10px;"
         "  padding: 0px;"
         "}"
         "QPushButton:hover {"
-        "  background: #F7C2B5;"
-        "  border-color: #DF9B92;"
+        "  background: rgba(255, 255, 255, 48);"
+        "  border-color: rgba(138, 185, 255, 165);"
         "}"
         "QPushButton:pressed {"
-        "  background: #F3A6A0;"
-        "  border-color: #DC8981;"
+        "  background: #6EA8FF;"
+        "  border-color: rgba(255, 255, 255, 126);"
         "}"));
     m_gearOpacity = new QGraphicsOpacityEffect(m_gearButton);
     m_gearOpacity->setOpacity(0.0);

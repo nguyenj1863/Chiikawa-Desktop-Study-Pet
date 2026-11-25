@@ -585,7 +585,7 @@ void SettingsPanel::buildUi()
     auto* colonLbl = new QLabel(QStringLiteral(":"), m_contentWidget);
     colonLbl->setAlignment(Qt::AlignCenter);
     colonLbl->setFixedWidth(10);
-    colonLbl->setStyleSheet(QStringLiteral("font-weight: 700; font-size: 13px; color: #654C43;"));
+    colonLbl->setStyleSheet(QStringLiteral("font-weight: 700; font-size: 13px; color: #BCC7D9;"));
 
     m_alarmMinuteCombo = new WheelAwareTimeCombo(m_scrollArea, m_contentWidget);
     styleTimeCombo(m_alarmMinuteCombo);
@@ -1587,5 +1587,5 @@ void SettingsPanel::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    PixelTheme::paintPixelCard(p, rect(), PixelTheme::kBackground, PixelTheme::kBorder, 4);
+    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Primary, 20.0, 5);
 }

@@ -34,20 +34,20 @@ public:
         setProperty("pressed", false);
         setStyleSheet(QStringLiteral(
             "QFrame#sectionHeader {"
-            "  background: #FFF0E6;"
-            "  border: 2px solid #DDBFB3;"
-            "  border-radius: 4px;"
+            "  background: rgba(255, 255, 255, 24);"
+            "  border: 1px solid rgba(255, 255, 255, 26);"
+            "  border-radius: 12px;"
             "}"
             "QFrame#sectionHeader[hovered=\"true\"] {"
-            "  background: #F7C2B5;"
-            "  border-color: #DF9B92;"
+            "  background: rgba(255, 255, 255, 46);"
+            "  border-color: rgba(255, 255, 255, 52);"
             "}"
             "QFrame#sectionHeader[pressed=\"true\"] {"
-            "  background: #F3A6A0;"
-            "  border-color: #D28B82;"
+            "  background: rgba(41, 75, 120, 230);"
+            "  border-color: rgba(138, 185, 255, 130);"
             "}"
             "QFrame#sectionHeader:focus {"
-            "  border-color: #C97E75;"
+            "  border-color: #6EA8FF;"
             "}"));
     }
 
