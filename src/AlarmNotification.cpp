@@ -45,7 +45,7 @@ AlarmNotification::AlarmNotification(QWidget* parent)
     m_bellIcon = new QLabel(this);
     m_bellIcon->setFixedSize(18, 18);
     m_bellIcon->setAlignment(Qt::AlignCenter);
-    m_bellIcon->setPixmap(PixelTheme::icon(PixelIcon::Bell, PixelTheme::kPrimaryAccent, 16).pixmap(16, 16));
+    m_bellIcon->setPixmap(PixelTheme::icon(PixelIcon::Bell, PixelTheme::kPrimaryAccentHover, 16).pixmap(16, 16));
 
     m_titleLabel = new QLabel(QStringLiteral("Time to go!"), this);
     m_titleLabel->setObjectName(QStringLiteral("title"));
@@ -196,5 +196,5 @@ void AlarmNotification::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    PixelTheme::paintPixelCard(p, rect(), PixelTheme::kBackground, PixelTheme::kBorder, 4);
+    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Compact, 16.0, 5);
 }

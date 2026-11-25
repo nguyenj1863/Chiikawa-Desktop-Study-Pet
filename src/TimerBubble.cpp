@@ -1,4 +1,5 @@
 #include "TimerBubble.h"
+#include "PixelTheme.h"
 
 #ifdef Q_OS_MACOS
 #  include "MacWindowHelper.h"
@@ -6,7 +7,6 @@
 
 #include <QGuiApplication>
 #include <QPainter>
-#include <QPainterPath>
 #include <QScreen>
 #include <algorithm>
 
@@ -23,7 +23,7 @@ TimerBubble::TimerBubble(QWidget* parent)
     m_label->setAlignment(Qt::AlignCenter);
     m_label->setStyleSheet(QStringLiteral(
         "QLabel {"
-        "  color: #593E35;"
+        "  color: #F3F6FC;"
         "  font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;"
         "  font-size: 15px;"
         "  font-weight: 700;"
@@ -107,18 +107,5 @@ void TimerBubble::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
-
-    QPainterPath path;
-    path.addRoundedRect(QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5), 15.0, 15.0);
-
-    // Soft shadow
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(89, 62, 53, 30));
-    p.drawPath(path.translated(0, 1.5));
-
-    // Warm cream pill fill + soft border
-    p.setBrush(QColor(255, 249, 242, 242));
-    p.setPen(QPen(QColor(221, 191, 179, 210), 1.5));
-    p.drawPath(path);
+    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Compact, PixelTheme::kRadiusBubble, 2);
 }
