@@ -343,5 +343,5 @@ void CompletionToast::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Compact, 16.0, 5);
+    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Compact, PixelTheme::kRadiusCard, 5);
 }

@@ -50,7 +50,7 @@ AlarmNotification::AlarmNotification(QWidget* parent)
     m_titleLabel = new QLabel(QStringLiteral("Time to go!"), this);
     m_titleLabel->setObjectName(QStringLiteral("title"));
 
-    m_closeBtn = new PixelIconButton(PixelIcon::Close, 24, 12, false, this);
+    m_closeBtn = new PixelIconButton(PixelIcon::Close, 30, 11, false, this);
     m_closeBtn->setToolTip(QStringLiteral("Dismiss alarm"));
     m_closeBtn->setAccessibleName(QStringLiteral("Dismiss alarm"));
     m_closeBtn->setFocusPolicy(Qt::NoFocus);
@@ -196,5 +196,5 @@ void AlarmNotification::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Compact, 16.0, 5);
+    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Compact, PixelTheme::kRadiusCard, 5);
 }
