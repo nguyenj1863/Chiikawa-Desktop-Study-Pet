@@ -92,6 +92,9 @@ target_include_directories(ChiikawaStudyPet PRIVATE
 target_link_libraries(ChiikawaStudyPet PRIVATE Qt6::Widgets Qt6::Multimedia)
 
 if(WIN32)
+    set_source_files_properties(resources/app.rc PROPERTIES
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/chiikawa.ico"
+    )
     target_sources(ChiikawaStudyPet PRIVATE resources/app.rc)
     target_link_libraries(ChiikawaStudyPet PRIVATE user32 shell32 ole32)
 elseif(APPLE)
