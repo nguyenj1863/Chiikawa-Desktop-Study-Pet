@@ -379,8 +379,8 @@ void PetWindow::updateHitMask()
 
 void PetWindow::startApplication()
 {
-    if (m_settings && !m_settings->onboardingCompleted() && m_onboardingWindow) {
-        // Keep the desktop pet hidden during first-launch onboarding
+    if (m_onboardingWindow) {
+        // Always show onboarding on startup before revealing the desktop pet
         if (m_movement) {
             m_movement->pause();
         }

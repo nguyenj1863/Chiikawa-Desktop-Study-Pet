@@ -25,7 +25,7 @@ private slots:
 
     void firstLaunchShowsOnboardingAndHidesPet();
     void tutorialNavigationProgressAndInactivePreviewPause();
-    void returningUserBypassesOnboarding();
+    void returningUserStillShowsOnboardingOnLaunch();
     void replayPreservesTimersAlarmsPositionAndCompletionState();
     void restoreDefaultsPreservesOnboardingCompleted();
     void fireAndSkipInteractiveHitRegions();
@@ -195,7 +195,7 @@ void TestOnboarding::tutorialNavigationProgressAndInactivePreviewPause()
     QCOMPARE(skippedSpy.at(0).at(0).toBool(), true);
 }
 
-void TestOnboarding::returningUserBypassesOnboarding()
+void TestOnboarding::returningUserStillShowsOnboardingOnLaunch()
 {
     {
         AppSettings settings;
@@ -208,8 +208,18 @@ void TestOnboarding::returningUserBypassesOnboarding()
     pet.startApplication();
     QApplication::processEvents();
 
-    QVERIFY(pet.isVisible());
+    QVERIFY(!pet.isVisible());
+    QVERIFY(pet.onboardingWindow()->isVisible());
+    QCOMPARE(pet.onboardingWindow()->isReplay(), false);
+    QCOMPARE(pet.appSettings()->petSize(), 148);
+
+    auto* skipBtn = pet.onboardingWindow()->findChild<QPushButton*>(QStringLiteral("onboardingSkip"));
+    QVERIFY(skipBtn != nullptr);
+    skipBtn->click();
+    QApplication::processEvents();
+
     QVERIFY(!pet.onboardingWindow()->isVisible());
+    QVERIFY(pet.isVisible());
     QCOMPARE(pet.appSettings()->petSize(), 148);
 }
 
@@ -224,6 +234,13 @@ void TestOnboarding::replayPreservesTimersAlarmsPositionAndCompletionState()
     PetWindow pet;
     pet.startApplication();
     QApplication::processEvents();
+
+    // Dismiss launch onboarding so the pet is visible before testing replay
+    auto* skipBtn = pet.onboardingWindow()->findChild<QPushButton*>(QStringLiteral("onboardingSkip"));
+    QVERIFY(skipBtn != nullptr);
+    skipBtn->click();
+    QApplication::processEvents();
+    QVERIFY(pet.isVisible());
 
     // Start an active study timer and schedule an alarm before replaying tutorial
     pet.studyTimer()->configure(std::chrono::seconds{25 * 60});
