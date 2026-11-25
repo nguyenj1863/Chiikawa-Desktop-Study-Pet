@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
 
+# Target macOS 13 (Ventura) and later, so the app runs on the oldest supported macOS.
+# Must be set before project() so every target (including the app bundle) uses it.
+if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS deployment version")
+endif()
+
 project(ChiikawaStudyPet
     VERSION 1.0.0
     DESCRIPTION "Chiikawa Desktop Study Pet"

@@ -87,6 +87,47 @@ if otool -L "${BIN_PATH}" | grep -E "(/Users/|/opt/homebrew/|/usr/local/)" >/dev
     echo "Warning: Detected non-relocated library path in binary." >&2
 fi
 
+# Every Mach-O file in the bundle (app binary, Qt frameworks, plugins) must
+# run on the minimum supported macOS, or users on older systems will see an
+# "update macOS" error at launch.
+MIN_MACOS_VERSION="${MIN_MACOS_VERSION:-13.0}"
+echo "=== Minimum macOS verification (required <= ${MIN_MACOS_VERSION}) ==="
+MINOS_FAILURES=0
+MINOS_CHECKED=0
+while IFS= read -r -d '' f; do
+    case "$(file -b "$f")" in
+        *Mach-O*) ;;
+        *) continue ;;
+    esac
+    minos="$(otool -l "$f" 2>/dev/null | awk '
+        /LC_BUILD_VERSION/ { b = 1 }
+        b && /minos/ { print $2; exit }
+        /LC_VERSION_MIN_MACOSX/ { v = 1 }
+        v && /version/ { print $2; exit }
+    ')" || true
+    if [[ -z "${minos}" ]]; then
+        echo "Warning: could not read minimum macOS version from ${f#"${DST_APP}/"}" >&2
+        continue
+    fi
+    MINOS_CHECKED=$((MINOS_CHECKED + 1))
+    echo "  ${f#"${DST_APP}/"}: minos ${minos}"
+    highest="$(printf '%s\n%s\n' "${minos}" "${MIN_MACOS_VERSION}" | sort -V | tail -n1)"
+    if [[ "${highest}" != "${MIN_MACOS_VERSION}" ]]; then
+        echo "Error: ${f#"${DST_APP}/"} requires macOS ${minos} (maximum allowed: ${MIN_MACOS_VERSION})" >&2
+        MINOS_FAILURES=$((MINOS_FAILURES + 1))
+    fi
+done < <(find "${DST_APP}" -type f -print0)
+
+if [[ "${MINOS_CHECKED}" -eq 0 ]]; then
+    echo "Error: no Mach-O files had a readable minimum macOS version." >&2
+    exit 1
+fi
+if [[ "${MINOS_FAILURES}" -gt 0 ]]; then
+    echo "Error: ${MINOS_FAILURES} binary(ies) require a newer macOS than ${MIN_MACOS_VERSION}." >&2
+    exit 1
+fi
+echo "All ${MINOS_CHECKED} bundled Mach-O files run on macOS ${MIN_MACOS_VERSION} or later."
+
 # Code signing (Developer ID if configured via secrets, otherwise ad-hoc so Apple Silicon runs locally)
 if [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
     echo "Signing ${DST_APP} with Developer ID identity..."
