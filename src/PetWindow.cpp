@@ -85,6 +85,8 @@ PetWindow::PetWindow(QWidget* parent)
             this, &PetWindow::onOnboardingFinished);
     connect(m_onboardingWindow.get(), &OnboardingWindow::onboardingSkipped,
             this, &PetWindow::onOnboardingFinished);
+    connect(m_onboardingWindow.get(), &OnboardingWindow::onboardingExitRequested,
+            this, &PetWindow::exitApplication);
 
     connect(m_completionToast.get(), &CompletionToast::buttonActivated, this, [this]() {
         if (m_uiSound) {
@@ -318,10 +320,47 @@ void PetWindow::placeInitialPosition()
 void PetWindow::applySettings()
 {
     const int size = m_settings->petSize();
-    setFixedSize(size, size);
-    if (m_petLabel) {
-        m_petLabel->setFixedSize(size, size);
+    const QSize oldSize = this->size();
+    const bool sizeChanged = (oldSize.width() != size || oldSize.height() != size);
+
+    if (sizeChanged) {
+        const QPoint oldPos = pos();
+        const int oldW = std::max(1, oldSize.width());
+        const int oldH = std::max(1, oldSize.height());
+        int newX = oldPos.x() + (oldW - size) / 2;
+        int newY = oldPos.y() + (oldH - size) / 2;
+
+        // When SettingsPanel is open, grow away from it so the pet never collides
+        // with or pushes the settings window out from under the user's cursor.
+        if (m_settingsPanel && m_settingsPanel->isVisible()) {
+            const QRect panelRect = m_settingsPanel->frameGeometry();
+            if (panelRect.center().x() >= oldPos.x() + oldW / 2) {
+                // Settings is on the right: keep the pet's right edge anchored.
+                newX = (oldPos.x() + oldW) - size;
+            } else {
+                // Settings is on the left: keep the pet's left edge anchored.
+                newX = oldPos.x();
+            }
+        }
+
+        const QRect bounds = WindowCoordinator::availableGeometryFor(
+            QPoint(newX + size / 2, newY + size / 2));
+        const QPoint clampedPos = WindowCoordinator::clampTopLeft({newX, newY}, QSize(size, size), bounds);
+
+        setFixedSize(size, size);
+        if (m_petLabel) {
+            m_petLabel->setFixedSize(size, size);
+        }
+        if (clampedPos != oldPos) {
+            move(clampedPos);
+        }
+    } else {
+        setFixedSize(size, size);
+        if (m_petLabel) {
+            m_petLabel->setFixedSize(size, size);
+        }
     }
+
     if (m_animations) {
         m_animations->setTargetSize(size);
         m_animations->setAutoSwitchEnabled(m_settings->autoAnimationEnabled());
@@ -353,19 +392,27 @@ void PetWindow::applySettings()
         m_alarmNotification->setSnoozeMinutes(m_settings->snoozeMinutes());
     }
 
-    m_desktopLayer.applyMode(this, m_settings->desktopOnlyMode());
-
-    // Keep settings accessible above normal windows while open even in Desktop-Only Mode
-    if (m_settingsPanel) {
-        m_settingsPanel->setAlwaysOnTop(true);
+    const bool wantDesktopOnly = m_settings->desktopOnlyMode();
+    if (!m_desktopLayerInitialized || m_appliedDesktopOnlyMode != wantDesktopOnly) {
+        m_desktopLayer.applyMode(this, wantDesktopOnly);
+        m_desktopLayerInitialized = true;
+        m_appliedDesktopOnlyMode = wantDesktopOnly;
+        // Keep settings accessible above normal windows while open even in Desktop-Only Mode
+        if (m_settingsPanel) {
+            m_settingsPanel->setAlwaysOnTop(true);
+        }
     }
 
     if (m_gearButton) {
         m_gearButton->move(width() - m_gearButton->width() - 2, 2);
     }
-    m_movement->constrainToScreen();
+    if (!sizeChanged) {
+        m_movement->constrainToScreen();
+    }
     if (m_coordinator) {
-        m_coordinator->realignSettings();
+        // Keep SettingsPanel stationary while resizing so dragging the size slider
+        // never shifts the panel out from under the cursor.
+        m_coordinator->syncRelativeOffset();
     }
     updateHitMask();
 }
@@ -824,9 +871,18 @@ QRect PetWindow::computeInteractiveHitRect(const QImage& frame,
         return {};
     }
 
-    const int offsetX = (windowSize.width() - rgba.width()) / 2;
-    const int offsetY = (windowSize.height() - rgba.height()) / 2;
-    QRect hitRect(minX + offsetX, minY + offsetY, maxX - minX + 1, maxY - minY + 1);
+    const qreal dpr = std::max<qreal>(1.0, rgba.devicePixelRatio());
+    const int logicalW = qRound(rgba.width() / dpr);
+    const int logicalH = qRound(rgba.height() / dpr);
+    const int logicalMinX = qRound(minX / dpr);
+    const int logicalMinY = qRound(minY / dpr);
+    const int logicalMaxX = qRound(maxX / dpr);
+    const int logicalMaxY = qRound(maxY / dpr);
+
+    const int offsetX = (windowSize.width() - logicalW) / 2;
+    const int offsetY = (windowSize.height() - logicalH) / 2;
+    QRect hitRect(logicalMinX + offsetX, logicalMinY + offsetY,
+                  logicalMaxX - logicalMinX + 1, logicalMaxY - logicalMinY + 1);
 
     if (animId == AnimationId::Fire) {
         // Expand around the fast-moving small fire sprite so surrounding negative space is clickable/hoverable

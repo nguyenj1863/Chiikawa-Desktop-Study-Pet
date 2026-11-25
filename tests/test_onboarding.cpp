@@ -36,6 +36,7 @@ private slots:
     void glassMaterialAlphaRanges();
     void glassCornersStayTransparent();
     void glassWindowsAreTranslucent();
+    void closeButtonExitsOnStartupOnboardingButClosesOnReplay();
 };
 
 void TestOnboarding::init()
@@ -448,6 +449,32 @@ void TestOnboarding::glassWindowsAreTranslucent()
     auto* closeBtn = onboarding.findChild<QPushButton*>(QStringLiteral("closeBtn"));
     QVERIFY(closeBtn != nullptr);
     QVERIFY(closeBtn->width() >= 30 && closeBtn->height() >= 30);
+}
+
+void TestOnboarding::closeButtonExitsOnStartupOnboardingButClosesOnReplay()
+{
+    OnboardingWindow onboarding;
+    QSignalSpy exitSpy(&onboarding, &OnboardingWindow::onboardingExitRequested);
+    QSignalSpy skipSpy(&onboarding, &OnboardingWindow::onboardingSkipped);
+    QSignalSpy completeSpy(&onboarding, &OnboardingWindow::onboardingCompleted);
+
+    // Startup onboarding (replay = false): clicking X requests app exit instead of continuing
+    onboarding.openOnboarding(false);
+    auto* closeBtn = onboarding.findChild<QPushButton*>(QStringLiteral("closeBtn"));
+    QVERIFY(closeBtn != nullptr);
+    QTest::mouseClick(closeBtn, Qt::LeftButton);
+    QCOMPARE(exitSpy.count(), 1);
+    QCOMPARE(skipSpy.count(), 0);
+    QCOMPARE(completeSpy.count(), 0);
+
+    // Tutorial replay (replay = true): clicking X closes tutorial without exiting app
+    exitSpy.clear();
+    skipSpy.clear();
+    onboarding.openOnboarding(true);
+    QTest::mouseClick(closeBtn, Qt::LeftButton);
+    QCOMPARE(exitSpy.count(), 0);
+    QCOMPARE(skipSpy.count(), 1);
+    QCOMPARE(skipSpy.first().first().toBool(), true);
 }
 
 QTEST_MAIN(TestOnboarding)

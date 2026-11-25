@@ -1,11 +1,94 @@
 #include "AnimationManager.h"
 
+#include <QImage>
 #include <QLabel>
 #include <QMovie>
 #include <QPixmap>
 #include <QTransform>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+
+namespace {
+
+/**
+ * Lightweight 3x3 edge-preserving unsharp mask applied once per cached upscaled
+ * frame so Chiikawa's dark line-art outlines and eyes stay crisp at large sizes
+ * without introducing transparent fringe halos.
+ */
+QImage sharpenUpscaledSprite(const QImage& input, double amount)
+{
+    if (input.isNull() || input.width() < 3 || input.height() < 3 || amount <= 0.01) {
+        return input;
+    }
+
+    const QImage src = (input.format() == QImage::Format_ARGB32)
+        ? input
+        : input.convertToFormat(QImage::Format_ARGB32);
+    QImage out(src.size(), QImage::Format_ARGB32);
+
+    const int w = src.width();
+    const int h = src.height();
+
+    for (int y = 0; y < h; ++y) {
+        const auto* rowPrev = reinterpret_cast<const QRgb*>(src.constScanLine(std::max(0, y - 1)));
+        const auto* rowCurr = reinterpret_cast<const QRgb*>(src.constScanLine(y));
+        const auto* rowNext = reinterpret_cast<const QRgb*>(src.constScanLine(std::min(h - 1, y + 1)));
+        auto* dst = reinterpret_cast<QRgb*>(out.scanLine(y));
+
+        for (int x = 0; x < w; ++x) {
+            const QRgb center = rowCurr[x];
+            const int a = qAlpha(center);
+            if (a < 24) {
+                dst[x] = center;
+                continue;
+            }
+
+            const int xm = std::max(0, x - 1);
+            const int xp = std::min(w - 1, x + 1);
+            const QRgb neighbors[4] = { rowPrev[x], rowNext[x], rowCurr[xm], rowCurr[xp] };
+
+            int sumR = 0;
+            int sumG = 0;
+            int sumB = 0;
+            int weightSum = 0;
+            for (const QRgb nb : neighbors) {
+                const int na = qAlpha(nb);
+                if (na > 16) {
+                    sumR += qRed(nb) * na;
+                    sumG += qGreen(nb) * na;
+                    sumB += qBlue(nb) * na;
+                    weightSum += na;
+                }
+            }
+
+            if (weightSum <= 0) {
+                dst[x] = center;
+                continue;
+            }
+
+            const double blurR = static_cast<double>(sumR) / static_cast<double>(weightSum);
+            const double blurG = static_cast<double>(sumG) / static_cast<double>(weightSum);
+            const double blurB = static_cast<double>(sumB) / static_cast<double>(weightSum);
+
+            const int r = std::clamp(qRound(qRed(center) + (qRed(center) - blurR) * amount), 0, 255);
+            const int g = std::clamp(qRound(qGreen(center) + (qGreen(center) - blurG) * amount), 0, 255);
+            const int b = std::clamp(qRound(qBlue(center) + (qBlue(center) - blurB) * amount), 0, 255);
+            dst[x] = qRgba(r, g, b, a);
+        }
+    }
+
+    return out;
+}
+
+quint64 frameCacheKey(AnimationId id, int frameNumber, bool mirrored)
+{
+    return (static_cast<quint64>(static_cast<int>(id)) << 33)
+        | (static_cast<quint64>(std::max(0, frameNumber)) << 1)
+        | (mirrored ? 1ULL : 0ULL);
+}
+
+} // namespace
 
 AnimationManager::AnimationManager(QLabel* displayLabel, QObject* parent)
     : QObject(parent)
@@ -85,7 +168,6 @@ bool AnimationManager::loadAll()
         }
         connect(movie, &QMovie::frameChanged, this, &AnimationManager::onFrameChanged);
         m_movies.insert(i, movie);
-        applyScaledSize(movie);
     }
 
     m_ready = !m_movies.isEmpty();
@@ -98,20 +180,23 @@ bool AnimationManager::loadAll()
     return m_ready && ok;
 }
 
-void AnimationManager::applyScaledSize(QMovie* movie)
+void AnimationManager::clearFrameCacheIfNeeded(int physSize, qreal dpr)
 {
-    if (!movie) {
-        return;
+    if (m_cachedPhysSize != physSize || std::abs(m_cachedDpr - dpr) > 0.001) {
+        m_frameCache.clear();
+        m_cachedPhysSize = physSize;
+        m_cachedDpr = dpr;
     }
-    movie->setScaledSize(QSize(m_targetSize, m_targetSize));
 }
 
 void AnimationManager::setTargetSize(int size)
 {
-    m_targetSize = std::max(32, size);
-    for (auto it = m_movies.begin(); it != m_movies.end(); ++it) {
-        applyScaledSize(it.value());
+    const int clamped = std::max(32, size);
+    if (m_targetSize == clamped) {
+        return;
     }
+    m_targetSize = clamped;
+    m_frameCache.clear();
     updateDisplayedFrame();
 }
 
@@ -130,20 +215,45 @@ void AnimationManager::updateDisplayedFrame()
     if (!movie || !m_label) {
         return;
     }
-    QPixmap frame = movie->currentPixmap();
-    if (frame.isNull()) {
+
+    const qreal dpr = std::max<qreal>(1.0, m_label->devicePixelRatioF());
+    const int physSize = std::max(32, qRound(m_targetSize * dpr));
+    clearFrameCacheIfNeeded(physSize, dpr);
+
+    const int frameNumber = movie->currentFrameNumber();
+    const quint64 key = frameCacheKey(m_current, frameNumber, m_mirrored);
+    if (auto it = m_frameCache.constFind(key); it != m_frameCache.constEnd()) {
+        m_label->setPixmap(it.value());
+        emit frameUpdated(it.value(), m_current);
         return;
     }
-    // QMovie can return native-resolution frames even after setScaledSize.
-    // Always normalize so the pet stays a consistent size.
-    if (frame.height() != m_targetSize || frame.width() != m_targetSize) {
-        frame = frame.scaled(QSize(m_targetSize, m_targetSize),
-                             Qt::KeepAspectRatio,
-                             Qt::SmoothTransformation);
+
+    // Decode at full native resolution (no QMovie::setScaledSize) and scale once
+    // into HiDPI physical pixels so sprites stay sharp at every size and DPI.
+    QImage native = movie->currentImage();
+    if (native.isNull()) {
+        return;
     }
+
+    QImage scaled = native.scaled(QSize(physSize, physSize),
+                                  Qt::KeepAspectRatio,
+                                  Qt::SmoothTransformation);
+
+    const int nativeMax = std::max(1, std::max(native.width(), native.height()));
+    if (physSize > nativeMax) {
+        const double ratio = static_cast<double>(physSize) / static_cast<double>(nativeMax);
+        const double sharpenAmount = std::clamp((ratio - 1.0) * 0.65, 0.20, 0.60);
+        scaled = sharpenUpscaledSprite(scaled, sharpenAmount);
+    }
+
     if (m_mirrored) {
-        frame = frame.transformed(QTransform().scale(-1, 1));
+        scaled = scaled.transformed(QTransform().scale(-1, 1));
     }
+
+    QPixmap frame = QPixmap::fromImage(scaled);
+    frame.setDevicePixelRatio(dpr);
+    m_frameCache.insert(key, frame);
+
     m_label->setPixmap(frame);
     emit frameUpdated(frame, m_current);
 }
@@ -171,9 +281,8 @@ void AnimationManager::play(AnimationId id, bool mirrored)
     m_current = id;
     m_mirrored = mirrored;
 
-    // Drive display ourselves so mirroring works without QMovie fighting setPixmap
+    // Drive display ourselves so mirroring and HiDPI scaling work without QMovie fighting setPixmap
     m_label->setMovie(nullptr);
-    applyScaledSize(movie);
 
     if (movie->state() != QMovie::Running) {
         movie->start();

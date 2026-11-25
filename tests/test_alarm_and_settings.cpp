@@ -8,6 +8,7 @@
 #include "SettingsPanel.h"
 #include "StudyTimer.h"
 #include "UISoundManager.h"
+#include "WindowCoordinator.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -80,6 +81,8 @@ private slots:
     void uiSoundManagerThrottlingAndUserOnlyPlayback();
     void redesignedTimerAndAlarmControls();
     void settingsPanelUsesTranslucentGlass();
+    void expandedTimerPreservesButtonHeights();
+    void windowCoordinatorSyncRelativeOffsetKeepsPanelStationary();
 };
 
 void TestAlarmAndSettings::init()
@@ -824,6 +827,64 @@ void TestAlarmAndSettings::redesignedTimerAndAlarmControls()
     QCOMPARE(periodCombo->currentText(), QStringLiteral("PM"));
     QApplication::sendEvent(periodCombo, &keyA);
     QCOMPARE(periodCombo->currentText(), QStringLiteral("AM"));
+}
+
+void TestAlarmAndSettings::expandedTimerPreservesButtonHeights()
+{
+    AppSettings settings;
+    StudyTimer timer;
+    AlarmScheduler scheduler(&settings);
+    AlarmSoundManager sound;
+    SettingsPanel panel(&settings, &timer, &scheduler, &sound);
+    panel.show();
+    QApplication::processEvents();
+
+    // Expand every collapsible section AND open the custom duration editor
+    for (auto* sec : panel.findChildren<CollapsibleSection*>()) {
+        sec->setExpanded(true, false);
+    }
+    auto* editBtn = panel.findChild<QPushButton*>(QStringLiteral("iconBtn"));
+    QVERIFY(editBtn != nullptr);
+    QTest::mouseClick(editBtn, Qt::LeftButton);
+    QApplication::processEvents();
+
+    auto* playBtn = panel.findChild<QPushButton*>(QStringLiteral("iconBtnPrimary"));
+    QVERIFY(playBtn != nullptr);
+    QCOMPARE(playBtn->height(), 30);
+    QCOMPARE(playBtn->width(), 30);
+
+    // Every icon button inside timerCard must keep its full fixed height (never squished)
+    auto* timerCard = panel.findChild<QFrame*>(QStringLiteral("timerCard"));
+    QVERIFY(timerCard != nullptr);
+    for (auto* btn : timerCard->findChildren<QPushButton*>()) {
+        if (btn->objectName() == QLatin1String("iconBtn")
+            || btn->objectName() == QLatin1String("iconBtnPrimary")) {
+            QVERIFY2(btn->height() >= 28,
+                     qPrintable(QStringLiteral("Timer icon button squished to %1px").arg(btn->height())));
+        }
+    }
+}
+
+void TestAlarmAndSettings::windowCoordinatorSyncRelativeOffsetKeepsPanelStationary()
+{
+    QWidget pet;
+    pet.setFixedSize(120, 120);
+    pet.move(300, 200);
+    pet.show();
+
+    QWidget settings;
+    settings.setFixedSize(340, 320);
+    settings.show();
+
+    WindowCoordinator coordinator(&pet, &settings);
+    coordinator.attachSettings();
+    const QPoint initialPanelPos = settings.pos();
+
+    // Simulate resizing pet while SettingsPanel is open: panel must NOT move
+    pet.setFixedSize(220, 220);
+    pet.move(200, 150);
+    coordinator.syncRelativeOffset();
+    QCOMPARE(settings.pos(), initialPanelPos);
 }
 
 QTEST_MAIN(TestAlarmAndSettings)

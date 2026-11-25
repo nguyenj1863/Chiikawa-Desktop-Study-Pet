@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QPixmap>
 #include <QPointer>
 #include <QString>
 #include <QTimer>
@@ -9,7 +10,6 @@
 
 class QLabel;
 class QMovie;
-class QPixmap;
 
 enum class AnimationId {
     Skip = 0,
@@ -63,12 +63,15 @@ private slots:
 private:
     void scheduleNextAutoSwitch();
     void updateDisplayedFrame();
-    void applyScaledSize(QMovie* movie);
+    void clearFrameCacheIfNeeded(int physSize, qreal dpr);
     [[nodiscard]] AnimationId pickRandom(bool avoidCurrent);
     [[nodiscard]] QMovie* currentMovie() const;
 
     QPointer<QLabel> m_label;
     QHash<int, QMovie*> m_movies;
+    QHash<quint64, QPixmap> m_frameCache;
+    int m_cachedPhysSize = 0;
+    qreal m_cachedDpr = 1.0;
     AnimationId m_current = AnimationId::Skip;
     bool m_mirrored = false;
     bool m_ready = false;

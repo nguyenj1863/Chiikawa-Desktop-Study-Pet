@@ -111,6 +111,14 @@ void WindowCoordinator::realignSettings()
     attachSettings();
 }
 
+void WindowCoordinator::syncRelativeOffset()
+{
+    if (m_syncing || !m_pet || !m_settings || !m_settings->isVisible()) {
+        return;
+    }
+    m_relativeOffset = m_settings->pos() - m_pet->frameGeometry().topLeft();
+}
+
 void WindowCoordinator::repositionAfterSettingsResize()
 {
     if (m_syncing || !m_pet || !m_settings || !m_settings->isVisible()) {

@@ -71,9 +71,9 @@ void OnboardingWindow::buildUi()
     progLayout->addWidget(m_progressLabel, 0, Qt::AlignVCenter);
 
     m_closeBtn = new PixelIconButton(PixelIcon::Close, 32, 12, false, m_headerWidget);
-    m_closeBtn->setToolTip(QStringLiteral("Skip tutorial (Esc)"));
-    m_closeBtn->setAccessibleName(QStringLiteral("Skip tutorial"));
-    connect(m_closeBtn, &QPushButton::clicked, this, &OnboardingWindow::onSkipClicked);
+    m_closeBtn->setToolTip(QStringLiteral("Exit application"));
+    m_closeBtn->setAccessibleName(QStringLiteral("Exit application"));
+    connect(m_closeBtn, &QPushButton::clicked, this, &OnboardingWindow::onCloseClicked);
 
     headerLayout->addWidget(m_progressContainer, 0, Qt::AlignVCenter);
     headerLayout->addStretch(1);
@@ -232,6 +232,13 @@ void OnboardingWindow::openOnboarding(bool replay)
 {
     m_isReplay = replay;
     m_outcomeEmitted = false;
+
+    if (m_closeBtn) {
+        const QString tip = replay ? QStringLiteral("Close tutorial (Esc)")
+                                   : QStringLiteral("Exit application");
+        m_closeBtn->setToolTip(tip);
+        m_closeBtn->setAccessibleName(tip);
+    }
 
     int targetWidth = kDefaultWidth;
     if (QScreen* screen = QGuiApplication::primaryScreen()) {
@@ -413,6 +420,22 @@ void OnboardingWindow::onSkipClicked()
     finishAndClose(false);
 }
 
+void OnboardingWindow::onCloseClicked()
+{
+    playUiClick();
+    if (m_isReplay) {
+        finishAndClose(false);
+        return;
+    }
+    if (m_outcomeEmitted) {
+        return;
+    }
+    m_outcomeEmitted = true;
+    stopAllPreviews();
+    hide();
+    emit onboardingExitRequested();
+}
+
 void OnboardingWindow::finishAndClose(bool completed)
 {
     if (m_outcomeEmitted) {
@@ -488,7 +511,17 @@ void OnboardingWindow::mouseReleaseEvent(QMouseEvent* event)
 void OnboardingWindow::closeEvent(QCloseEvent* event)
 {
     event->ignore();
-    finishAndClose(false);
+    if (m_isReplay) {
+        finishAndClose(false);
+        return;
+    }
+    if (m_outcomeEmitted) {
+        return;
+    }
+    m_outcomeEmitted = true;
+    stopAllPreviews();
+    hide();
+    emit onboardingExitRequested();
 }
 
 void OnboardingWindow::hideEvent(QHideEvent* event)

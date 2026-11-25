@@ -943,8 +943,6 @@ QString styleSheet()
             border: 1px solid rgba(255, 255, 255, 12);
             border-radius: 8px;
             padding: 0px;
-            min-width: 0px;
-            min-height: 0px;
         }
         QPushButton#iconBtn:hover {
             background: rgba(255, 255, 255, 36);
@@ -958,8 +956,6 @@ QString styleSheet()
             border: 1px solid rgba(155, 198, 255, 45);
             border-radius: 8px;
             padding: 0px;
-            min-width: 0px;
-            min-height: 0px;
         }
         QPushButton#iconBtnPrimary:hover {
             background: rgba(105, 166, 252, 165);
@@ -973,8 +969,6 @@ QString styleSheet()
             border: 1px solid transparent;
             border-radius: 6px;
             padding: 0px;
-            min-width: 0px;
-            min-height: 0px;
         }
         QPushButton#closeBtn:hover {
             background: rgba(255, 255, 255, 20);

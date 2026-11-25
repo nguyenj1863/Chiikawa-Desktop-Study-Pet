@@ -30,6 +30,7 @@ public:
 
     void attachSettings();
     void realignSettings();
+    void syncRelativeOffset();
     void repositionAfterSettingsResize();
 
     void movePetTo(const QPoint& desiredPetTopLeft);

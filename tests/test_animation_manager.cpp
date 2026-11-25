@@ -12,6 +12,7 @@ private slots:
     void switchesAnimation();
     void playRandomAvoidsCurrent();
     void resourcePathsExist();
+    void hdScalingPreservesAspectAndDpr();
 };
 
 void TestAnimationManager::resourcePathsExist()
@@ -62,6 +63,25 @@ void TestAnimationManager::playRandomAvoidsCurrent()
         }
     }
     QVERIFY(same < 5);
+}
+
+void TestAnimationManager::hdScalingPreservesAspectAndDpr()
+{
+    QLabel label;
+    AnimationManager manager(&label);
+    QVERIFY(manager.loadAll());
+
+    // Upscale beyond native 200px (stomp is 200x184) and verify non-square aspect ratio & HiDPI metadata
+    manager.setTargetSize(256);
+    manager.play(AnimationId::Stomp, false);
+    const QPixmap stompPm = label.pixmap();
+    QVERIFY(!stompPm.isNull());
+    QVERIFY(stompPm.devicePixelRatio() >= 1.0);
+    QVERIFY2(stompPm.width() > stompPm.height(),
+             "Stomp sprite (200x184) must preserve non-square aspect ratio rather than stretching");
+
+    const qreal logicalW = stompPm.width() / stompPm.devicePixelRatio();
+    QVERIFY(logicalW >= 254.0 && logicalW <= 258.0);
 }
 
 QTEST_MAIN(TestAnimationManager)

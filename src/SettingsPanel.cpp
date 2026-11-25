@@ -392,7 +392,7 @@ void SettingsPanel::buildUi()
 
     m_contentWidget = new QWidget(m_scrollArea);
     m_contentWidget->setObjectName(QStringLiteral("scrollContent"));
-    m_contentWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_contentWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
     auto* root = new QVBoxLayout(m_contentWidget);
     root->setContentsMargins(0, 0, 0, 0);
@@ -403,7 +403,7 @@ void SettingsPanel::buildUi()
     // =========================================================================
     auto* timerCard = new QFrame(m_contentWidget);
     timerCard->setObjectName(QStringLiteral("timerCard"));
-    timerCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    timerCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     auto* timerCardLayout = new QVBoxLayout(timerCard);
     timerCardLayout->setContentsMargins(9, 6, 9, 7);
     timerCardLayout->setSpacing(4);
@@ -1239,12 +1239,14 @@ void SettingsPanel::updateLayoutSize(const QScreen* screen)
 
     if (neededH <= maxH) {
         m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        m_contentWidget->setMinimumHeight(0);
         if (m_contentWidget->layout()) {
             m_contentWidget->layout()->setContentsMargins(0, 0, 0, 0);
         }
         setFixedSize(kPanelWidth, neededH);
     } else {
         m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        m_contentWidget->setMinimumHeight(contentH);
         if (m_contentWidget->layout()) {
             // Subtle right padding so thin scrollbar never overlaps controls
             m_contentWidget->layout()->setContentsMargins(0, 0, 4, 0);

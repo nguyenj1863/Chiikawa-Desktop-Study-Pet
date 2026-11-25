@@ -53,6 +53,7 @@ public:
 signals:
     void onboardingCompleted(bool wasReplay);
     void onboardingSkipped(bool wasReplay);
+    void onboardingExitRequested();
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -67,6 +68,7 @@ private slots:
     void onPrimaryClicked();
     void onBackClicked();
     void onSkipClicked();
+    void onCloseClicked();
 
 private:
     void buildUi();

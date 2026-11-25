@@ -134,6 +134,8 @@ private:
     QPoint m_dragOffset;
     bool m_hovering = false;
     bool m_completionHandled = false;
+    bool m_desktopLayerInitialized = false;
+    bool m_appliedDesktopOnlyMode = false;
     QRect m_interactiveHitRect;
     QTimer m_singleClickTimer;
 };
