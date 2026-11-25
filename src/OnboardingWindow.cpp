@@ -70,7 +70,7 @@ void OnboardingWindow::buildUi()
     m_progressLabel->setContentsMargins(6, 0, 0, 0);
     progLayout->addWidget(m_progressLabel, 0, Qt::AlignVCenter);
 
-    m_closeBtn = new PixelIconButton(PixelIcon::Close, 28, 12, false, m_headerWidget);
+    m_closeBtn = new PixelIconButton(PixelIcon::Close, 32, 12, false, m_headerWidget);
     m_closeBtn->setToolTip(QStringLiteral("Skip tutorial (Esc)"));
     m_closeBtn->setAccessibleName(QStringLiteral("Skip tutorial"));
     connect(m_closeBtn, &QPushButton::clicked, this, &OnboardingWindow::onSkipClicked);
@@ -312,10 +312,10 @@ void OnboardingWindow::updateNavigationState()
             }
             const bool active = (i == stepIndex);
             const bool done = (i < stepIndex);
-            const QString bg = active ? QStringLiteral("#6EA8FF")
-                                      : (done ? QStringLiteral("#294B78") : QStringLiteral("rgba(255, 255, 255, 24)"));
-            const QString border = active ? QStringLiteral("rgba(255, 255, 255, 115)")
-                                          : (done ? QStringLiteral("#6EA8FF") : QStringLiteral("rgba(255, 255, 255, 31)"));
+            const QString bg = active ? QStringLiteral("rgba(110, 168, 255, 175)")
+                                      : (done ? QStringLiteral("rgba(110, 168, 255, 80)") : QStringLiteral("rgba(255, 255, 255, 22)"));
+            const QString border = active ? QStringLiteral("rgba(180, 214, 255, 72)")
+                                          : (done ? QStringLiteral("rgba(110, 168, 255, 80)") : QStringLiteral("rgba(255, 255, 255, 14)"));
             dot->setStyleSheet(QStringLiteral(
                 "background: %1; border: 1px solid %2; border-radius: 5px;").arg(bg, border));
         }
@@ -501,5 +501,5 @@ void OnboardingWindow::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
     QPainter p(this);
-    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Primary, 22.0, 5);
+    PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Primary, PixelTheme::kRadiusOnboarding, 5);
 }
