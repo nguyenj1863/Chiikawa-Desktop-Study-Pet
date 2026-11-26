@@ -4,6 +4,9 @@
 #include <QObject>
 #include <QPixmap>
 #include <QPointer>
+#include <QRect>
+#include <QRectF>
+#include <QSize>
 #include <QString>
 #include <QTimer>
 #include <random>
@@ -49,6 +52,22 @@ public:
 
     [[nodiscard]] AnimationId currentAnimation() const { return m_current; }
 
+    /**
+     * Returns the cached, outlier-trimmed visible sprite silhouette in window-local
+     * coordinates for the given animation, scaled to windowSize (and mirrored if set).
+     */
+    [[nodiscard]] QRect visibleBoundsInWindow(AnimationId id,
+                                              const QSize& windowSize,
+                                              bool mirrored = false) const;
+
+    [[nodiscard]] QRect currentVisibleBounds(const QSize& windowSize) const;
+
+    /** Normalized [0..1]x[0..1] visible silhouette inside the square pet canvas. */
+    [[nodiscard]] QRectF normalizedBounds(AnimationId id) const;
+
+    /** Computes the alpha-trimmed core opaque bounding rect of a single sprite frame. */
+    [[nodiscard]] static QRect computeCoreOpaqueBounds(const QImage& frame);
+
     [[nodiscard]] static QString resourcePath(AnimationId id);
     [[nodiscard]] static QString displayName(AnimationId id);
 
@@ -64,11 +83,13 @@ private:
     void scheduleNextAutoSwitch();
     void updateDisplayedFrame();
     void clearFrameCacheIfNeeded(int physSize, qreal dpr);
+    void analyzeAnimationBounds(AnimationId id, QMovie* movie);
     [[nodiscard]] AnimationId pickRandom(bool avoidCurrent);
     [[nodiscard]] QMovie* currentMovie() const;
 
     QPointer<QLabel> m_label;
     QHash<int, QMovie*> m_movies;
+    QHash<int, QRectF> m_normalizedBounds;
     QHash<quint64, QPixmap> m_frameCache;
     int m_cachedPhysSize = 0;
     qreal m_cachedDpr = 1.0;

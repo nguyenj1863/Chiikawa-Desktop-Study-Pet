@@ -429,6 +429,47 @@ QIcon icon(PixelIcon kind, const QColor& color, int logicalSize)
         return result;
     }
 
+    if (kind == PixelIcon::Exit) {
+        // Crisp vector exit doorway + outgoing arrow (stays sharp at 1.22x hover scale & rotation)
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const qreal s = static_cast<qreal>(logicalSize);
+        const qreal stroke = std::max<qreal>(1.5, s * 0.115);
+        QPen pen(color, stroke, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+
+        // Open doorway bracket on the left
+        QPainterPath door;
+        const qreal left = s * 0.16;
+        const qreal rightEdge = s * 0.50;
+        const qreal top = s * 0.17;
+        const qreal bottom = s * 0.83;
+        door.moveTo(rightEdge, top);
+        door.lineTo(left + s * 0.08, top);
+        door.quadTo(left, top, left, top + s * 0.08);
+        door.lineTo(left, bottom - s * 0.08);
+        door.quadTo(left, bottom, left + s * 0.08, bottom);
+        door.lineTo(rightEdge, bottom);
+        p.drawPath(door);
+
+        // Outgoing arrow pointing right
+        const qreal midY = s * 0.50;
+        const qreal arrowStart = s * 0.40;
+        const qreal arrowTip = s * 0.85;
+        const qreal head = s * 0.18;
+        p.drawLine(QPointF(arrowStart, midY), QPointF(arrowTip, midY));
+        QPainterPath arrowHead;
+        arrowHead.moveTo(arrowTip - head, midY - head);
+        arrowHead.lineTo(arrowTip, midY);
+        arrowHead.lineTo(arrowTip - head, midY + head);
+        p.drawPath(arrowHead);
+
+        p.end();
+        QIcon result(pm);
+        cache.insert(key, result);
+        return result;
+    }
+
     if (kind == PixelIcon::Edit) {
         // Crisp, immediately recognizable diagonal pencil: eraser cap + ferrule gap + barrel + pointed tip
         p.setRenderHint(QPainter::Antialiasing, true);
