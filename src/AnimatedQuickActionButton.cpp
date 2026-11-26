@@ -7,6 +7,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPropertyAnimation>
+#include <QTimer>
 #include <algorithm>
 #include <cmath>
 
@@ -29,17 +30,28 @@ AnimatedQuickActionButton::AnimatedQuickActionButton(PixelIcon iconKind,
 
     m_scaleAnim = new QPropertyAnimation(this, "hoverScale", this);
     m_rotationAnim = new QPropertyAnimation(this, "hoverRotation", this);
+    m_offsetAnim = new QPropertyAnimation(this, "hoverOffset", this);
     m_hoverProgressAnim = new QPropertyAnimation(this, "hoverProgress", this);
     m_pressProgressAnim = new QPropertyAnimation(this, "pressProgress", this);
 
+    m_phase2Timer = new QTimer(this);
+    m_phase2Timer->setSingleShot(true);
+    connect(m_phase2Timer, &QTimer::timeout, this, &AnimatedQuickActionButton::startPhase2GrowAndTwist);
+
     rebuildIconPixmaps();
+}
+
+QRectF AnimatedQuickActionButton::restingVisualRectLocal()
+{
+    const qreal margin = (kWidgetSize - kVisualSize) * 0.5;
+    return QRectF(margin, margin, kVisualSize, kVisualSize);
 }
 
 void AnimatedQuickActionButton::rebuildIconPixmaps()
 {
     const QIcon restIcon = PixelTheme::icon(m_iconKind, m_iconColor, kIconSize);
     const QIcon hoverIcon = PixelTheme::icon(m_iconKind, m_hoverIconColor, kIconSize);
-    // Request high-resolution pixmaps so 1.22x hover enlargement + rotation stays crisp.
+    // Request 3x DPR pixmaps so 1.32x hover enlargement + rotation stays crisp.
     m_restPixmap = restIcon.pixmap(QSize(kIconSize, kIconSize), 3.0);
     m_hoverPixmap = hoverIcon.pixmap(QSize(kIconSize, kIconSize), 3.0);
 }
@@ -59,6 +71,16 @@ void AnimatedQuickActionButton::setHoverRotation(qreal degrees)
         return;
     }
     m_hoverRotation = degrees;
+    update();
+}
+
+void AnimatedQuickActionButton::setHoverOffset(const QPointF& offset)
+{
+    if (std::abs(m_hoverOffset.x() - offset.x()) < 1e-3 &&
+        std::abs(m_hoverOffset.y() - offset.y()) < 1e-3) {
+        return;
+    }
+    m_hoverOffset = offset;
     update();
 }
 
@@ -92,6 +114,11 @@ void AnimatedQuickActionButton::setMenuOpacity(qreal opacity)
     update();
 }
 
+void AnimatedQuickActionButton::setOutwardDirection(qreal direction)
+{
+    m_outwardDirection = (direction < 0.0) ? -1.0 : 1.0;
+}
+
 void AnimatedQuickActionButton::setReducedMotion(bool reduced)
 {
     if (m_reducedMotion == reduced) {
@@ -99,17 +126,22 @@ void AnimatedQuickActionButton::setReducedMotion(bool reduced)
     }
     m_reducedMotion = reduced;
     if (m_reducedMotion) {
+        m_phase2Timer->stop();
         m_scaleAnim->stop();
         m_rotationAnim->stop();
+        m_offsetAnim->stop();
         setHoverScale(kRestScale);
         setHoverRotation(0.0);
+        setHoverOffset(QPointF(0.0, 0.0));
     }
 }
 
 void AnimatedQuickActionButton::resetVisualState()
 {
+    m_phase2Timer->stop();
     m_scaleAnim->stop();
     m_rotationAnim->stop();
+    m_offsetAnim->stop();
     m_hoverProgressAnim->stop();
     m_pressProgressAnim->stop();
 
@@ -118,6 +150,7 @@ void AnimatedQuickActionButton::resetVisualState()
     m_pressedVisual = false;
     m_hoverScale = kRestScale;
     m_hoverRotation = 0.0;
+    m_hoverOffset = QPointF(0.0, 0.0);
     m_hoverProgress = 0.0;
     m_pressProgress = 0.0;
     update();
@@ -127,102 +160,202 @@ void AnimatedQuickActionButton::resetVisualState()
     }
 }
 
-void AnimatedQuickActionButton::animateToState(bool hovered, bool pressed)
+void AnimatedQuickActionButton::setHovered(bool hovered)
 {
-    const qreal targetHoverProg = hovered ? 1.0 : 0.0;
-    const qreal targetPressProg = pressed ? 1.0 : 0.0;
+    if (m_hovered == hovered) {
+        return;
+    }
+    m_hovered = hovered;
+    if (!m_hovered) {
+        m_pressedVisual = false;
+        startHoverOutAnimation();
+    } else {
+        startHoverInAnimation();
+    }
+    emit hoveredChanged(m_hovered);
+}
+
+void AnimatedQuickActionButton::setPressedVisual(bool pressed)
+{
+    if (m_pressedVisual == pressed) {
+        return;
+    }
+    m_pressedVisual = pressed;
+    startPressAnimation(pressed);
+}
+
+void AnimatedQuickActionButton::startHoverInAnimation()
+{
+    m_phase2Timer->stop();
 
     if (m_reducedMotion) {
         m_scaleAnim->stop();
         m_rotationAnim->stop();
+        m_offsetAnim->stop();
         m_hoverProgressAnim->stop();
-        m_pressProgressAnim->stop();
         setHoverScale(kRestScale);
         setHoverRotation(0.0);
-        setHoverProgress(targetHoverProg);
-        setPressProgress(targetPressProg);
+        setHoverOffset(QPointF(0.0, 0.0));
+        setHoverProgress(1.0);
         return;
     }
 
-    const qreal targetScale = pressed
-        ? kPressScale
-        : (hovered ? kHoverScale : kRestScale);
-    const qreal targetRot = hovered ? m_targetHoverRotation : 0.0;
+    // Phase 1: Pull out upward & outward from the overlapping stack + brighten glass
+    const QPointF targetOffset(kPullOutX * m_outwardDirection, kPullOutY);
+    m_offsetAnim->stop();
+    m_offsetAnim->setDuration(kPullOutMs);
+    m_offsetAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_offsetAnim->setStartValue(m_hoverOffset);
+    m_offsetAnim->setEndValue(targetOffset);
+    m_offsetAnim->start();
 
-    const int duration = pressed
-        ? kPressInMs
-        : (hovered ? kHoverInMs : kHoverOutMs);
+    m_hoverProgressAnim->stop();
+    m_hoverProgressAnim->setDuration(kPullOutMs + 20);
+    m_hoverProgressAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_hoverProgressAnim->setStartValue(m_hoverProgress);
+    m_hoverProgressAnim->setEndValue(1.0);
+    m_hoverProgressAnim->start();
 
-    QEasingCurve motionCurve(QEasingCurve::OutCubic);
-    if (hovered && !pressed) {
-        motionCurve.setType(QEasingCurve::OutBack);
-        motionCurve.setOvershoot(0.85);
+    // Stop any reverse scale/rotation animation that was returning to rest
+    m_scaleAnim->stop();
+    m_rotationAnim->stop();
+
+    // Phase 2: Begin noticeable enlargement & subtle twist shortly after pull-out starts
+    m_phase2Timer->start(kGrowTwistDelayMs);
+}
+
+void AnimatedQuickActionButton::startPhase2GrowAndTwist()
+{
+    if (!m_hovered || m_reducedMotion) {
+        return;
     }
 
+    QEasingCurve springCurve(QEasingCurve::OutBack);
+    springCurve.setOvershoot(0.85);
+
+    const qreal targetScale = m_pressedVisual ? kPressScale : kHoverScale;
+    const qreal targetRot = m_targetHoverRotation * m_outwardDirection;
+
     m_scaleAnim->stop();
-    m_scaleAnim->setDuration(pressed ? kPressInMs : (m_pressedVisual ? kPressOutMs : duration));
-    m_scaleAnim->setEasingCurve(motionCurve);
+    m_scaleAnim->setDuration(kGrowTwistMs);
+    m_scaleAnim->setEasingCurve(springCurve);
     m_scaleAnim->setStartValue(m_hoverScale);
     m_scaleAnim->setEndValue(targetScale);
     m_scaleAnim->start();
 
     m_rotationAnim->stop();
-    m_rotationAnim->setDuration(duration);
-    m_rotationAnim->setEasingCurve(motionCurve);
+    m_rotationAnim->setDuration(kGrowTwistMs);
+    m_rotationAnim->setEasingCurve(springCurve);
     m_rotationAnim->setStartValue(m_hoverRotation);
     m_rotationAnim->setEndValue(targetRot);
     m_rotationAnim->start();
+}
+
+void AnimatedQuickActionButton::startHoverOutAnimation()
+{
+    m_phase2Timer->stop();
+
+    if (m_reducedMotion) {
+        m_scaleAnim->stop();
+        m_rotationAnim->stop();
+        m_offsetAnim->stop();
+        m_hoverProgressAnim->stop();
+        m_pressProgressAnim->stop();
+        setHoverScale(kRestScale);
+        setHoverRotation(0.0);
+        setHoverOffset(QPointF(0.0, 0.0));
+        setHoverProgress(0.0);
+        setPressProgress(0.0);
+        return;
+    }
+
+    // Smoothly slide the card back into its resting slot in the stack
+    m_rotationAnim->stop();
+    m_rotationAnim->setDuration(kHoverOutMs);
+    m_rotationAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_rotationAnim->setStartValue(m_hoverRotation);
+    m_rotationAnim->setEndValue(0.0);
+    m_rotationAnim->start();
+
+    m_scaleAnim->stop();
+    m_scaleAnim->setDuration(kHoverOutMs);
+    m_scaleAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_scaleAnim->setStartValue(m_hoverScale);
+    m_scaleAnim->setEndValue(kRestScale);
+    m_scaleAnim->start();
+
+    m_offsetAnim->stop();
+    m_offsetAnim->setDuration(kHoverOutMs);
+    m_offsetAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_offsetAnim->setStartValue(m_hoverOffset);
+    m_offsetAnim->setEndValue(QPointF(0.0, 0.0));
+    m_offsetAnim->start();
 
     m_hoverProgressAnim->stop();
-    m_hoverProgressAnim->setDuration(duration);
+    m_hoverProgressAnim->setDuration(kHoverOutMs);
     m_hoverProgressAnim->setEasingCurve(QEasingCurve::OutCubic);
     m_hoverProgressAnim->setStartValue(m_hoverProgress);
-    m_hoverProgressAnim->setEndValue(targetHoverProg);
+    m_hoverProgressAnim->setEndValue(0.0);
     m_hoverProgressAnim->start();
+
+    m_pressProgressAnim->stop();
+    m_pressProgressAnim->setDuration(kPressOutMs);
+    m_pressProgressAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_pressProgressAnim->setStartValue(m_pressProgress);
+    m_pressProgressAnim->setEndValue(0.0);
+    m_pressProgressAnim->start();
+}
+
+void AnimatedQuickActionButton::startPressAnimation(bool pressed)
+{
+    if (m_reducedMotion) {
+        setPressProgress(pressed ? 1.0 : 0.0);
+        return;
+    }
+
+    const qreal targetScale = pressed
+        ? kPressScale
+        : (m_hovered ? kHoverScale : kRestScale);
+
+    m_scaleAnim->stop();
+    m_scaleAnim->setDuration(pressed ? kPressInMs : kPressOutMs);
+    m_scaleAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_scaleAnim->setStartValue(m_hoverScale);
+    m_scaleAnim->setEndValue(targetScale);
+    m_scaleAnim->start();
 
     m_pressProgressAnim->stop();
     m_pressProgressAnim->setDuration(pressed ? kPressInMs : kPressOutMs);
     m_pressProgressAnim->setEasingCurve(QEasingCurve::OutCubic);
     m_pressProgressAnim->setStartValue(m_pressProgress);
-    m_pressProgressAnim->setEndValue(targetPressProg);
+    m_pressProgressAnim->setEndValue(pressed ? 1.0 : 0.0);
     m_pressProgressAnim->start();
 }
 
 void AnimatedQuickActionButton::enterEvent(QEnterEvent* event)
 {
-    if (!m_hovered) {
-        m_hovered = true;
-        animateToState(true, m_pressedVisual);
-        emit hoveredChanged(true);
-    }
+    setHovered(true);
     QAbstractButton::enterEvent(event);
 }
 
 void AnimatedQuickActionButton::leaveEvent(QEvent* event)
 {
-    if (m_hovered) {
-        m_hovered = false;
-        m_pressedVisual = false;
-        animateToState(false, false);
-        emit hoveredChanged(false);
-    }
+    setHovered(false);
     QAbstractButton::leaveEvent(event);
 }
 
 void AnimatedQuickActionButton::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
-        m_pressedVisual = true;
-        animateToState(m_hovered, true);
+        setPressedVisual(true);
     }
     QAbstractButton::mousePressEvent(event);
 }
 
 void AnimatedQuickActionButton::mouseReleaseEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::LeftButton && m_pressedVisual) {
-        m_pressedVisual = false;
-        animateToState(m_hovered, false);
+    if (event->button() == Qt::LeftButton) {
+        setPressedVisual(false);
     }
     QAbstractButton::mouseReleaseEvent(event);
 }
@@ -239,7 +372,7 @@ void AnimatedQuickActionButton::paintEvent(QPaintEvent* event)
     p.setRenderHint(QPainter::SmoothPixmapTransform, true);
     p.setOpacity(m_menuOpacity);
 
-    const QPointF center = QRectF(rect()).center();
+    const QPointF center = QRectF(rect()).center() + m_hoverOffset;
     p.save();
     p.translate(center);
     p.rotate(m_hoverRotation);
@@ -253,8 +386,18 @@ void AnimatedQuickActionButton::paintEvent(QPaintEvent* event)
     QPainterPath surfacePath;
     surfacePath.addRoundedRect(surface, kCornerRadius, kCornerRadius);
 
-    // Smoked-black translucent glass base (matches PixelTheme compact glass tier)
-    const int baseAlpha = std::clamp(qRound(158.0 + 18.0 * m_hoverProgress + 16.0 * m_pressProgress), 0, 220);
+    // Subtle elevation shadow only when pulled out of the stack (keeps stack clean at rest)
+    if (m_hoverProgress > 0.02) {
+        const QRectF shadowRect = surface.translated(0.0, 2.5 * m_hoverProgress);
+        QPainterPath shadowPath;
+        shadowPath.addRoundedRect(shadowRect, kCornerRadius, kCornerRadius);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0, 0, 0, qRound(58.0 * m_hoverProgress)));
+        p.drawPath(shadowPath);
+    }
+
+    // Smoked-black translucent glass base (more prominent on hover while remaining translucent)
+    const int baseAlpha = std::clamp(qRound(162.0 + 34.0 * m_hoverProgress + 16.0 * m_pressProgress), 0, 224);
     p.setPen(Qt::NoPen);
     p.setBrush(QColor(PixelTheme::kBackground.red(),
                       PixelTheme::kBackground.green(),
@@ -262,15 +405,15 @@ void AnimatedQuickActionButton::paintEvent(QPaintEvent* event)
                       baseAlpha));
     p.drawPath(surfacePath);
 
-    // Subtle translucent glass highlight on hover (~rgba(255,255,255,0.08)) and press
-    const int highlightAlpha = std::clamp(qRound(21.0 * m_hoverProgress + 22.0 * m_pressProgress), 0, 64);
+    // Restrained translucent glass highlight on hover & press
+    const int highlightAlpha = std::clamp(qRound(24.0 * m_hoverProgress + 20.0 * m_pressProgress), 0, 60);
     if (highlightAlpha > 0) {
         p.setBrush(QColor(255, 255, 255, highlightAlpha));
         p.drawPath(surfacePath);
     }
 
-    // Restrained translucent hairline border (never a harsh white rim)
-    const int borderAlpha = std::clamp(qRound(14.0 + 24.0 * m_hoverProgress + 18.0 * m_pressProgress), 0, 72);
+    // Restrained translucent hairline border (helps separate overlapping cards without white outlines)
+    const int borderAlpha = std::clamp(qRound(22.0 + 28.0 * m_hoverProgress + 16.0 * m_pressProgress), 0, 74);
     p.setBrush(Qt::NoBrush);
     p.setPen(QPen(QColor(255, 255, 255, borderAlpha), 1.0));
     p.drawPath(surfacePath);
