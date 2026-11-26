@@ -1,5 +1,7 @@
 #include "AppSettings.h"
 
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <algorithm>
 #include <cmath>
 
@@ -33,6 +35,19 @@ void AppSettings::load()
         const QVariant rawScale = settings.value(QStringLiteral("pet/quickActionIconScale"));
         const int parsed = rawScale.isValid() ? rawScale.toInt(&ok) : SettingsDefaults::kQuickActionIconScalePercent;
         m_quickActionIconScale = ok ? parsed : SettingsDefaults::kQuickActionIconScalePercent;
+    }
+    {
+        const QByteArray rawJson = settings.value(QStringLiteral("pet/quickActionsJson")).toByteArray();
+        bool parsedOk = false;
+        if (!rawJson.isEmpty()) {
+            const QJsonDocument doc = QJsonDocument::fromJson(rawJson);
+            if (doc.isArray()) {
+                m_quickActions = QuickActionItem::fromJsonArray(doc.array(), &parsedOk);
+            }
+        }
+        if (!parsedOk) {
+            m_quickActions = QuickActionItem::defaultShortcuts();
+        }
     }
     m_movementSpeed = settings.value(QStringLiteral("pet/movementSpeed"), SettingsDefaults::kMoveSpeed).toDouble();
     m_movementEnabled = settings.value(QStringLiteral("pet/movementEnabled"), SettingsDefaults::kMovementEnabled).toBool();
@@ -98,6 +113,8 @@ void AppSettings::save() const
 
     settings.setValue(QStringLiteral("pet/size"), m_petSize);
     settings.setValue(QStringLiteral("pet/quickActionIconScale"), m_quickActionIconScale);
+    settings.setValue(QStringLiteral("pet/quickActionsJson"),
+                      QJsonDocument(QuickActionItem::toJsonArray(m_quickActions)).toJson(QJsonDocument::Compact));
     settings.setValue(QStringLiteral("pet/movementSpeed"), m_movementSpeed);
     settings.setValue(QStringLiteral("pet/movementEnabled"), m_movementEnabled);
     settings.setValue(QStringLiteral("pet/autoAnimation"), m_autoAnimationEnabled);
@@ -140,6 +157,7 @@ void AppSettings::restoreDefaults()
 {
     m_petSize = SettingsDefaults::kPetSize;
     m_quickActionIconScale = SettingsDefaults::kQuickActionIconScalePercent;
+    m_quickActions = QuickActionItem::defaultShortcuts();
     m_movementSpeed = SettingsDefaults::kMoveSpeed;
     m_movementEnabled = SettingsDefaults::kMovementEnabled;
     m_autoAnimationEnabled = SettingsDefaults::kAutoAnimationEnabled;
@@ -170,6 +188,17 @@ void AppSettings::setQuickActionIconScale(int percent)
         static_cast<int>(std::lround(static_cast<double>(clamped) / step)) * step,
         SettingsDefaults::kMinQuickActionIconScalePercent,
         SettingsDefaults::kMaxQuickActionIconScalePercent);
+}
+
+void AppSettings::setQuickActions(const QVector<QuickActionItem>& items)
+{
+    m_quickActions = QuickActionItem::sanitizeList(items);
+}
+
+void AppSettings::restoreDefaultQuickActions()
+{
+    m_quickActions = QuickActionItem::defaultShortcuts();
+    save();
 }
 
 void AppSettings::setMovementSpeed(double speed)

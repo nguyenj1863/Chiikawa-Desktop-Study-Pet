@@ -39,7 +39,9 @@ set(CHIICAWA_SOURCES
     src/CompletionToast.cpp
     src/PixelTheme.cpp
     src/AnimatedQuickActionButton.cpp
+    src/QuickActionItem.cpp
     src/QuickActionMenu.cpp
+    src/QuickActionsEditor.cpp
     src/ExternalAppLauncher.cpp
     src/SpotifyLauncher.cpp
     src/CollapsibleSection.cpp
@@ -69,7 +71,9 @@ set(CHIICAWA_HEADERS
     include/CompletionToast.h
     include/PixelTheme.h
     include/AnimatedQuickActionButton.h
+    include/QuickActionItem.h
     include/QuickActionMenu.h
+    include/QuickActionsEditor.h
     include/ExternalAppLauncher.h
     include/SpotifyLauncher.h
     include/CollapsibleSection.h
@@ -166,7 +170,19 @@ chiikawa_add_test(test_app_settings
     src/AppSettings.cpp
     include/AppSettings.h
     include/SettingsDefaults.h
+    src/QuickActionItem.cpp
+    include/QuickActionItem.h
+    src/ExternalAppLauncher.cpp
+    include/ExternalAppLauncher.h
+    src/PixelTheme.cpp
+    include/PixelTheme.h
 )
+if(WIN32)
+    target_link_libraries(test_app_settings PRIVATE user32 shell32 advapi32)
+elseif(APPLE)
+    target_sources(test_app_settings PRIVATE src/ExternalAppLauncher_mac.mm)
+    target_link_libraries(test_app_settings PRIVATE "-framework AppKit")
+endif()
 
 chiikawa_add_test(test_animation_manager
     tests/test_animation_manager.cpp
@@ -194,6 +210,12 @@ chiikawa_add_test(test_alarm_and_settings
     include/CollapsibleSection.h
     src/CompletionToast.cpp
     include/CompletionToast.h
+    src/QuickActionItem.cpp
+    include/QuickActionItem.h
+    src/QuickActionsEditor.cpp
+    include/QuickActionsEditor.h
+    src/ExternalAppLauncher.cpp
+    include/ExternalAppLauncher.h
     src/SettingsPanel.cpp
     include/SettingsPanel.h
     src/StartupManager.cpp
@@ -203,8 +225,10 @@ chiikawa_add_test(test_alarm_and_settings
     resources/resources.qrc
 )
 if(APPLE)
-    target_sources(test_alarm_and_settings PRIVATE src/MacWindowHelper.mm include/MacWindowHelper.h)
+    target_sources(test_alarm_and_settings PRIVATE src/MacWindowHelper.mm include/MacWindowHelper.h src/ExternalAppLauncher_mac.mm)
     target_link_libraries(test_alarm_and_settings PRIVATE "-framework AppKit")
+elseif(WIN32)
+    target_link_libraries(test_alarm_and_settings PRIVATE user32 shell32 advapi32)
 endif()
 
 chiikawa_add_test(test_onboarding
@@ -228,6 +252,10 @@ chiikawa_add_test(test_onboarding
     include/AnimatedQuickActionButton.h
     src/QuickActionMenu.cpp
     include/QuickActionMenu.h
+    src/QuickActionItem.cpp
+    include/QuickActionItem.h
+    src/QuickActionsEditor.cpp
+    include/QuickActionsEditor.h
     src/ExternalAppLauncher.cpp
     include/ExternalAppLauncher.h
     src/SpotifyLauncher.cpp
@@ -293,6 +321,10 @@ chiikawa_add_test(test_quick_actions
     include/AnimatedQuickActionButton.h
     src/QuickActionMenu.cpp
     include/QuickActionMenu.h
+    src/QuickActionItem.cpp
+    include/QuickActionItem.h
+    src/QuickActionsEditor.cpp
+    include/QuickActionsEditor.h
     src/ExternalAppLauncher.cpp
     include/ExternalAppLauncher.h
     src/SpotifyLauncher.cpp

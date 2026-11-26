@@ -1,11 +1,13 @@
 #pragma once
 
+#include "QuickActionItem.h"
 #include "SettingsDefaults.h"
 
 #include <QPoint>
 #include <QSettings>
 #include <QString>
 #include <QTime>
+#include <QVector>
 
 /**
  * Persistent application preferences and clock-alarm state via QSettings.
@@ -36,6 +38,10 @@ public:
 
     [[nodiscard]] int quickActionIconScale() const { return m_quickActionIconScale; }
     void setQuickActionIconScale(int percent);
+
+    [[nodiscard]] const QVector<QuickActionItem>& quickActions() const { return m_quickActions; }
+    void setQuickActions(const QVector<QuickActionItem>& items);
+    void restoreDefaultQuickActions();
 
     [[nodiscard]] double movementSpeed() const { return m_movementSpeed; }
     void setMovementSpeed(double speed);
@@ -117,6 +123,7 @@ private:
 
     int m_petSize = SettingsDefaults::kPetSize;
     int m_quickActionIconScale = SettingsDefaults::kQuickActionIconScalePercent;
+    QVector<QuickActionItem> m_quickActions;
     double m_movementSpeed = SettingsDefaults::kMoveSpeed;
     bool m_movementEnabled = SettingsDefaults::kMovementEnabled;
     bool m_autoAnimationEnabled = SettingsDefaults::kAutoAnimationEnabled;
