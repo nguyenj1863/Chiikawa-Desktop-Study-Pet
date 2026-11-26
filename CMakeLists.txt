@@ -266,6 +266,68 @@ elseif(APPLE)
     target_link_libraries(test_onboarding PRIVATE "-framework AppKit")
 endif()
 
+chiikawa_add_test(test_quick_actions
+    tests/test_quick_actions.cpp
+    src/AppSettings.cpp
+    include/AppSettings.h
+    include/SettingsDefaults.h
+    src/AnimationManager.cpp
+    include/AnimationManager.h
+    src/MovementController.cpp
+    include/MovementController.h
+    src/StudyTimer.cpp
+    include/StudyTimer.h
+    src/TimerBubble.cpp
+    include/TimerBubble.h
+    src/CompletionToast.cpp
+    include/CompletionToast.h
+    src/PixelTheme.cpp
+    include/PixelTheme.h
+    src/AnimatedQuickActionButton.cpp
+    include/AnimatedQuickActionButton.h
+    src/QuickActionMenu.cpp
+    include/QuickActionMenu.h
+    src/SpotifyLauncher.cpp
+    include/SpotifyLauncher.h
+    src/CollapsibleSection.cpp
+    include/CollapsibleSection.h
+    src/AlarmSoundManager.cpp
+    include/AlarmSoundManager.h
+    src/UISoundManager.cpp
+    include/UISoundManager.h
+    src/AlarmScheduler.cpp
+    include/AlarmScheduler.h
+    src/AlarmNotification.cpp
+    include/AlarmNotification.h
+    src/DesktopLayerHelper.cpp
+    include/DesktopLayerHelper.h
+    src/OnboardingPreview.cpp
+    include/OnboardingPreview.h
+    src/OnboardingWindow.cpp
+    include/OnboardingWindow.h
+    src/SettingsPanel.cpp
+    include/SettingsPanel.h
+    src/SystemTrayManager.cpp
+    include/SystemTrayManager.h
+    src/StartupManager.cpp
+    include/StartupManager.h
+    src/WindowCoordinator.cpp
+    include/WindowCoordinator.h
+    src/PetWindow.cpp
+    include/PetWindow.h
+    resources/resources.qrc
+)
+if(WIN32)
+    target_link_libraries(test_quick_actions PRIVATE user32 shell32 advapi32)
+elseif(APPLE)
+    target_sources(test_quick_actions PRIVATE
+        src/MacWindowHelper.mm
+        include/MacWindowHelper.h
+        src/SpotifyLauncher_mac.mm
+    )
+    target_link_libraries(test_quick_actions PRIVATE "-framework AppKit")
+endif()
+
 if(WIN32)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS
         "${Qt6_DIR}/../../../bin"
