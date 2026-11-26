@@ -2,6 +2,8 @@
 
 #ifdef Q_OS_MACOS
 #import <AppKit/AppKit.h>
+#include <QImage>
+#include <QPixmap>
 
 namespace ExternalAppLauncherMac {
 
@@ -113,6 +115,77 @@ bool launchInstalled(ExternalAppLauncher::AppId app)
                                               configuration:cfg
                                           completionHandler:nil];
         return true;
+    }
+}
+
+bool activateRunningCustom(const QString& appPath)
+{
+    @autoreleasepool {
+        NSString* nsPath = appPath.toNSString();
+        NSBundle* bundle = [NSBundle bundleWithPath:nsPath];
+        NSString* bundleId = [bundle bundleIdentifier];
+        if (bundleId == nil) {
+            return false;
+        }
+        NSArray<NSRunningApplication*>* apps =
+            [NSRunningApplication runningApplicationsWithBundleIdentifier:bundleId];
+        if ([apps count] == 0) {
+            return false;
+        }
+        NSRunningApplication* running = [apps firstObject];
+        if ([running isHidden]) {
+            [running unhide];
+        }
+        return [running activateWithOptions:NSApplicationActivateIgnoringOtherApps] == YES;
+    }
+}
+
+bool isInstalledCustom(const QString& appPath)
+{
+    @autoreleasepool {
+        NSString* nsPath = appPath.toNSString();
+        return [[NSFileManager defaultManager] fileExistsAtPath:nsPath] == YES;
+    }
+}
+
+bool launchInstalledCustom(const QString& appPath)
+{
+    @autoreleasepool {
+        NSString* nsPath = appPath.toNSString();
+        if (![[NSFileManager defaultManager] fileExistsAtPath:nsPath]) {
+            return false;
+        }
+        NSURL* appUrl = [NSURL fileURLWithPath:nsPath];
+        NSWorkspaceOpenConfiguration* cfg = [NSWorkspaceOpenConfiguration configuration];
+        cfg.activates = YES;
+        [[NSWorkspace sharedWorkspace] openApplicationAtURL:appUrl
+                                              configuration:cfg
+                                          completionHandler:nil];
+        return true;
+    }
+}
+
+QIcon extractAppIcon(const QString& appPath)
+{
+    @autoreleasepool {
+        NSString* nsPath = appPath.toNSString();
+        if (![[NSFileManager defaultManager] fileExistsAtPath:nsPath]) {
+            return {};
+        }
+        NSImage* nsImage = [[NSWorkspace sharedWorkspace] iconForFile:nsPath];
+        if (nsImage == nil) {
+            return {};
+        }
+        NSRect rect = NSMakeRect(0, 0, 128, 128);
+        CGImageRef cgRef = [nsImage CGImageForProposedRect:&rect context:nil hints:nil];
+        if (cgRef == nullptr) {
+            return {};
+        }
+        QImage qImg = QImage::fromCGImage(cgRef);
+        if (qImg.isNull()) {
+            return {};
+        }
+        return QIcon(QPixmap::fromImage(qImg));
     }
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QIcon>
 #include <QString>
 #include <QUrl>
 #include <array>
@@ -55,14 +56,28 @@ public:
         std::function<bool()> launchInstalled;
     };
 
+    struct CustomBackend {
+        std::function<bool(const QString&)> activateRunning;
+        std::function<bool(const QString&)> isInstalled;
+        std::function<bool(const QString&)> launchInstalled;
+    };
+
     ExternalAppLauncher();
 
     void setBackend(AppId app, Backend backend);
+    void setCustomBackend(CustomBackend backend);
     [[nodiscard]] Result openOrActivate(AppId app) const;
+    [[nodiscard]] Result openOrActivateCustom(const QString& displayName,
+                                              const QString& appReference) const;
 
+    [[nodiscard]] static bool tryParseBuiltInAppId(const QString& key, AppId& out);
+    [[nodiscard]] static QString detectAppDisplayName(const QString& appReference);
+    [[nodiscard]] static QIcon extractAppIcon(const QString& appReference);
     [[nodiscard]] static AppMetadata metadata(AppId app);
     [[nodiscard]] static Backend defaultPlatformBackend(AppId app);
+    [[nodiscard]] static CustomBackend defaultCustomPlatformBackend();
 
 private:
     std::array<Backend, static_cast<int>(AppId::Count)> m_backends;
+    CustomBackend m_customBackend;
 };

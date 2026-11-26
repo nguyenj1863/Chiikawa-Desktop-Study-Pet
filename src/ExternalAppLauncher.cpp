@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileIconProvider>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -22,6 +23,10 @@ namespace ExternalAppLauncherMac {
 bool activateRunning(ExternalAppLauncher::AppId app);
 bool isInstalled(ExternalAppLauncher::AppId app);
 bool launchInstalled(ExternalAppLauncher::AppId app);
+bool activateRunningCustom(const QString& appPath);
+bool isInstalledCustom(const QString& appPath);
+bool launchInstalledCustom(const QString& appPath);
+QIcon extractAppIcon(const QString& appPath);
 } // namespace ExternalAppLauncherMac
 #endif
 
@@ -310,6 +315,7 @@ ExternalAppLauncher::ExternalAppLauncher()
         const auto id = static_cast<AppId>(i);
         m_backends[static_cast<std::size_t>(i)] = defaultPlatformBackend(id);
     }
+    m_customBackend = defaultCustomPlatformBackend();
 }
 
 void ExternalAppLauncher::setBackend(AppId app, Backend backend)
@@ -318,6 +324,142 @@ void ExternalAppLauncher::setBackend(AppId app, Backend backend)
     if (idx >= 0 && idx < static_cast<int>(AppId::Count)) {
         m_backends[static_cast<std::size_t>(idx)] = std::move(backend);
     }
+}
+
+void ExternalAppLauncher::setCustomBackend(CustomBackend backend)
+{
+    m_customBackend = std::move(backend);
+}
+
+bool ExternalAppLauncher::tryParseBuiltInAppId(const QString& key, AppId& out)
+{
+    if (key == QStringLiteral("spotify")) { out = AppId::Spotify; return true; }
+    if (key == QStringLiteral("discord")) { out = AppId::Discord; return true; }
+    if (key == QStringLiteral("league"))  { out = AppId::LeagueOfLegends; return true; }
+    if (key == QStringLiteral("cursor"))  { out = AppId::Cursor; return true; }
+    return false;
+}
+
+QString ExternalAppLauncher::detectAppDisplayName(const QString& appReference)
+{
+    const QFileInfo info(appReference.trimmed());
+    const QString base = info.completeBaseName().trimmed();
+    if (!base.isEmpty()) {
+        return base;
+    }
+    const QString file = info.fileName().trimmed();
+    return file.isEmpty() ? QStringLiteral("Application") : file;
+}
+
+QIcon ExternalAppLauncher::extractAppIcon(const QString& appReference)
+{
+    if (appReference.trimmed().isEmpty()) {
+        return {};
+    }
+#ifdef Q_OS_MACOS
+    const QIcon macIcon = ExternalAppLauncherMac::extractAppIcon(appReference);
+    if (!macIcon.isNull()) {
+        return macIcon;
+    }
+#endif
+    const QFileInfo info(appReference);
+    if (!info.exists()) {
+        return {};
+    }
+    QFileIconProvider provider;
+    return provider.icon(info);
+}
+
+ExternalAppLauncher::CustomBackend ExternalAppLauncher::defaultCustomPlatformBackend()
+{
+#ifdef Q_OS_WIN
+    return {
+        [](const QString& appPath) {
+            const QFileInfo info(appPath);
+            if (!info.exists()) {
+                return false;
+            }
+            const QString fileName = info.fileName();
+            if (!fileName.endsWith(QStringLiteral(".exe"), Qt::CaseInsensitive)) {
+                return false;
+            }
+            const std::wstring wName = fileName.toStdWString();
+            return winActivateByProcessNames({wName.c_str()});
+        },
+        [](const QString& appPath) {
+            const QFileInfo info(appPath);
+            if (!info.exists() || !info.isFile()) {
+                return false;
+            }
+            const QString suffix = info.suffix().toLower();
+            return suffix == QStringLiteral("exe") || suffix == QStringLiteral("lnk");
+        },
+        [](const QString& appPath) {
+            const QFileInfo info(appPath);
+            if (!info.exists() || !info.isFile()) {
+                return false;
+            }
+            const QString suffix = info.suffix().toLower();
+            if (suffix == QStringLiteral("exe")) {
+                return QProcess::startDetached(info.absoluteFilePath(), {});
+            }
+            if (suffix == QStringLiteral("lnk")) {
+                return winShellOpen(info.absoluteFilePath());
+            }
+            return false;
+        }
+    };
+#elif defined(Q_OS_MACOS)
+    return {
+        [](const QString& appPath) { return ExternalAppLauncherMac::activateRunningCustom(appPath); },
+        [](const QString& appPath) { return ExternalAppLauncherMac::isInstalledCustom(appPath); },
+        [](const QString& appPath) { return ExternalAppLauncherMac::launchInstalledCustom(appPath); }
+    };
+#else
+    return {
+        [](const QString&) { return false; },
+        [](const QString& appPath) { return QFileInfo::exists(appPath); },
+        [](const QString& appPath) { return QProcess::startDetached(appPath, {}); }
+    };
+#endif
+}
+
+ExternalAppLauncher::Result ExternalAppLauncher::openOrActivateCustom(const QString& displayName,
+                                                                      const QString& appReference) const
+{
+    const QString name = displayName.trimmed().isEmpty()
+        ? detectAppDisplayName(appReference)
+        : displayName.trimmed();
+
+    if (appReference.trimmed().isEmpty()) {
+        return {AppId::Count, Status::NotInstalled,
+                QStringLiteral("%1 isn't configured").arg(name),
+                QStringLiteral("Edit this shortcut in Settings to choose an application."),
+                {}, {}};
+    }
+
+    if (m_customBackend.activateRunning && m_customBackend.activateRunning(appReference)) {
+        return {AppId::Count, Status::ActivatedRunning,
+                name, QStringLiteral("%1 activated.").arg(name), {}, {}};
+    }
+
+    const bool installed = m_customBackend.isInstalled && m_customBackend.isInstalled(appReference);
+    if (!installed) {
+        return {AppId::Count, Status::NotInstalled,
+                QStringLiteral("%1 couldn't be found").arg(name),
+                QStringLiteral("The application path is no longer available. Update or remove it in Settings."),
+                {}, {}};
+    }
+
+    if (m_customBackend.launchInstalled && m_customBackend.launchInstalled(appReference)) {
+        return {AppId::Count, Status::LaunchedApp,
+                name, QStringLiteral("%1 launched.").arg(name), {}, {}};
+    }
+
+    return {AppId::Count, Status::LaunchFailed,
+            QStringLiteral("Couldn't open %1").arg(name),
+            QStringLiteral("%1 couldn't be started right now.").arg(name),
+            {}, {}};
 }
 
 ExternalAppLauncher::AppMetadata ExternalAppLauncher::metadata(AppId app)
