@@ -6,18 +6,18 @@
 #include <QSignalSpy>
 #include <QSlider>
 
-#include "AnimatedQuickActionButton.h"
-#include "AnimationManager.h"
-#include "AppSettings.h"
-#include "CollapsibleSection.h"
-#include "ExternalAppLauncher.h"
-#include "InstalledAppDiscovery.h"
-#include "MovementController.h"
-#include "PetWindow.h"
-#include "QuickActionItem.h"
-#include "QuickActionMenu.h"
-#include "QuickActionsEditor.h"
-#include "SettingsPanel.h"
+#include "quickactions/AnimatedQuickActionButton.h"
+#include "pet/AnimationManager.h"
+#include "app/AppSettings.h"
+#include "ui/CollapsibleSection.h"
+#include "quickactions/ExternalAppLauncher.h"
+#include "quickactions/InstalledAppDiscovery.h"
+#include "pet/MovementController.h"
+#include "pet/PetWindow.h"
+#include "quickactions/QuickActionItem.h"
+#include "quickactions/QuickActionMenu.h"
+#include "quickactions/QuickActionsEditor.h"
+#include "ui/SettingsPanel.h"
 
 #include <cmath>
 #include <memory>

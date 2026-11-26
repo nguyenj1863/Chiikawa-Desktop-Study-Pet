@@ -1,12 +1,12 @@
-#include "AlarmScheduler.h"
-#include "AppSettings.h"
-#include "OnboardingPreview.h"
-#include "OnboardingWindow.h"
-#include "PetWindow.h"
-#include "PixelTheme.h"
-#include "SettingsPanel.h"
-#include "StudyTimer.h"
-#include "UISoundManager.h"
+#include "alarm/AlarmScheduler.h"
+#include "app/AppSettings.h"
+#include "ui/OnboardingPreview.h"
+#include "ui/OnboardingWindow.h"
+#include "pet/PetWindow.h"
+#include "ui/PixelTheme.h"
+#include "ui/SettingsPanel.h"
+#include "timer/StudyTimer.h"
+#include "alarm/UISoundManager.h"
 
 #include <QApplication>
 #include <QIcon>

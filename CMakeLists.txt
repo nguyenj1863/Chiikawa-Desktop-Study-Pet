@@ -27,80 +27,132 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Test)
 
-set(CHIICAWA_SOURCES
-    src/main.cpp
-    src/AppSettings.cpp
-    src/AnimationManager.cpp
-    src/MovementController.cpp
-    src/StudyTimer.cpp
-    src/TimerBubble.cpp
-    src/CompletionToast.cpp
-    src/PixelTheme.cpp
-    src/AnimatedQuickActionButton.cpp
-    src/QuickActionItem.cpp
-    src/QuickActionMenu.cpp
-    src/QuickActionsEditor.cpp
-    src/InstalledAppDiscovery.cpp
-    src/ExternalAppLauncher.cpp
-    src/SpotifyLauncher.cpp
-    src/CollapsibleSection.cpp
-    src/AlarmSoundManager.cpp
-    src/UISoundManager.cpp
-    src/AlarmScheduler.cpp
-    src/AlarmNotification.cpp
-    src/DesktopLayerHelper.cpp
-    src/WindowsIdentity.cpp
-    src/OnboardingPreview.cpp
-    src/OnboardingWindow.cpp
-    src/SettingsPanel.cpp
-    src/SystemTrayManager.cpp
-    src/StartupManager.cpp
-    src/WindowCoordinator.cpp
-    src/PetWindow.cpp
-    resources/resources.qrc
+# -----------------------------------------------------------------------------
+# Sources grouped by module (headers live under include/<module>/)
+# -----------------------------------------------------------------------------
+set(CHIIKAWA_APP_SOURCES
+    src/app/AppSettings.cpp
+    src/app/SystemTrayManager.cpp
+    src/app/WindowCoordinator.cpp
+    include/app/AppSettings.h
+    include/app/SettingsDefaults.h
+    include/app/SystemTrayManager.h
+    include/app/WindowCoordinator.h
 )
 
-set(CHIICAWA_HEADERS
-    include/SettingsDefaults.h
-    include/AppSettings.h
-    include/AnimationManager.h
-    include/MovementController.h
-    include/StudyTimer.h
-    include/TimerBubble.h
-    include/CompletionToast.h
-    include/PixelTheme.h
-    include/AnimatedQuickActionButton.h
-    include/QuickActionItem.h
-    include/QuickActionMenu.h
-    include/QuickActionsEditor.h
-    include/InstalledAppDiscovery.h
-    include/ExternalAppLauncher.h
-    include/SpotifyLauncher.h
-    include/CollapsibleSection.h
-    include/AlarmSoundManager.h
-    include/UISoundManager.h
-    include/AlarmScheduler.h
-    include/AlarmNotification.h
-    include/DesktopLayerHelper.h
-    include/WindowsIdentity.h
-    include/OnboardingPreview.h
-    include/OnboardingWindow.h
-    include/SettingsPanel.h
-    include/SystemTrayManager.h
-    include/StartupManager.h
-    include/WindowCoordinator.h
-    include/PetWindow.h
+set(CHIIKAWA_PET_SOURCES
+    src/pet/AnimationManager.cpp
+    src/pet/MovementController.cpp
+    src/pet/PetWindow.cpp
+    include/pet/AnimationManager.h
+    include/pet/MovementController.h
+    include/pet/PetWindow.h
 )
 
-add_executable(ChiikawaStudyPet WIN32 MACOSX_BUNDLE
-    ${CHIICAWA_SOURCES}
-    ${CHIICAWA_HEADERS}
+set(CHIIKAWA_QUICKACTIONS_SOURCES
+    src/quickactions/AnimatedQuickActionButton.cpp
+    src/quickactions/ExternalAppLauncher.cpp
+    src/quickactions/InstalledAppDiscovery.cpp
+    src/quickactions/QuickActionItem.cpp
+    src/quickactions/QuickActionMenu.cpp
+    src/quickactions/QuickActionsEditor.cpp
+    src/quickactions/SpotifyLauncher.cpp
+    include/quickactions/AnimatedQuickActionButton.h
+    include/quickactions/ExternalAppLauncher.h
+    include/quickactions/InstalledAppDiscovery.h
+    include/quickactions/QuickActionItem.h
+    include/quickactions/QuickActionMenu.h
+    include/quickactions/QuickActionsEditor.h
+    include/quickactions/SpotifyLauncher.h
 )
 
-target_include_directories(ChiikawaStudyPet PRIVATE
+set(CHIIKAWA_TIMER_SOURCES
+    src/timer/CompletionToast.cpp
+    src/timer/StudyTimer.cpp
+    src/timer/TimerBubble.cpp
+    include/timer/CompletionToast.h
+    include/timer/StudyTimer.h
+    include/timer/TimerBubble.h
+)
+
+set(CHIIKAWA_ALARM_SOURCES
+    src/alarm/AlarmNotification.cpp
+    src/alarm/AlarmScheduler.cpp
+    src/alarm/AlarmSoundManager.cpp
+    src/alarm/UISoundManager.cpp
+    include/alarm/AlarmNotification.h
+    include/alarm/AlarmScheduler.h
+    include/alarm/AlarmSoundManager.h
+    include/alarm/UISoundManager.h
+)
+
+set(CHIIKAWA_UI_SOURCES
+    src/ui/CollapsibleSection.cpp
+    src/ui/OnboardingPreview.cpp
+    src/ui/OnboardingWindow.cpp
+    src/ui/PixelTheme.cpp
+    src/ui/SettingsPanel.cpp
+    include/ui/CollapsibleSection.h
+    include/ui/OnboardingPreview.h
+    include/ui/OnboardingWindow.h
+    include/ui/PixelTheme.h
+    include/ui/SettingsPanel.h
+)
+
+set(CHIIKAWA_PLATFORM_SOURCES
+    src/platform/DesktopLayerHelper.cpp
+    src/platform/StartupManager.cpp
+    src/platform/windows/WindowsIdentity.cpp
+    include/platform/DesktopLayerHelper.h
+    include/platform/StartupManager.h
+    include/platform/WindowsIdentity.h
+)
+
+set(CHIIKAWA_MACOS_SOURCES
+    src/platform/macos/ExternalAppLauncher_mac.mm
+    src/platform/macos/MacWindowHelper.mm
+    src/platform/macos/SpotifyLauncher_mac.mm
+    include/platform/MacWindowHelper.h
+)
+
+# -----------------------------------------------------------------------------
+# Shared implementation used by the application and the test executables
+# -----------------------------------------------------------------------------
+add_library(chiikawa_core STATIC
+    ${CHIIKAWA_APP_SOURCES}
+    ${CHIIKAWA_PET_SOURCES}
+    ${CHIIKAWA_QUICKACTIONS_SOURCES}
+    ${CHIIKAWA_TIMER_SOURCES}
+    ${CHIIKAWA_ALARM_SOURCES}
+    ${CHIIKAWA_UI_SOURCES}
+    ${CHIIKAWA_PLATFORM_SOURCES}
+)
+
+target_include_directories(chiikawa_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(chiikawa_core PUBLIC Qt6::Widgets Qt6::Multimedia)
+
+if(WIN32)
+    target_link_libraries(chiikawa_core PUBLIC user32 shell32 ole32 advapi32)
+elseif(APPLE)
+    target_sources(chiikawa_core PRIVATE ${CHIIKAWA_MACOS_SOURCES})
+    target_link_libraries(chiikawa_core PUBLIC "-framework AppKit")
+endif()
+
+# -----------------------------------------------------------------------------
+# Application
+# -----------------------------------------------------------------------------
+add_executable(ChiikawaStudyPet WIN32 MACOSX_BUNDLE
+    src/app/main.cpp
+    resources/resources.qrc
 )
 
 target_compile_definitions(ChiikawaStudyPet PRIVATE
@@ -110,23 +162,14 @@ target_compile_definitions(ChiikawaStudyPet PRIVATE
     CHIIKAWA_VER_PATCH=${PROJECT_VERSION_PATCH}
 )
 
-target_link_libraries(ChiikawaStudyPet PRIVATE Qt6::Widgets Qt6::Multimedia)
+target_link_libraries(ChiikawaStudyPet PRIVATE chiikawa_core)
 
 if(WIN32)
     set_source_files_properties(resources/app.rc PROPERTIES
         OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/chiikawa.ico"
     )
     target_sources(ChiikawaStudyPet PRIVATE resources/app.rc)
-    target_link_libraries(ChiikawaStudyPet PRIVATE user32 shell32 ole32 advapi32)
 elseif(APPLE)
-    enable_language(OBJCXX)
-    target_sources(ChiikawaStudyPet PRIVATE
-        src/MacWindowHelper.mm
-        include/MacWindowHelper.h
-        src/ExternalAppLauncher_mac.mm
-        src/SpotifyLauncher_mac.mm
-    )
-    target_link_libraries(ChiikawaStudyPet PRIVATE "-framework AppKit")
     configure_file(
         "${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in"
         "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
@@ -139,12 +182,14 @@ elseif(APPLE)
     )
 endif()
 
+# -----------------------------------------------------------------------------
+# Tests
+# -----------------------------------------------------------------------------
 enable_testing()
 
 function(chiikawa_add_test name source)
     add_executable(${name} ${source} ${ARGN})
-    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    target_link_libraries(${name} PRIVATE Qt6::Widgets Qt6::Multimedia Qt6::Test)
+    target_link_libraries(${name} PRIVATE chiikawa_core Qt6::Test)
     if(WIN32)
         add_custom_command(TARGET ${name} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -161,221 +206,12 @@ function(chiikawa_add_test name source)
     endif()
 endfunction()
 
-chiikawa_add_test(test_study_timer
-    tests/test_study_timer.cpp
-    src/StudyTimer.cpp
-    include/StudyTimer.h
-)
-
-chiikawa_add_test(test_app_settings
-    tests/test_app_settings.cpp
-    src/AppSettings.cpp
-    include/AppSettings.h
-    include/SettingsDefaults.h
-    src/QuickActionItem.cpp
-    include/QuickActionItem.h
-    src/ExternalAppLauncher.cpp
-    include/ExternalAppLauncher.h
-    src/PixelTheme.cpp
-    include/PixelTheme.h
-)
-if(WIN32)
-    target_link_libraries(test_app_settings PRIVATE user32 shell32 advapi32)
-elseif(APPLE)
-    target_sources(test_app_settings PRIVATE src/ExternalAppLauncher_mac.mm)
-    target_link_libraries(test_app_settings PRIVATE "-framework AppKit")
-endif()
-
-chiikawa_add_test(test_animation_manager
-    tests/test_animation_manager.cpp
-    src/AnimationManager.cpp
-    include/AnimationManager.h
-    resources/resources.qrc
-)
-
-chiikawa_add_test(test_alarm_and_settings
-    tests/test_alarm_and_settings.cpp
-    src/AppSettings.cpp
-    include/AppSettings.h
-    include/SettingsDefaults.h
-    src/AlarmScheduler.cpp
-    include/AlarmScheduler.h
-    src/AlarmSoundManager.cpp
-    include/AlarmSoundManager.h
-    src/UISoundManager.cpp
-    include/UISoundManager.h
-    src/StudyTimer.cpp
-    include/StudyTimer.h
-    src/PixelTheme.cpp
-    include/PixelTheme.h
-    src/CollapsibleSection.cpp
-    include/CollapsibleSection.h
-    src/CompletionToast.cpp
-    include/CompletionToast.h
-    src/QuickActionItem.cpp
-    include/QuickActionItem.h
-    src/QuickActionsEditor.cpp
-    include/QuickActionsEditor.h
-    src/InstalledAppDiscovery.cpp
-    include/InstalledAppDiscovery.h
-    src/ExternalAppLauncher.cpp
-    include/ExternalAppLauncher.h
-    src/SettingsPanel.cpp
-    include/SettingsPanel.h
-    src/StartupManager.cpp
-    include/StartupManager.h
-    src/WindowCoordinator.cpp
-    include/WindowCoordinator.h
-    resources/resources.qrc
-)
-if(APPLE)
-    target_sources(test_alarm_and_settings PRIVATE src/MacWindowHelper.mm include/MacWindowHelper.h src/ExternalAppLauncher_mac.mm)
-    target_link_libraries(test_alarm_and_settings PRIVATE "-framework AppKit")
-elseif(WIN32)
-    target_link_libraries(test_alarm_and_settings PRIVATE user32 shell32 advapi32)
-endif()
-
-chiikawa_add_test(test_onboarding
-    tests/test_onboarding.cpp
-    src/AppSettings.cpp
-    include/AppSettings.h
-    include/SettingsDefaults.h
-    src/AnimationManager.cpp
-    include/AnimationManager.h
-    src/MovementController.cpp
-    include/MovementController.h
-    src/StudyTimer.cpp
-    include/StudyTimer.h
-    src/TimerBubble.cpp
-    include/TimerBubble.h
-    src/CompletionToast.cpp
-    include/CompletionToast.h
-    src/PixelTheme.cpp
-    include/PixelTheme.h
-    src/AnimatedQuickActionButton.cpp
-    include/AnimatedQuickActionButton.h
-    src/QuickActionMenu.cpp
-    include/QuickActionMenu.h
-    src/QuickActionItem.cpp
-    include/QuickActionItem.h
-    src/QuickActionsEditor.cpp
-    include/QuickActionsEditor.h
-    src/InstalledAppDiscovery.cpp
-    include/InstalledAppDiscovery.h
-    src/ExternalAppLauncher.cpp
-    include/ExternalAppLauncher.h
-    src/SpotifyLauncher.cpp
-    include/SpotifyLauncher.h
-    src/CollapsibleSection.cpp
-    include/CollapsibleSection.h
-    src/AlarmSoundManager.cpp
-    include/AlarmSoundManager.h
-    src/UISoundManager.cpp
-    include/UISoundManager.h
-    src/AlarmScheduler.cpp
-    include/AlarmScheduler.h
-    src/AlarmNotification.cpp
-    include/AlarmNotification.h
-    src/DesktopLayerHelper.cpp
-    include/DesktopLayerHelper.h
-    src/OnboardingPreview.cpp
-    include/OnboardingPreview.h
-    src/OnboardingWindow.cpp
-    include/OnboardingWindow.h
-    src/SettingsPanel.cpp
-    include/SettingsPanel.h
-    src/SystemTrayManager.cpp
-    include/SystemTrayManager.h
-    src/StartupManager.cpp
-    include/StartupManager.h
-    src/WindowCoordinator.cpp
-    include/WindowCoordinator.h
-    src/PetWindow.cpp
-    include/PetWindow.h
-    resources/resources.qrc
-)
-if(WIN32)
-    target_link_libraries(test_onboarding PRIVATE user32 shell32 advapi32)
-elseif(APPLE)
-    target_sources(test_onboarding PRIVATE
-        src/MacWindowHelper.mm
-        include/MacWindowHelper.h
-        src/ExternalAppLauncher_mac.mm
-        src/SpotifyLauncher_mac.mm
-    )
-    target_link_libraries(test_onboarding PRIVATE "-framework AppKit")
-endif()
-
-chiikawa_add_test(test_quick_actions
-    tests/test_quick_actions.cpp
-    src/AppSettings.cpp
-    include/AppSettings.h
-    include/SettingsDefaults.h
-    src/AnimationManager.cpp
-    include/AnimationManager.h
-    src/MovementController.cpp
-    include/MovementController.h
-    src/StudyTimer.cpp
-    include/StudyTimer.h
-    src/TimerBubble.cpp
-    include/TimerBubble.h
-    src/CompletionToast.cpp
-    include/CompletionToast.h
-    src/PixelTheme.cpp
-    include/PixelTheme.h
-    src/AnimatedQuickActionButton.cpp
-    include/AnimatedQuickActionButton.h
-    src/QuickActionMenu.cpp
-    include/QuickActionMenu.h
-    src/QuickActionItem.cpp
-    include/QuickActionItem.h
-    src/QuickActionsEditor.cpp
-    include/QuickActionsEditor.h
-    src/InstalledAppDiscovery.cpp
-    include/InstalledAppDiscovery.h
-    src/ExternalAppLauncher.cpp
-    include/ExternalAppLauncher.h
-    src/SpotifyLauncher.cpp
-    include/SpotifyLauncher.h
-    src/CollapsibleSection.cpp
-    include/CollapsibleSection.h
-    src/AlarmSoundManager.cpp
-    include/AlarmSoundManager.h
-    src/UISoundManager.cpp
-    include/UISoundManager.h
-    src/AlarmScheduler.cpp
-    include/AlarmScheduler.h
-    src/AlarmNotification.cpp
-    include/AlarmNotification.h
-    src/DesktopLayerHelper.cpp
-    include/DesktopLayerHelper.h
-    src/OnboardingPreview.cpp
-    include/OnboardingPreview.h
-    src/OnboardingWindow.cpp
-    include/OnboardingWindow.h
-    src/SettingsPanel.cpp
-    include/SettingsPanel.h
-    src/SystemTrayManager.cpp
-    include/SystemTrayManager.h
-    src/StartupManager.cpp
-    include/StartupManager.h
-    src/WindowCoordinator.cpp
-    include/WindowCoordinator.h
-    src/PetWindow.cpp
-    include/PetWindow.h
-    resources/resources.qrc
-)
-if(WIN32)
-    target_link_libraries(test_quick_actions PRIVATE user32 shell32 advapi32)
-elseif(APPLE)
-    target_sources(test_quick_actions PRIVATE
-        src/MacWindowHelper.mm
-        include/MacWindowHelper.h
-        src/ExternalAppLauncher_mac.mm
-        src/SpotifyLauncher_mac.mm
-    )
-    target_link_libraries(test_quick_actions PRIVATE "-framework AppKit")
-endif()
+chiikawa_add_test(test_study_timer tests/test_study_timer.cpp)
+chiikawa_add_test(test_app_settings tests/test_app_settings.cpp)
+chiikawa_add_test(test_animation_manager tests/test_animation_manager.cpp resources/resources.qrc)
+chiikawa_add_test(test_alarm_and_settings tests/test_alarm_and_settings.cpp resources/resources.qrc)
+chiikawa_add_test(test_onboarding tests/test_onboarding.cpp resources/resources.qrc)
+chiikawa_add_test(test_quick_actions tests/test_quick_actions.cpp resources/resources.qrc)
 
 if(WIN32)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS

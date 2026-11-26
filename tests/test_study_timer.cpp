@@ -1,4 +1,4 @@
-#include "StudyTimer.h"
+#include "timer/StudyTimer.h"
 
 #include <QCoreApplication>
 #include <QSignalSpy>

@@ -1,4 +1,4 @@
-#include "AnimationManager.h"
+#include "pet/AnimationManager.h"
 
 #include <QLabel>
 #include <QSignalSpy>

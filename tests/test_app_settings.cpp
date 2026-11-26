@@ -1,5 +1,5 @@
-#include "AppSettings.h"
-#include "SettingsDefaults.h"
+#include "app/AppSettings.h"
+#include "app/SettingsDefaults.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
