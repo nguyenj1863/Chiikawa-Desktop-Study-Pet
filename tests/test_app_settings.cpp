@@ -17,6 +17,7 @@ private slots:
     void validatesTimerDuration();
     void persistsDesktopAndAlarmPreferences();
     void restoreDefaultsPreservesActiveSessionsAndAlarms();
+    void persistsQuickActionIconScaleAndHandlesInvalidValues();
 
 private:
     void clearSettings();
@@ -179,6 +180,49 @@ void TestAppSettings::restoreDefaultsPreservesActiveSessionsAndAlarms()
     QCOMPARE(s.snoozeTargetUtcMs(), snoozeUtcMs);
     QCOMPARE(s.lastPosition(), QPoint(300, 200));
 
+    clearSettings();
+}
+
+void TestAppSettings::persistsQuickActionIconScaleAndHandlesInvalidValues()
+{
+    clearSettings();
+    {
+        // Fresh user / upgrading user gets default 110%
+        AppSettings s;
+        QCOMPARE(s.quickActionIconScale(), SettingsDefaults::kQuickActionIconScalePercent);
+        QCOMPARE(s.quickActionIconScale(), 110);
+
+        // Clamping and 5% snapping
+        s.setQuickActionIconScale(50);
+        QCOMPARE(s.quickActionIconScale(), SettingsDefaults::kMinQuickActionIconScalePercent);
+        s.setQuickActionIconScale(200);
+        QCOMPARE(s.quickActionIconScale(), SettingsDefaults::kMaxQuickActionIconScalePercent);
+        s.setQuickActionIconScale(127);
+        QCOMPARE(s.quickActionIconScale(), 125);
+        s.setQuickActionIconScale(135);
+
+        // Changing icon scale must NOT change pet size
+        s.setPetSize(160);
+        s.save();
+    }
+    {
+        AppSettings s;
+        QCOMPARE(s.quickActionIconScale(), 135);
+        QCOMPARE(s.petSize(), 160);
+
+        // Restore Defaults resets quickActionIconScale to 110%
+        s.restoreDefaults();
+        QCOMPARE(s.quickActionIconScale(), SettingsDefaults::kQuickActionIconScalePercent);
+    }
+    {
+        // Malformed stored value safely falls back to default
+        QSettings raw(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPet"));
+        raw.setValue(QStringLiteral("pet/quickActionIconScale"), QStringLiteral("not-a-number"));
+        raw.sync();
+
+        AppSettings s;
+        QCOMPARE(s.quickActionIconScale(), SettingsDefaults::kQuickActionIconScalePercent);
+    }
     clearSettings();
 }
 

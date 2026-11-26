@@ -2,11 +2,13 @@
 #include <QApplication>
 #include <QMouseEvent>
 #include <QSignalSpy>
+#include <QSlider>
 
 #include "AnimatedQuickActionButton.h"
 #include "AnimationManager.h"
 #include "AppSettings.h"
 #include "ExternalAppLauncher.h"
+#include "MovementController.h"
 #include "PetWindow.h"
 #include "QuickActionMenu.h"
 #include "SettingsPanel.h"
@@ -66,51 +68,60 @@ private slots:
         QVERIFY(anims.loadAll());
 
         const QRect screen(0, 0, 1920, 1080);
-        for (int petSize : {90, 120, 180, 240}) {
-            const QRect petRect(600, 420, petSize, petSize);
-            for (AnimationId id : {AnimationId::Skip, AnimationId::Stomp, AnimationId::Twirl, AnimationId::Fire}) {
-                const QRect spriteLocal = anims.visibleBoundsInWindow(id, petRect.size());
-                const QRect spriteGlobal = spriteLocal.translated(petRect.topLeft());
-                const QuickActionMenu::Layout layout =
-                    QuickActionMenu::computeLayout(petRect, spriteLocal, screen);
+        for (int scalePct : {80, 110, 150}) {
+            const int visSize = AnimatedQuickActionButton::visualSizeForScale(scalePct);
+            const int widgetSize = AnimatedQuickActionButton::widgetSizeForScale(scalePct);
+            for (int petSize : {90, 120, 180, 240}) {
+                const QRect petRect(600, 420, petSize, petSize);
+                for (AnimationId id : {AnimationId::Skip, AnimationId::Stomp, AnimationId::Twirl, AnimationId::Fire}) {
+                    const QRect spriteLocal = anims.visibleBoundsInWindow(id, petRect.size());
+                    const QRect spriteGlobal = spriteLocal.translated(petRect.topLeft());
+                    const QuickActionMenu::Layout layout =
+                        QuickActionMenu::computeLayout(petRect, spriteLocal, screen, scalePct);
 
-                QVERIFY(!layout.mirroredLeft);
-                QVERIFY(screen.contains(layout.overlayRect));
+                    QVERIFY(!layout.mirroredLeft);
+                    QVERIFY(screen.contains(layout.overlayRect));
 
-                QPointF prevGlobal;
-                qreal minX = 1e9;
-                qreal maxX = -1e9;
-                for (int i = 0; i < QuickActionMenu::ActionCount; ++i) {
-                    const QPointF localEnd = QuickActionMenu::evaluateArc(layout.arcAt(i), 1.0);
-                    const QPointF globalEnd = QPointF(layout.overlayRect.topLeft()) + localEnd;
-                    minX = std::min(minX, globalEnd.x());
-                    maxX = std::max(maxX, globalEnd.x());
+                    QPointF prevGlobal;
+                    qreal minX = 1e9;
+                    qreal maxX = -1e9;
+                    for (int i = 0; i < QuickActionMenu::ActionCount; ++i) {
+                        const QPointF localEnd = QuickActionMenu::evaluateArc(layout.arcAt(i), 1.0);
+                        const QPointF globalEnd = QPointF(layout.overlayRect.topLeft()) + localEnd;
+                        minX = std::min(minX, globalEnd.x());
+                        maxX = std::max(maxX, globalEnd.x());
 
-                    // Farther right of visible sprite silhouette: visual left edge clears sprite right edge by >= 18px
-                    const qreal visualLeft = globalEnd.x() - AnimatedQuickActionButton::kVisualSize * 0.5;
-                    QVERIFY2(visualLeft >= spriteGlobal.right() + 14.0,
-                             qPrintable(QStringLiteral("Icon %1 too close to sprite: visualLeft=%2 spriteRight=%3")
-                                            .arg(i).arg(visualLeft).arg(spriteGlobal.right())));
+                        // Clear gap from visible sprite silhouette even for top/bottom cards
+                        const qreal visualLeft = globalEnd.x() - visSize * 0.5;
+                        QVERIFY2(visualLeft >= spriteGlobal.right() + 14.0,
+                                 qPrintable(QStringLiteral("Icon %1 too close to sprite: visualLeft=%2 spriteRight=%3")
+                                                .arg(i).arg(visualLeft).arg(spriteGlobal.right())));
 
-                    // No clipping inside overlay
-                    QVERIFY(localEnd.x() >= AnimatedQuickActionButton::kWidgetSize * 0.5);
-                    QVERIFY(localEnd.y() >= AnimatedQuickActionButton::kWidgetSize * 0.5);
-                    QVERIFY(localEnd.x() <= layout.overlayRect.width() - AnimatedQuickActionButton::kWidgetSize * 0.5);
-                    QVERIFY(localEnd.y() <= layout.overlayRect.height() - AnimatedQuickActionButton::kWidgetSize * 0.5);
+                        // Zero clipping inside overlay at any scale 80%..150%
+                        QVERIFY(localEnd.x() >= widgetSize * 0.5);
+                        QVERIFY(localEnd.y() >= widgetSize * 0.5);
+                        QVERIFY(localEnd.x() <= layout.overlayRect.width() - widgetSize * 0.5);
+                        QVERIFY(localEnd.y() <= layout.overlayRect.height() - widgetSize * 0.5);
 
-                    if (i > 0) {
-                        const qreal dy = globalEnd.y() - prevGlobal.y();
-                        // Strictly ordered top-to-bottom AND intentionally overlapping (~35–55% of 32px tile)
-                        QVERIFY2(dy >= 14.0 && dy <= 22.0,
-                                 qPrintable(QStringLiteral("Expected overlapping dy in [14,22], got %1").arg(dy)));
+                        if (i > 0) {
+                            // Strictly ordered top-to-bottom
+                            QVERIFY(globalEnd.y() > prevGlobal.y() + visSize * 0.40);
+                            // Modest layered-card overlap (~10–25% of visualSize)
+                            const qreal dist = std::hypot(globalEnd.x() - prevGlobal.x(),
+                                                          globalEnd.y() - prevGlobal.y());
+                            QVERIFY2(dist >= visSize * 0.72 && dist <= visSize * 0.96,
+                                     qPrintable(QStringLiteral("Expected chord in [0.72..0.96]*vis, got %1 (vis=%2)")
+                                                    .arg(dist).arg(visSize)));
+                        }
+                        prevGlobal = globalEnd;
                     }
-                    prevGlobal = globalEnd;
-                }
 
-                // Gentle curvature (not a straight vertical line, not scattered)
-                const qreal curveSpanX = maxX - minX;
-                QVERIFY2(curveSpanX >= 5.0 && curveSpanX <= 26.0,
-                         qPrintable(QStringLiteral("Expected gentle curve spanX in [5,26], got %1").arg(curveSpanX)));
+                    // Visibly circular C-shaped horizontal bow (not a straight vertical column)
+                    const qreal curveSpanX = maxX - minX;
+                    QVERIFY2(curveSpanX >= visSize * 0.75,
+                             qPrintable(QStringLiteral("Expected pronounced circular bow >= %1, got %2")
+                                            .arg(visSize * 0.75).arg(curveSpanX)));
+                }
             }
         }
     }
@@ -408,6 +419,127 @@ private slots:
         openByDoubleClick();
         pet.quickActionMenu()->exitButton()->click();
         QCOMPARE(exitSpy.count(), 1);
+    }
+
+    void iconScaleLiveUpdatesWithoutCompounding()
+    {
+        QuickActionMenu menu;
+        menu.setNativeOutsideObserverEnabled(false);
+        menu.setReducedMotionOverride(1);
+
+        QCOMPARE(menu.iconScalePercent(), 110);
+        const int defaultVis = menu.spotifyButton()->visualSize();
+        QCOMPARE(defaultVis, AnimatedQuickActionButton::visualSizeForScale(110));
+        QVERIFY(defaultVis > 34); // noticeably larger than 100% base (34px -> 37px)
+
+        const QRect petRect(400, 300, 120, 120);
+        menu.showMenu(petRect, QRect(15, 15, 90, 90));
+        QCOMPARE(menu.state(), QuickActionMenu::State::Open);
+
+        // Repeatedly changing scale never compounds
+        menu.setIconScalePercent(150);
+        QCOMPARE(menu.spotifyButton()->visualSize(), AnimatedQuickActionButton::visualSizeForScale(150));
+        QCOMPARE(menu.exitButton()->visualSize(), AnimatedQuickActionButton::visualSizeForScale(150));
+        QCOMPARE(menu.state(), QuickActionMenu::State::Open);
+
+        menu.setIconScalePercent(80);
+        QCOMPARE(menu.spotifyButton()->visualSize(), AnimatedQuickActionButton::visualSizeForScale(80));
+        menu.setIconScalePercent(110);
+        QCOMPARE(menu.spotifyButton()->visualSize(), defaultVis);
+    }
+
+    void suspendsMovementAndAutoSpriteWhileOpenAndAllowsManualClick()
+    {
+        PetWindow pet;
+        pet.quickActionMenu()->setNativeOutsideObserverEnabled(false);
+        pet.quickActionMenu()->setReducedMotionOverride(1);
+        pet.appSettings()->setOnboardingCompleted(true);
+        pet.appSettings()->setMovementEnabled(true);
+        pet.appSettings()->setAutoAnimationEnabled(true);
+        pet.showPet();
+        QVERIFY(QTest::qWaitForWindowExposed(&pet));
+
+        // Before opening menu: movement and auto-sprite switching are active
+        QVERIFY(!pet.movementController()->isPaused());
+        QVERIFY(pet.animationManager()->effectiveAutoSwitchEnabled());
+
+        auto doubleClickPet = [&]() {
+            QMouseEvent dbl(QEvent::MouseButtonDblClick,
+                            QPointF(pet.rect().center()),
+                            QPointF(pet.mapToGlobal(pet.rect().center())),
+                            Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(&pet, &dbl);
+        };
+
+        // Open quick actions -> movement & auto-sprite switching immediately suspended
+        doubleClickPet();
+        QCOMPARE(pet.quickActionMenu()->state(), QuickActionMenu::State::Open);
+        QVERIFY(pet.movementController()->isPausedFor(MovementController::PauseReason::QuickActionMenuOpen));
+        QVERIFY(pet.movementController()->isPaused());
+        QVERIFY(!pet.movementController()->isTimerActive());
+        QVERIFY(pet.animationManager()->isAutoSwitchSuspendedFor(
+            AnimationManager::AutoSwitchSuspendReason::QuickActionMenuOpen));
+        QVERIFY(!pet.animationManager()->effectiveAutoSwitchEnabled());
+        QVERIFY(!pet.animationManager()->isAutoSwitchTimerActive());
+        // Persisted user preferences must NOT have been overwritten
+        QVERIFY(pet.appSettings()->movementEnabled());
+        QVERIFY(pet.appSettings()->autoAnimationEnabled());
+
+        // Single-click Chiikawa while menu is open -> changes sprite, menu stays open, locks stay active!
+        const AnimationId beforeAnim = pet.animationManager()->currentAnimation();
+        const QPoint localCenter = pet.rect().center();
+        const QPoint globalCenter = pet.mapToGlobal(localCenter);
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(localCenter), QPointF(globalCenter),
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(localCenter), QPointF(globalCenter),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&pet, &press);
+        QApplication::sendEvent(&pet, &release);
+
+        // Wait past doubleClickInterval so single-click fires
+        QTRY_VERIFY_WITH_TIMEOUT(pet.animationManager()->currentAnimation() != beforeAnim,
+                                 QApplication::doubleClickInterval() + 400);
+        QCOMPARE(pet.quickActionMenu()->state(), QuickActionMenu::State::Open);
+        QVERIFY(pet.movementController()->isPausedFor(MovementController::PauseReason::QuickActionMenuOpen));
+        QVERIFY(!pet.movementController()->isTimerActive());
+        QVERIFY(!pet.animationManager()->effectiveAutoSwitchEnabled());
+
+        // Double-click to close -> locks cleanly released and normal behaviour restored
+        doubleClickPet();
+        QCOMPARE(pet.quickActionMenu()->state(), QuickActionMenu::State::Closed);
+        QVERIFY(!pet.movementController()->isPausedFor(MovementController::PauseReason::QuickActionMenuOpen));
+        QVERIFY(!pet.movementController()->isPaused());
+        QVERIFY(pet.animationManager()->effectiveAutoSwitchEnabled());
+    }
+
+    void respectsDisabledMovementAndNestedSettingsPause()
+    {
+        PetWindow pet;
+        pet.quickActionMenu()->setNativeOutsideObserverEnabled(false);
+        pet.quickActionMenu()->setReducedMotionOverride(1);
+        pet.appSettings()->setOnboardingCompleted(true);
+        pet.appSettings()->setMovementEnabled(false);
+        pet.showPet();
+        QVERIFY(QTest::qWaitForWindowExposed(&pet));
+
+        // Scenario B: Movement disabled in Settings stays disabled after menu closes
+        pet.movementController()->setEnabled(false);
+        pet.quickActionMenu()->showMenu(pet.frameGeometry());
+        QVERIFY(pet.movementController()->isPausedFor(MovementController::PauseReason::QuickActionMenuOpen));
+        pet.quickActionMenu()->hideMenu();
+        QCOMPARE(pet.quickActionMenu()->state(), QuickActionMenu::State::Closed);
+        QVERIFY(!pet.movementController()->isEnabled());
+        QVERIFY(!pet.movementController()->isTimerActive());
+
+        // Scenario F: Opening Settings from quick-action menu preserves SettingsOpen pause after menu closes
+        pet.appSettings()->setMovementEnabled(true);
+        pet.movementController()->setEnabled(true);
+        pet.quickActionMenu()->showMenu(pet.frameGeometry());
+        pet.quickActionMenu()->settingsButton()->click();
+        QCOMPARE(pet.quickActionMenu()->state(), QuickActionMenu::State::Closed);
+        QVERIFY(!pet.movementController()->isPausedFor(MovementController::PauseReason::QuickActionMenuOpen));
+        QVERIFY(pet.movementController()->isPausedFor(MovementController::PauseReason::SettingsOpen));
+        QVERIFY(pet.movementController()->isPaused());
     }
 };
 
