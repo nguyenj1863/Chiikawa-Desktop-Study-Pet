@@ -8,7 +8,7 @@
 #ifdef Q_OS_WIN
 #  include <windows.h>
 #elif defined(Q_OS_MACOS)
-#  include "MacWindowHelper.h"
+#  include "platform/MacWindowHelper.h"
 #endif
 
 #include <QApplication>

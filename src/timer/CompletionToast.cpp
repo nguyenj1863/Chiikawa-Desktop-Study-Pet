@@ -1,7 +1,7 @@
 #include "timer/CompletionToast.h"
 
 #ifdef Q_OS_MACOS
-#  include "MacWindowHelper.h"
+#  include "platform/MacWindowHelper.h"
 #endif
 #include "ui/PixelTheme.h"
 

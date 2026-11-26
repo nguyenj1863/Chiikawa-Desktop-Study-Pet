@@ -1,7 +1,7 @@
 #include "ui/SettingsPanel.h"
 
 #ifdef Q_OS_MACOS
-#  include "MacWindowHelper.h"
+#  include "platform/MacWindowHelper.h"
 #endif
 
 #include "alarm/AlarmScheduler.h"
