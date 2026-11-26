@@ -1,7 +1,6 @@
 #include "app/WindowCoordinator.h"
 
 #include <QGuiApplication>
-#include <QScopedValueRollback>
 #include <QScreen>
 #include <QWidget>
 #include <algorithm>
@@ -90,133 +89,50 @@ QPoint WindowCoordinator::computeAttachedSettingsPos(const QRect& petRect,
 
 void WindowCoordinator::attachSettings()
 {
-    if (m_syncing || !m_pet || !m_settings) {
+    if (!m_pet || !m_settings) {
         return;
     }
-    QScopedValueRollback<bool> guard(m_syncing, true);
-
     const QRect petRect = m_pet->frameGeometry();
     const QRect bounds = availableGeometryFor(petRect.center());
-    const QPoint settingsPos = computeAttachedSettingsPos(petRect, m_settings->size(), bounds, m_side);
-
-    m_settings->move(settingsPos);
-    m_relativeOffset = settingsPos - petRect.topLeft();
-}
-
-void WindowCoordinator::realignSettings()
-{
-    if (!m_settings || !m_settings->isVisible()) {
-        return;
-    }
-    attachSettings();
-}
-
-void WindowCoordinator::syncRelativeOffset()
-{
-    if (m_syncing || !m_pet || !m_settings || !m_settings->isVisible()) {
-        return;
-    }
-    m_relativeOffset = m_settings->pos() - m_pet->frameGeometry().topLeft();
+    m_settings->move(computeAttachedSettingsPos(petRect, m_settings->size(), bounds, m_side));
 }
 
 void WindowCoordinator::repositionAfterSettingsResize()
 {
-    if (m_syncing || !m_pet || !m_settings || !m_settings->isVisible()) {
+    if (!m_settings || !m_settings->isVisible()) {
         return;
     }
-    QScopedValueRollback<bool> guard(m_syncing, true);
-
-    const QRect petRect = m_pet->frameGeometry();
-    const QRect bounds = availableGeometryFor(petRect.center());
+    const QRect bounds = availableGeometryFor(m_settings->frameGeometry().center());
     const QPoint clamped = clampTopLeft(m_settings->pos(), m_settings->size(), bounds);
     if (clamped != m_settings->pos()) {
         m_settings->move(clamped);
     }
-    m_relativeOffset = m_settings->pos() - petRect.topLeft();
 }
 
 void WindowCoordinator::movePetTo(const QPoint& desiredPetTopLeft)
 {
-    if (m_syncing || !m_pet) {
+    if (!m_pet) {
         return;
     }
-    QScopedValueRollback<bool> guard(m_syncing, true);
-
     const QSize petSize = m_pet->size();
     const QPoint desiredCenter = desiredPetTopLeft + QPoint(petSize.width() / 2, petSize.height() / 2);
-    const QRect bounds = availableGeometryFor(desiredCenter);
-    const QPoint clampedPetPos = clampTopLeft(desiredPetTopLeft, petSize, bounds);
+    const QPoint clampedPetPos = clampTopLeft(desiredPetTopLeft, petSize, availableGeometryFor(desiredCenter));
 
-    const bool petChanged = (clampedPetPos != m_pet->pos());
-    if (petChanged) {
+    if (clampedPetPos != m_pet->pos()) {
         m_pet->move(clampedPetPos);
-    }
-
-    if (m_settings && m_settings->isVisible()) {
-        const QRect petRect(clampedPetPos, petSize);
-        const QSize settingsSize = m_settings->size();
-        const QPoint settingsPos = computeAttachedSettingsPos(petRect, settingsSize, bounds, m_side);
-        if (settingsPos != m_settings->pos()) {
-            m_settings->move(settingsPos);
-        }
-        m_relativeOffset = settingsPos - clampedPetPos;
-    }
-
-    if (petChanged) {
         emit petMoved(clampedPetPos);
     }
 }
 
 void WindowCoordinator::moveSettingsTo(const QPoint& desiredSettingsTopLeft)
 {
-    if (m_syncing || !m_pet || !m_settings) {
+    if (!m_settings) {
         return;
     }
-    QScopedValueRollback<bool> guard(m_syncing, true);
-
     const QSize settingsSize = m_settings->size();
-    const QSize petSize = m_pet->size();
     const QPoint desiredCenter = desiredSettingsTopLeft + QPoint(settingsSize.width() / 2, settingsSize.height() / 2);
-    const QRect bounds = availableGeometryFor(desiredCenter);
-
-    const QPoint clampedSettingsPos = clampTopLeft(desiredSettingsTopLeft, settingsSize, bounds);
-
-    // Keep the pet in its current relative position, flipping sides gracefully at screen edges.
-    int desiredPetX = (m_side == AnchorSide::Right)
-        ? (clampedSettingsPos.x() - kGap - petSize.width())
-        : (clampedSettingsPos.x() + settingsSize.width() + kGap);
-
-    if (bounds.isValid()) {
-        if (m_side == AnchorSide::Right && desiredPetX < bounds.left()) {
-            const int flippedX = clampedSettingsPos.x() + settingsSize.width() + kGap;
-            if (flippedX + petSize.width() <= bounds.right() + 1) {
-                m_side = AnchorSide::Left;
-                desiredPetX = flippedX;
-            }
-        } else if (m_side == AnchorSide::Left && desiredPetX + petSize.width() > bounds.right() + 1) {
-            const int flippedX = clampedSettingsPos.x() - kGap - petSize.width();
-            if (flippedX >= bounds.left()) {
-                m_side = AnchorSide::Right;
-                desiredPetX = flippedX;
-            }
-        }
-    }
-
-    const int desiredPetY = clampedSettingsPos.y() - m_relativeOffset.y();
-    const QPoint clampedPetPos = clampTopLeft({desiredPetX, desiredPetY}, petSize, bounds);
-
-    if (clampedSettingsPos != m_settings->pos()) {
-        m_settings->move(clampedSettingsPos);
-    }
-
-    const bool petChanged = (clampedPetPos != m_pet->pos());
-    if (petChanged) {
-        m_pet->move(clampedPetPos);
-    }
-
-    m_relativeOffset = clampedSettingsPos - clampedPetPos;
-
-    if (petChanged) {
-        emit petMoved(clampedPetPos);
+    const QPoint clamped = clampTopLeft(desiredSettingsTopLeft, settingsSize, availableGeometryFor(desiredCenter));
+    if (clamped != m_settings->pos()) {
+        m_settings->move(clamped);
     }
 }

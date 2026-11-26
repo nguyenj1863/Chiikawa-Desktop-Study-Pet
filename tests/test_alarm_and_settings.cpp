@@ -15,7 +15,9 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QEnterEvent>
+#include <QGuiApplication>
 #include <QLabel>
+#include <QScreen>
 #include <QPushButton>
 #include <QImage>
 #include <QSettings>
@@ -82,7 +84,7 @@ private slots:
     void redesignedTimerAndAlarmControls();
     void settingsPanelUsesTranslucentGlass();
     void expandedTimerPreservesButtonHeights();
-    void windowCoordinatorSyncRelativeOffsetKeepsPanelStationary();
+    void windowCoordinatorMovesPetAndSettingsIndependently();
 };
 
 void TestAlarmAndSettings::init()
@@ -866,26 +868,46 @@ void TestAlarmAndSettings::expandedTimerPreservesButtonHeights()
     }
 }
 
-void TestAlarmAndSettings::windowCoordinatorSyncRelativeOffsetKeepsPanelStationary()
+void TestAlarmAndSettings::windowCoordinatorMovesPetAndSettingsIndependently()
 {
-    QWidget pet;
+    const QRect avail = WindowCoordinator::availableGeometryFor(QGuiApplication::primaryScreen()->geometry().center());
+
+    QWidget pet(nullptr, Qt::Tool | Qt::FramelessWindowHint);
     pet.setFixedSize(120, 120);
-    pet.move(300, 200);
+    pet.move(avail.topLeft() + QPoint(120, 120));
     pet.show();
 
-    QWidget settings;
+    QWidget settings(nullptr, Qt::Tool | Qt::FramelessWindowHint);
     settings.setFixedSize(340, 320);
     settings.show();
 
     WindowCoordinator coordinator(&pet, &settings);
     coordinator.attachSettings();
-    const QPoint initialPanelPos = settings.pos();
+    const QPoint attachedPos = settings.pos();
+    QCOMPARE(attachedPos.y(), pet.y());
+    QVERIFY(attachedPos.x() >= pet.x() + pet.width());
 
-    // Simulate resizing pet while SettingsPanel is open: panel must NOT move
-    pet.setFixedSize(220, 220);
-    pet.move(200, 150);
-    coordinator.syncRelativeOffset();
-    QCOMPARE(settings.pos(), initialPanelPos);
+    // Dragging the pet never moves Settings
+    QSignalSpy petMovedSpy(&coordinator, &WindowCoordinator::petMoved);
+    coordinator.movePetTo(pet.pos() + QPoint(60, 40));
+    QCOMPARE(petMovedSpy.count(), 1);
+    QCOMPARE(settings.pos(), attachedPos);
+
+    // Dragging Settings never moves the pet
+    const QPoint petPos = pet.pos();
+    coordinator.moveSettingsTo(attachedPos + QPoint(80, 30));
+    QCOMPARE(settings.pos(), attachedPos + QPoint(80, 30));
+    QCOMPARE(pet.pos(), petPos);
+
+    // Settings stays within the available monitor bounds
+    coordinator.moveSettingsTo(avail.bottomRight() + QPoint(500, 500));
+    QVERIFY(avail.contains(settings.frameGeometry().topLeft()));
+    QCOMPARE(pet.pos(), petPos);
+
+    // Reopening re-attaches Settings beside the pet's current location
+    coordinator.attachSettings();
+    QCOMPARE(settings.pos().y(), pet.y());
+    QCOMPARE(settings.pos().x(), pet.x() + pet.width() + WindowCoordinator::kGap);
 }
 
 QTEST_MAIN(TestAlarmAndSettings)

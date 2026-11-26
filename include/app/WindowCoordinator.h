@@ -9,11 +9,11 @@ class QScreen;
 class QWidget;
 
 /**
- * Coordinates positioning and synchronized bidirectional dragging between
- * the desktop pet window and its floating settings panel.
+ * Positions the floating settings panel beside the desktop pet when it opens
+ * and keeps both windows inside the available monitor bounds.
  *
- * Uses a re-entrancy guard so neither window can recursively trigger
- * position updates on the other.
+ * After opening, the pet and the settings panel move independently: dragging
+ * or autonomously moving one never repositions the other.
  */
 class WindowCoordinator : public QObject {
     Q_OBJECT
@@ -28,9 +28,10 @@ public:
 
     WindowCoordinator(QWidget* petWindow, QWidget* settingsPanel, QObject* parent = nullptr);
 
+    /** Places the settings panel beside the pet's current location. */
     void attachSettings();
-    void realignSettings();
-    void syncRelativeOffset();
+
+    /** Keeps the settings panel on-screen after its height changes. */
     void repositionAfterSettingsResize();
 
     void movePetTo(const QPoint& desiredPetTopLeft);
@@ -53,6 +54,4 @@ private:
     QPointer<QWidget> m_pet;
     QPointer<QWidget> m_settings;
     AnchorSide m_side = AnchorSide::Right;
-    QPoint m_relativeOffset{0, 0}; // settings.topLeft() - pet.topLeft()
-    bool m_syncing = false;
 };

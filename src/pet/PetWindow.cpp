@@ -208,12 +208,6 @@ PetWindow::PetWindow(QWidget* parent)
     });
     connect(m_settingsPanel.get(), &SettingsPanel::dragRequested,
             m_coordinator.get(), &WindowCoordinator::moveSettingsTo);
-    connect(m_settingsPanel.get(), &SettingsPanel::dragFinished, this, [this]() {
-        if (m_settings) {
-            m_settings->setLastPosition(pos());
-            m_settings->save();
-        }
-    });
     connect(m_settingsPanel.get(), &SettingsPanel::panelResized,
             m_coordinator.get(), &WindowCoordinator::repositionAfterSettingsResize);
     connect(m_coordinator.get(), &WindowCoordinator::petMoved,
@@ -443,11 +437,6 @@ void PetWindow::applySettings()
     }
     if (!sizeChanged) {
         m_movement->constrainToScreen();
-    }
-    if (m_coordinator) {
-        // Keep SettingsPanel stationary while resizing so dragging the size slider
-        // never shifts the panel out from under the cursor.
-        m_coordinator->syncRelativeOffset();
     }
     updateHitMask();
 }
