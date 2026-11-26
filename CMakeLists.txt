@@ -42,6 +42,7 @@ set(CHIICAWA_SOURCES
     src/QuickActionItem.cpp
     src/QuickActionMenu.cpp
     src/QuickActionsEditor.cpp
+    src/InstalledAppDiscovery.cpp
     src/ExternalAppLauncher.cpp
     src/SpotifyLauncher.cpp
     src/CollapsibleSection.cpp
@@ -74,6 +75,7 @@ set(CHIICAWA_HEADERS
     include/QuickActionItem.h
     include/QuickActionMenu.h
     include/QuickActionsEditor.h
+    include/InstalledAppDiscovery.h
     include/ExternalAppLauncher.h
     include/SpotifyLauncher.h
     include/CollapsibleSection.h
@@ -214,6 +216,8 @@ chiikawa_add_test(test_alarm_and_settings
     include/QuickActionItem.h
     src/QuickActionsEditor.cpp
     include/QuickActionsEditor.h
+    src/InstalledAppDiscovery.cpp
+    include/InstalledAppDiscovery.h
     src/ExternalAppLauncher.cpp
     include/ExternalAppLauncher.h
     src/SettingsPanel.cpp
@@ -256,6 +260,8 @@ chiikawa_add_test(test_onboarding
     include/QuickActionItem.h
     src/QuickActionsEditor.cpp
     include/QuickActionsEditor.h
+    src/InstalledAppDiscovery.cpp
+    include/InstalledAppDiscovery.h
     src/ExternalAppLauncher.cpp
     include/ExternalAppLauncher.h
     src/SpotifyLauncher.cpp
@@ -325,6 +331,8 @@ chiikawa_add_test(test_quick_actions
     include/QuickActionItem.h
     src/QuickActionsEditor.cpp
     include/QuickActionsEditor.h
+    src/InstalledAppDiscovery.cpp
+    include/InstalledAppDiscovery.h
     src/ExternalAppLauncher.cpp
     include/ExternalAppLauncher.h
     src/SpotifyLauncher.cpp

@@ -2,7 +2,9 @@
 
 #include "ExternalAppLauncher.h"
 #include "PixelTheme.h"
+#include "WindowCoordinator.h"
 
+#include <QAbstractButton>
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QFileDialog>
@@ -13,7 +15,10 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMouseEvent>
+#include <QMoveEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPushButton>
 #include <QStandardPaths>
 #include <QVBoxLayout>
@@ -23,13 +28,16 @@
 // QuickActionDialog
 // ============================================================================
 
-QuickActionDialog::QuickActionDialog(const QuickActionItem* existing, QWidget* parent)
+QuickActionDialog::QuickActionDialog(const QuickActionItem* existing,
+                                     QWidget* anchorWindow,
+                                     QWidget* parent)
     : QDialog(parent, Qt::Dialog | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint)
+    , m_overlapAnchor(anchorWindow)
     , m_isEdit(existing != nullptr)
 {
     setAttribute(Qt::WA_TranslucentBackground);
     setModal(true);
-    setFixedWidth(340);
+    setFixedWidth(368);
     setStyleSheet(PixelTheme::styleSheet());
 
     if (existing) {
@@ -41,55 +49,146 @@ QuickActionDialog::QuickActionDialog(const QuickActionItem* existing, QWidget* p
     }
 
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(16, 14, 16, 14);
+    root->setContentsMargins(16, 12, 16, 14);
     root->setSpacing(8);
 
-    auto* title = new QLabel(m_isEdit ? QStringLiteral("Edit Shortcut") : QStringLiteral("Add Application"), this);
-    title->setObjectName(QStringLiteral("toastTitle"));
-    root->addWidget(title);
+    // Draggable header bar
+    m_headerWidget = new QWidget(this);
+    m_headerWidget->setObjectName(QStringLiteral("dialogHeader"));
+    m_headerWidget->setCursor(Qt::OpenHandCursor);
+    m_headerWidget->setAttribute(Qt::WA_TranslucentBackground);
+    auto* headerLayout = new QHBoxLayout(m_headerWidget);
+    headerLayout->setContentsMargins(0, 0, 0, 4);
+    headerLayout->setSpacing(6);
 
-    auto* nameLbl = new QLabel(QStringLiteral("Application Name"), this);
+    auto* dragGrip = new QLabel(QStringLiteral("⋮⋮"), m_headerWidget);
+    dragGrip->setStyleSheet(QStringLiteral("color: rgba(255, 255, 255, 0.36); font-size: 12px;"));
+    dragGrip->setToolTip(QStringLiteral("Drag to move"));
+
+    auto* title = new QLabel(m_isEdit ? QStringLiteral("Edit Shortcut") : QStringLiteral("Add Application"),
+                             m_headerWidget);
+    title->setObjectName(QStringLiteral("toastTitle"));
+
+    auto* closeBtn = new QPushButton(QStringLiteral("×"), m_headerWidget);
+    closeBtn->setObjectName(QStringLiteral("closeBtn"));
+    closeBtn->setFixedSize(22, 22);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setFocusPolicy(Qt::NoFocus);
+    closeBtn->setToolTip(QStringLiteral("Cancel"));
+    connect(closeBtn, &QPushButton::clicked, this, &QDialog::reject);
+
+    headerLayout->addWidget(dragGrip);
+    headerLayout->addWidget(title);
+    headerLayout->addStretch(1);
+    headerLayout->addWidget(closeBtn);
+    root->addWidget(m_headerWidget);
+
+    // Searchable installed applications picker (for custom apps in both Add and Edit modes)
+    if (m_item.type == QuickActionType::CustomApp) {
+        auto* pickerLbl = new QLabel(QStringLiteral("Search installed applications"), this);
+        pickerLbl->setObjectName(QStringLiteral("muted"));
+        root->addWidget(pickerLbl);
+
+        auto* searchRow = new QHBoxLayout();
+        searchRow->setSpacing(6);
+
+        m_searchEdit = new QLineEdit(this);
+        m_searchEdit->setObjectName(QStringLiteral("appSearchEdit"));
+        m_searchEdit->setPlaceholderText(QStringLiteral("Search apps (e.g. Chrome, VS Code, Steam)…"));
+        m_searchEdit->setClearButtonEnabled(true);
+        connect(m_searchEdit, &QLineEdit::textChanged,
+                this, &QuickActionDialog::onSearchTextChanged);
+
+        m_refreshAppsBtn = new QPushButton(QStringLiteral("↻"), this);
+        m_refreshAppsBtn->setObjectName(QStringLiteral("refreshAppsBtn"));
+        m_refreshAppsBtn->setFixedSize(28, 28);
+        m_refreshAppsBtn->setCursor(Qt::PointingHandCursor);
+        m_refreshAppsBtn->setFocusPolicy(Qt::NoFocus);
+        m_refreshAppsBtn->setToolTip(QStringLiteral("Refresh installed applications"));
+        connect(m_refreshAppsBtn, &QPushButton::clicked,
+                this, &QuickActionDialog::onRefreshAppsClicked);
+
+        searchRow->addWidget(m_searchEdit, 1);
+        searchRow->addWidget(m_refreshAppsBtn);
+        root->addLayout(searchRow);
+
+        m_appsList = new QListWidget(this);
+        m_appsList->setObjectName(QStringLiteral("detectedAppsList"));
+        m_appsList->setFixedHeight(134);
+        m_appsList->setIconSize(QSize(18, 18));
+        m_appsList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        m_appsList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        m_appsList->setSpacing(1);
+        m_appsList->setStyleSheet(QStringLiteral(
+            "QListWidget#detectedAppsList {"
+            "  background: rgba(10, 12, 18, 0.56);"
+            "  border: 1px solid rgba(255, 255, 255, 0.10);"
+            "  border-radius: 8px;"
+            "  padding: 3px;"
+            "  outline: none;"
+            "}"
+            "QListWidget#detectedAppsList::item {"
+            "  color: #F4F6FA;"
+            "  padding: 5px 8px;"
+            "  border-radius: 6px;"
+            "}"
+            "QListWidget#detectedAppsList::item:hover {"
+            "  background: rgba(255, 255, 255, 0.10);"
+            "}"
+            "QListWidget#detectedAppsList::item:selected {"
+            "  background: rgba(154, 210, 255, 0.22);"
+            "  color: #FFFFFF;"
+            "}"));
+        connect(m_appsList, &QListWidget::itemClicked,
+                this, &QuickActionDialog::onDetectedAppClicked);
+        root->addWidget(m_appsList);
+
+        m_appsStatusLabel = new QLabel(QStringLiteral("Scanning installed applications…"), this);
+        m_appsStatusLabel->setObjectName(QStringLiteral("muted"));
+        root->addWidget(m_appsStatusLabel);
+
+        auto* browseRow = new QHBoxLayout();
+        browseRow->setSpacing(6);
+        m_pathEdit = new QLineEdit(m_item.applicationReference, this);
+        m_pathEdit->setObjectName(QStringLiteral("appPathEdit"));
+#ifdef Q_OS_MACOS
+        m_pathEdit->setPlaceholderText(QStringLiteral("Or choose a .app bundle manually…"));
+#else
+        m_pathEdit->setPlaceholderText(QStringLiteral("Or browse for an executable (.exe / .lnk)…"));
+#endif
+        m_browseBtn = new QPushButton(QStringLiteral("Browse…"), this);
+        m_browseBtn->setObjectName(QStringLiteral("browseAppBtn"));
+        m_browseBtn->setCursor(Qt::PointingHandCursor);
+        m_browseBtn->setToolTip(QStringLiteral("Browse for application…"));
+        connect(m_browseBtn, &QPushButton::clicked, this, &QuickActionDialog::onBrowseApplication);
+        browseRow->addWidget(m_pathEdit, 1);
+        browseRow->addWidget(m_browseBtn);
+        root->addLayout(browseRow);
+    }
+
+    // Application Name
+    auto* nameLbl = new QLabel(QStringLiteral("Display Name"), this);
     nameLbl->setObjectName(QStringLiteral("muted"));
     root->addWidget(nameLbl);
 
     m_nameEdit = new QLineEdit(m_item.displayName, this);
+    m_nameEdit->setObjectName(QStringLiteral("appNameEdit"));
     m_nameEdit->setPlaceholderText(QStringLiteral("e.g. Visual Studio Code"));
     root->addWidget(m_nameEdit);
 
-    if (m_item.type == QuickActionType::CustomApp) {
-        auto* pathLbl = new QLabel(QStringLiteral("Application"), this);
-        pathLbl->setObjectName(QStringLiteral("muted"));
-        root->addWidget(pathLbl);
-
-        auto* pathRow = new QHBoxLayout();
-        pathRow->setSpacing(6);
-        m_pathEdit = new QLineEdit(m_item.applicationReference, this);
-#ifdef Q_OS_MACOS
-        m_pathEdit->setPlaceholderText(QStringLiteral("/Applications/App.app"));
-#else
-        m_pathEdit->setPlaceholderText(QStringLiteral("Select .exe or .lnk application"));
-#endif
-        m_browseBtn = new QPushButton(QStringLiteral("Browse"), this);
-        m_browseBtn->setCursor(Qt::PointingHandCursor);
-        connect(m_browseBtn, &QPushButton::clicked, this, &QuickActionDialog::onBrowseApplication);
-        pathRow->addWidget(m_pathEdit, 1);
-        pathRow->addWidget(m_browseBtn);
-        root->addLayout(pathRow);
-    }
-
-    auto* iconLbl = new QLabel(QStringLiteral("Icon"), this);
-    iconLbl->setObjectName(QStringLiteral("muted"));
-    root->addWidget(iconLbl);
-
+    // Icon Preview + Change/Reset
     auto* iconRow = new QHBoxLayout();
     iconRow->setSpacing(8);
     m_iconPreview = new QLabel(this);
     m_iconPreview->setFixedSize(36, 36);
     m_iconPreview->setAlignment(Qt::AlignCenter);
     m_iconPreview->setStyleSheet(QStringLiteral(
-        "background: rgba(255, 255, 255, 0.08); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.12);"));
+        "background: rgba(255, 255, 255, 0.08); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.14);"));
 
-    m_changeIconBtn = new QPushButton(QStringLiteral("Change"), this);
+    auto* iconLbl = new QLabel(QStringLiteral("Icon"), this);
+    iconLbl->setObjectName(QStringLiteral("muted"));
+
+    m_changeIconBtn = new QPushButton(QStringLiteral("Change Icon"), this);
     m_changeIconBtn->setCursor(Qt::PointingHandCursor);
     connect(m_changeIconBtn, &QPushButton::clicked, this, &QuickActionDialog::onChooseCustomIcon);
 
@@ -98,9 +197,10 @@ QuickActionDialog::QuickActionDialog(const QuickActionItem* existing, QWidget* p
     connect(m_resetIconBtn, &QPushButton::clicked, this, &QuickActionDialog::onResetCustomIcon);
 
     iconRow->addWidget(m_iconPreview);
+    iconRow->addWidget(iconLbl);
+    iconRow->addStretch(1);
     iconRow->addWidget(m_changeIconBtn);
     iconRow->addWidget(m_resetIconBtn);
-    iconRow->addStretch(1);
     root->addLayout(iconRow);
 
     m_errorLabel = new QLabel(this);
@@ -109,8 +209,9 @@ QuickActionDialog::QuickActionDialog(const QuickActionItem* existing, QWidget* p
     m_errorLabel->hide();
     root->addWidget(m_errorLabel);
 
+    // Footer buttons
     auto* buttons = new QHBoxLayout();
-    buttons->setContentsMargins(0, 4, 0, 0);
+    buttons->setContentsMargins(0, 6, 0, 0);
     buttons->setSpacing(8);
     buttons->addStretch(1);
 
@@ -118,7 +219,7 @@ QuickActionDialog::QuickActionDialog(const QuickActionItem* existing, QWidget* p
     cancelBtn->setCursor(Qt::PointingHandCursor);
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
 
-    auto* saveBtn = new QPushButton(m_isEdit ? QStringLiteral("Save") : QStringLiteral("Add Shortcut"), this);
+    auto* saveBtn = new QPushButton(m_isEdit ? QStringLiteral("Save Changes") : QStringLiteral("Add Shortcut"), this);
     saveBtn->setObjectName(QStringLiteral("primary"));
     saveBtn->setCursor(Qt::PointingHandCursor);
     connect(saveBtn, &QPushButton::clicked, this, &QuickActionDialog::onAcceptClicked);
@@ -127,7 +228,49 @@ QuickActionDialog::QuickActionDialog(const QuickActionItem* existing, QWidget* p
     buttons->addWidget(saveBtn);
     root->addLayout(buttons);
 
+    adjustSize();
     refreshIconPreview();
+
+    if (m_overlapAnchor) {
+        placeNearAnchor(m_overlapAnchor);
+    }
+    if (m_item.type == QuickActionType::CustomApp) {
+        loadInstalledApps(false);
+    }
+}
+
+void QuickActionDialog::placeNearAnchor(QWidget* anchorWindow)
+{
+    if (!anchorWindow) {
+        return;
+    }
+    m_overlapAnchor = anchorWindow;
+    const QRect anchorRect = anchorWindow->frameGeometry();
+    const QRect avail = WindowCoordinator::availableGeometryFor(anchorRect.center());
+    constexpr int kGap = 12;
+
+    QPoint desired(anchorRect.right() + kGap, anchorRect.top() + 18);
+    if (desired.x() + width() > avail.right() + 1) {
+        const int leftX = anchorRect.left() - width() - kGap;
+        if (leftX >= avail.left()) {
+            desired.setX(leftX);
+        }
+    }
+    const QPoint placed = WindowCoordinator::clampTopLeft(desired, size(), avail);
+    move(placed);
+}
+
+QRect QuickActionDialog::overlapRectLocal() const
+{
+    if (!m_overlapAnchor || !m_overlapAnchor->isVisible()) {
+        return {};
+    }
+    const QRect globalOverlap = frameGeometry().intersected(m_overlapAnchor->frameGeometry());
+    if (globalOverlap.isEmpty()) {
+        return {};
+    }
+    const QPoint localTopLeft = mapFromGlobal(globalOverlap.topLeft());
+    return QRect(localTopLeft, globalOverlap.size()).intersected(rect());
 }
 
 void QuickActionDialog::paintEvent(QPaintEvent* event)
@@ -135,6 +278,191 @@ void QuickActionDialog::paintEvent(QPaintEvent* event)
     Q_UNUSED(event);
     QPainter p(this);
     PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Primary, PixelTheme::kRadiusCard, 6);
+
+    // Locally deepen glass opacity wherever this dialog overlaps the Settings window
+    // so text and controls remain crisp and readable while dragging across Settings.
+    const QRect overlap = overlapRectLocal();
+    if (!overlap.isEmpty()) {
+        p.save();
+        p.setRenderHint(QPainter::Antialiasing, true);
+        QPainterPath cardClip;
+        cardClip.addRoundedRect(QRectF(rect()).adjusted(1.0, 1.0, -1.0, -1.0),
+                                PixelTheme::kRadiusCard, PixelTheme::kRadiusCard);
+        p.setClipPath(cardClip);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(PixelTheme::kBackground.red(),
+                          PixelTheme::kBackground.green(),
+                          PixelTheme::kBackground.blue(),
+                          182));
+        p.drawRect(overlap);
+        p.restore();
+    }
+}
+
+bool QuickActionDialog::isInteractiveChildAt(const QPoint& pos) const
+{
+    QWidget* child = childAt(pos);
+    while (child && child != this) {
+        if (qobject_cast<QAbstractButton*>(child)
+            || qobject_cast<QLineEdit*>(child)
+            || qobject_cast<QAbstractItemView*>(child)) {
+            return true;
+        }
+        child = child->parentWidget();
+    }
+    return false;
+}
+
+void QuickActionDialog::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton && !isInteractiveChildAt(event->position().toPoint())) {
+        m_dragging = true;
+        m_dragOffset = event->globalPosition().toPoint() - frameGeometry().topLeft();
+        if (m_headerWidget) {
+            m_headerWidget->setCursor(Qt::ClosedHandCursor);
+        }
+        event->accept();
+        return;
+    }
+    QDialog::mousePressEvent(event);
+}
+
+void QuickActionDialog::mouseMoveEvent(QMouseEvent* event)
+{
+    if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+        const QPoint desired = event->globalPosition().toPoint() - m_dragOffset;
+        const QRect avail = WindowCoordinator::availableGeometryFor(
+            QRect(desired, size()).center());
+        move(WindowCoordinator::clampTopLeft(desired, size(), avail));
+        event->accept();
+        return;
+    }
+    QDialog::mouseMoveEvent(event);
+}
+
+void QuickActionDialog::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton && m_dragging) {
+        m_dragging = false;
+        if (m_headerWidget) {
+            m_headerWidget->setCursor(Qt::OpenHandCursor);
+        }
+        event->accept();
+        return;
+    }
+    QDialog::mouseReleaseEvent(event);
+}
+
+void QuickActionDialog::moveEvent(QMoveEvent* event)
+{
+    QDialog::moveEvent(event);
+    // Refresh overlap-aware tint smoothly as the user drags across Settings.
+    if (m_overlapAnchor && m_overlapAnchor->isVisible()) {
+        update();
+    }
+}
+
+void QuickActionDialog::loadInstalledApps(bool forceRefresh)
+{
+    if (!m_appsList) {
+        return;
+    }
+    if (m_appsStatusLabel) {
+        m_appsStatusLabel->setText(QStringLiteral("Scanning installed applications…"));
+        m_appsStatusLabel->show();
+    }
+    if (m_refreshAppsBtn) {
+        m_refreshAppsBtn->setEnabled(false);
+    }
+
+    InstalledAppDiscovery::discoverAsync(
+        this,
+        [this](const QVector<InstalledAppDiscovery::DetectedApp>& apps) {
+            m_allDetectedApps = apps;
+            if (m_refreshAppsBtn) {
+                m_refreshAppsBtn->setEnabled(true);
+            }
+            populateAppsList(m_searchEdit ? m_searchEdit->text() : QString{});
+        },
+        forceRefresh);
+}
+
+void QuickActionDialog::populateAppsList(const QString& query)
+{
+    if (!m_appsList) {
+        return;
+    }
+    m_filteredApps = InstalledAppDiscovery::filter(m_allDetectedApps, query);
+    m_appsList->clear();
+
+    const int maxDisplay = std::min(static_cast<int>(m_filteredApps.size()), 80);
+    for (int i = 0; i < maxDisplay; ++i) {
+        const auto& app = m_filteredApps[i];
+        const QString label = app.subtitle.isEmpty()
+            ? app.displayName
+            : QStringLiteral("%1   ·   %2").arg(app.displayName, app.subtitle);
+        auto* item = new QListWidgetItem(label, m_appsList);
+        item->setData(Qt::UserRole, i);
+        const QIcon icon = ExternalAppLauncher::extractAppIcon(app.launchReference);
+        if (!icon.isNull()) {
+            item->setIcon(icon);
+        } else {
+            item->setIcon(PixelTheme::icon(PixelIcon::Cursor, PixelTheme::kPrimaryText, 16));
+        }
+        m_appsList->addItem(item);
+    }
+
+    if (m_appsStatusLabel) {
+        if (m_filteredApps.isEmpty()) {
+            m_appsStatusLabel->setText(query.trimmed().isEmpty()
+                ? QStringLiteral("No applications detected. Use Browse… below.")
+                : QStringLiteral("No matching apps. Try another search or Browse…"));
+        } else {
+            m_appsStatusLabel->setText(QStringLiteral("%1 detected · click an app to select")
+                                           .arg(m_filteredApps.size()));
+        }
+        m_appsStatusLabel->show();
+    }
+}
+
+void QuickActionDialog::onSearchTextChanged(const QString& text)
+{
+    populateAppsList(text);
+}
+
+void QuickActionDialog::onRefreshAppsClicked()
+{
+    loadInstalledApps(true);
+}
+
+void QuickActionDialog::selectDetectedAppRow(int row)
+{
+    if (!m_appsList || row < 0 || row >= m_appsList->count()) {
+        return;
+    }
+    m_appsList->setCurrentRow(row);
+    onDetectedAppClicked(m_appsList->item(row));
+}
+
+void QuickActionDialog::onDetectedAppClicked(QListWidgetItem* item)
+{
+    if (!item) {
+        return;
+    }
+    const int idx = item->data(Qt::UserRole).toInt();
+    if (idx < 0 || idx >= m_filteredApps.size()) {
+        return;
+    }
+    const auto& app = m_filteredApps[idx];
+    m_item.applicationReference = app.launchReference;
+    if (m_pathEdit) {
+        m_pathEdit->setText(app.launchReference);
+    }
+    if (m_nameEdit) {
+        m_nameEdit->setText(app.displayName);
+    }
+    m_errorLabel->hide();
+    refreshIconPreview();
 }
 
 void QuickActionDialog::onBrowseApplication()
@@ -215,7 +543,7 @@ void QuickActionDialog::onAcceptClicked()
     if (m_item.type == QuickActionType::CustomApp) {
         const QString path = m_pathEdit ? m_pathEdit->text().trimmed() : m_item.applicationReference;
         if (path.isEmpty() || !QFileInfo::exists(path)) {
-            m_errorLabel->setText(QStringLiteral("Please choose an existing application file."));
+            m_errorLabel->setText(QStringLiteral("Select an installed application or browse for a valid file."));
             m_errorLabel->show();
             adjustSize();
             return;
@@ -256,25 +584,20 @@ QuickActionsEditor::QuickActionsEditor(QWidget* parent)
     : QWidget(parent)
 {
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 4, 0, 0);
-    root->setSpacing(4);
+    root->setContentsMargins(0, 2, 0, 0);
+    root->setSpacing(5);
 
     auto* headerRow = new QHBoxLayout();
     headerRow->setSpacing(6);
-    auto* titleLbl = new QLabel(QStringLiteral("Quick Actions"), this);
-    titleLbl->setStyleSheet(QStringLiteral("font-weight: 700;"));
-    m_countLabel = new QLabel(this);
-    m_countLabel->setObjectName(QStringLiteral("muted"));
-    m_countLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    headerRow->addWidget(titleLbl);
-    headerRow->addStretch(1);
-    headerRow->addWidget(m_countLabel);
-    root->addLayout(headerRow);
-
-    auto* descLbl = new QLabel(QStringLiteral("Choose which apps appear when you double-click Chiikawa."), this);
+    auto* descLbl = new QLabel(QStringLiteral("Choose which apps appear around Chiikawa."), this);
     descLbl->setObjectName(QStringLiteral("muted"));
     descLbl->setWordWrap(true);
-    root->addWidget(descLbl);
+    m_countLabel = new QLabel(this);
+    m_countLabel->setObjectName(QStringLiteral("valueBadge"));
+    m_countLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    headerRow->addWidget(descLbl, 1);
+    headerRow->addWidget(m_countLabel);
+    root->addLayout(headerRow);
 
     m_list = new QListWidget(this);
     m_list->setObjectName(QStringLiteral("quickActionsList"));
@@ -360,7 +683,7 @@ void QuickActionsEditor::updateCountLabel()
     if (!m_countLabel) {
         return;
     }
-    m_countLabel->setText(QStringLiteral("%1/%2 active")
+    m_countLabel->setText(QStringLiteral("%1/%2")
                               .arg(enabledCount())
                               .arg(QuickActionItem::kMaxVisibleRadialShortcuts));
     if (m_addBtn) {
@@ -554,10 +877,10 @@ void QuickActionsEditor::showRowMenu(const QString& id, QWidget* anchor)
 
     menu.addSeparator();
 
-    QAction* editAct = menu.addAction(item.isBuiltIn() ? QStringLiteral("Customize...") : QStringLiteral("Edit..."));
+    QAction* editAct = menu.addAction(item.isBuiltIn() ? QStringLiteral("Customize…") : QStringLiteral("Edit…"));
     connect(editAct, &QAction::triggered, this, [this, id]() { editShortcut(id); });
 
-    QAction* iconAct = menu.addAction(QStringLiteral("Change Icon..."));
+    QAction* iconAct = menu.addAction(QStringLiteral("Change Icon…"));
     connect(iconAct, &QAction::triggered, this, [this, id]() { changeShortcutIcon(id); });
 
     if (!item.customIconPath.isEmpty()) {
@@ -580,7 +903,7 @@ void QuickActionsEditor::editShortcut(const QString& id)
     if (idx < 0) {
         return;
     }
-    QuickActionDialog dlg(&m_items[idx], window());
+    QuickActionDialog dlg(&m_items[idx], window(), window());
     if (dlg.exec() == QDialog::Accepted) {
         updateShortcut(dlg.resultItem());
     }
@@ -626,7 +949,7 @@ void QuickActionsEditor::resetShortcutIcon(const QString& id)
 void QuickActionsEditor::onAddApplicationClicked()
 {
     emit userInteracted();
-    QuickActionDialog dlg(nullptr, window());
+    QuickActionDialog dlg(nullptr, window(), window());
     if (dlg.exec() == QDialog::Accepted) {
         addShortcut(dlg.resultItem());
     }
