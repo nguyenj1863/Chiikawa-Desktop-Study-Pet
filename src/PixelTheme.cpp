@@ -221,6 +221,9 @@ PixelGrid gridFor(PixelIcon kind)
         }};
     case PixelIcon::Gear:
     case PixelIcon::Spotify:
+    case PixelIcon::Discord:
+    case PixelIcon::LeagueOfLegends:
+    case PixelIcon::Cursor:
         return {{
             "....####....",
             ".##.####.##.",
@@ -463,6 +466,117 @@ QIcon icon(PixelIcon kind, const QColor& color, int logicalSize)
         arrowHead.lineTo(arrowTip, midY);
         arrowHead.lineTo(arrowTip - head, midY + head);
         p.drawPath(arrowHead);
+
+        p.end();
+        QIcon result(pm);
+        cache.insert(key, result);
+        return result;
+    }
+
+    if (kind == PixelIcon::Discord) {
+        // Recognizable Discord Clyde mark with rounded silhouette and two cutout eyes
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const qreal s = static_cast<qreal>(logicalSize);
+        p.setPen(Qt::NoPen);
+        p.setBrush(color);
+
+        QPainterPath body;
+        body.moveTo(s * 0.24, s * 0.22);
+        body.quadTo(s * 0.34, s * 0.17, s * 0.42, s * 0.20);
+        body.lineTo(s * 0.44, s * 0.24);
+        body.quadTo(s * 0.50, s * 0.23, s * 0.56, s * 0.24);
+        body.lineTo(s * 0.58, s * 0.20);
+        body.quadTo(s * 0.66, s * 0.17, s * 0.76, s * 0.22);
+        body.cubicTo(s * 0.87, s * 0.38, s * 0.90, s * 0.58, s * 0.86, s * 0.74);
+        body.quadTo(s * 0.76, s * 0.82, s * 0.65, s * 0.84);
+        body.lineTo(s * 0.61, s * 0.76);
+        body.quadTo(s * 0.50, s * 0.78, s * 0.39, s * 0.76);
+        body.lineTo(s * 0.35, s * 0.84);
+        body.quadTo(s * 0.24, s * 0.82, s * 0.14, s * 0.74);
+        body.cubicTo(s * 0.10, s * 0.58, s * 0.13, s * 0.38, s * 0.24, s * 0.22);
+        body.closeSubpath();
+        p.drawPath(body);
+
+        // Two clean circular cutout eyes
+        p.setCompositionMode(QPainter::CompositionMode_Clear);
+        const qreal eyeR = s * 0.088;
+        p.drawEllipse(QPointF(s * 0.375, s * 0.535), eyeR, eyeR * 1.08);
+        p.drawEllipse(QPointF(s * 0.625, s * 0.535), eyeR, eyeR * 1.08);
+
+        p.end();
+        QIcon result(pm);
+        cache.insert(key, result);
+        return result;
+    }
+
+    if (kind == PixelIcon::LeagueOfLegends) {
+        // Recognizable League of Legends gold L emblem framed by an open circular crest
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const qreal s = static_cast<qreal>(logicalSize);
+
+        const qreal ringStroke = std::max<qreal>(1.15, s * 0.075);
+        QColor ringColor = color;
+        ringColor.setAlpha(185);
+        p.setPen(QPen(ringColor, ringStroke, Qt::SolidLine, Qt::RoundCap));
+        p.setBrush(Qt::NoBrush);
+        const QRectF ringRect(s * 0.13, s * 0.13, s * 0.74, s * 0.74);
+        p.drawArc(ringRect, -25 * 16, 105 * 16);
+        p.drawArc(ringRect, 145 * 16, 85 * 16);
+
+        p.setPen(Qt::NoPen);
+        p.setBrush(color);
+        QPainterPath letter;
+        letter.moveTo(s * 0.29, s * 0.16);
+        letter.lineTo(s * 0.49, s * 0.16);
+        letter.lineTo(s * 0.45, s * 0.24);
+        letter.lineTo(s * 0.45, s * 0.69);
+        letter.lineTo(s * 0.67, s * 0.69);
+        letter.lineTo(s * 0.75, s * 0.62);
+        letter.lineTo(s * 0.71, s * 0.83);
+        letter.lineTo(s * 0.28, s * 0.83);
+        letter.lineTo(s * 0.33, s * 0.75);
+        letter.lineTo(s * 0.33, s * 0.24);
+        letter.closeSubpath();
+        p.drawPath(letter);
+
+        p.end();
+        QIcon result(pm);
+        cache.insert(key, result);
+        return result;
+    }
+
+    if (kind == PixelIcon::Cursor) {
+        // Recognizable Cursor isometric 3D faceted cube / directional prism mark
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const qreal s = static_cast<qreal>(logicalSize);
+        const QPointF top(s * 0.50, s * 0.10);
+        const QPointF topRight(s * 0.85, s * 0.30);
+        const QPointF botRight(s * 0.85, s * 0.70);
+        const QPointF bottom(s * 0.50, s * 0.90);
+        const QPointF botLeft(s * 0.15, s * 0.70);
+        const QPointF topLeft(s * 0.15, s * 0.30);
+        const QPointF center(s * 0.50, s * 0.50);
+
+        p.setPen(Qt::NoPen);
+
+        QColor leftFace = color;
+        leftFace.setAlpha(155);
+        p.setBrush(leftFace);
+        QPolygonF leftPoly;
+        leftPoly << top << center << bottom << botLeft << topLeft;
+        p.drawPolygon(leftPoly);
+
+        QColor rightFace = color;
+        rightFace.setAlpha(205);
+        p.setBrush(rightFace);
+        QPolygonF rightPoly;
+        rightPoly << topRight << botRight << bottom << center;
+        p.drawPolygon(rightPoly);
+
+        p.setBrush(color);
+        QPolygonF topPoly;
+        topPoly << top << topRight << center << topLeft;
+        p.drawPolygon(topPoly);
 
         p.end();
         QIcon result(pm);

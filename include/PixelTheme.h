@@ -26,7 +26,10 @@ enum class PixelIcon {
     Edit,
     Help,
     Gear,
-    Spotify
+    Spotify,
+    Discord,
+    LeagueOfLegends,
+    Cursor
 };
 
 namespace PixelTheme {
