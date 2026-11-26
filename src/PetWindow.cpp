@@ -9,7 +9,9 @@
 #include "MovementController.h"
 #include "OnboardingWindow.h"
 #include "PixelTheme.h"
+#include "QuickActionMenu.h"
 #include "SettingsPanel.h"
+#include "SpotifyLauncher.h"
 #include "StudyTimer.h"
 #include "SystemTrayManager.h"
 #include "TimerBubble.h"
@@ -18,17 +20,16 @@
 
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDesktopServices>
 #include <QEnterEvent>
 #include <QHideEvent>
 #include <QShowEvent>
 #include <QGuiApplication>
-#include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QMoveEvent>
 #include <QPainter>
-#include <QPropertyAnimation>
-#include <QPushButton>
 #include <QRegion>
 #include <QScreen>
 #include <QStyle>
@@ -80,6 +81,22 @@ PetWindow::PetWindow(QWidget* parent)
     m_completionToast = std::make_unique<CompletionToast>(nullptr);
     m_alarmNotification = std::make_unique<AlarmNotification>(nullptr);
     m_onboardingWindow = std::make_unique<OnboardingWindow>(m_uiSound.get(), nullptr);
+    m_quickActionMenu = std::make_unique<QuickActionMenu>(nullptr);
+    m_spotifyNotice = std::make_unique<SpotifyNoticePopup>(nullptr);
+    m_spotifyLauncher = std::make_unique<SpotifyLauncher>();
+
+    connect(m_quickActionMenu.get(), &QuickActionMenu::settingsRequested,
+            this, &PetWindow::onSettingsQuickAction);
+    connect(m_quickActionMenu.get(), &QuickActionMenu::spotifyRequested,
+            this, &PetWindow::onSpotifyQuickAction);
+    connect(m_spotifyNotice.get(), &SpotifyNoticePopup::buttonActivated, this, [this]() {
+        if (m_uiSound) {
+            m_uiSound->playClick();
+        }
+    });
+    connect(m_spotifyNotice.get(), &SpotifyNoticePopup::webPlayerRequested, this, []() {
+        QDesktopServices::openUrl(SpotifyLauncher::webPlayerUrl());
+    });
 
     connect(m_onboardingWindow.get(), &OnboardingWindow::onboardingCompleted,
             this, &PetWindow::onOnboardingFinished);
@@ -190,9 +207,6 @@ PetWindow::PetWindow(QWidget* parent)
         exitApplication();
     });
 
-    m_gearHideTimer.setSingleShot(true);
-    connect(&m_gearHideTimer, &QTimer::timeout, this, &PetWindow::hideGear);
-
     m_singleClickTimer.setSingleShot(true);
     connect(&m_singleClickTimer, &QTimer::timeout, this, [this]() {
         if (m_animations) {
@@ -252,37 +266,11 @@ void PetWindow::setupUi()
     m_petLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_petLabel->setStyleSheet(QStringLiteral("background: transparent;"));
     layout->addWidget(m_petLabel);
+}
 
-    m_gearButton = new QPushButton(this);
-    m_gearButton->setFixedSize(30, 30);
-    m_gearButton->setIcon(PixelTheme::icon(PixelIcon::Gear, PixelTheme::kPrimaryText, 18));
-    m_gearButton->setIconSize(QSize(18, 18));
-    m_gearButton->setCursor(Qt::PointingHandCursor);
-    m_gearButton->setToolTip(QStringLiteral("Settings"));
-    m_gearButton->setAccessibleName(QStringLiteral("Open settings"));
-    m_gearButton->setStyleSheet(QStringLiteral(
-        "QPushButton {"
-        "  background: rgba(8, 10, 12, 148);"
-        "  border: 1px solid rgba(255, 255, 255, 12);"
-        "  border-radius: 8px;"
-        "  padding: 0px;"
-        "}"
-        "QPushButton:hover {"
-        "  background: rgba(20, 24, 32, 178);"
-        "  border-color: rgba(138, 185, 255, 95);"
-        "}"
-        "QPushButton:pressed {"
-        "  background: rgba(85, 150, 245, 145);"
-        "  border-color: rgba(180, 214, 255, 90);"
-        "}"));
-    m_gearOpacity = new QGraphicsOpacityEffect(m_gearButton);
-    m_gearOpacity->setOpacity(0.0);
-    m_gearButton->setGraphicsEffect(m_gearOpacity);
-    m_gearFade = new QPropertyAnimation(m_gearOpacity, "opacity", this);
-    m_gearFade->setDuration(200);
-    m_gearButton->hide();
-    connect(m_gearButton, &QPushButton::clicked, this, &PetWindow::onGearClicked);
-
+void PetWindow::setSpotifyLauncher(std::unique_ptr<SpotifyLauncher> launcher)
+{
+    m_spotifyLauncher = launcher ? std::move(launcher) : std::make_unique<SpotifyLauncher>();
 }
 
 QPoint PetWindow::defaultBottomRight() const
@@ -403,8 +391,8 @@ void PetWindow::applySettings()
         }
     }
 
-    if (m_gearButton) {
-        m_gearButton->move(width() - m_gearButton->width() - 2, 2);
+    if (m_quickActionMenu) {
+        m_quickActionMenu->updateAnchor(frameGeometry());
     }
     if (!sizeChanged) {
         m_movement->constrainToScreen();
@@ -483,6 +471,12 @@ void PetWindow::showPet()
 void PetWindow::hidePet()
 {
     hide();
+    if (m_quickActionMenu) {
+        m_quickActionMenu->hideImmediately();
+    }
+    if (m_spotifyNotice) {
+        m_spotifyNotice->dismiss();
+    }
     if (m_bubble) {
         m_bubble->hide();
     }
@@ -496,7 +490,7 @@ void PetWindow::openSettings()
     if (m_movement) {
         m_movement->pause();
     }
-    hideGear();
+    hideQuickActions();
     if (!m_settingsPanel) {
         return;
     }
@@ -536,9 +530,14 @@ void PetWindow::pauseResumeFromTray()
 
 void PetWindow::exitApplication()
 {
-    m_gearHideTimer.stop();
     m_singleClickTimer.stop();
     m_snoozeBubbleTimer.stop();
+    if (m_quickActionMenu) {
+        m_quickActionMenu->hideImmediately();
+    }
+    if (m_spotifyNotice) {
+        m_spotifyNotice->dismiss();
+    }
     if (m_soundManager) {
         m_soundManager->stop();
     }
@@ -586,8 +585,8 @@ void PetWindow::onFacingChanged(bool facingLeft)
 void PetWindow::onPositionMoved(const QPoint& pos)
 {
     m_settings->setLastPosition(pos);
-    if (m_gearButton && m_gearButton->isVisible()) {
-        m_gearButton->move(width() - m_gearButton->width() - 2, 2);
+    if (m_quickActionMenu) {
+        m_quickActionMenu->updateAnchor(frameGeometry());
     }
     if (m_hovering && m_timer->isActive()) {
         updateHoverBubble();
@@ -654,54 +653,67 @@ void PetWindow::mouseDoubleClickEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
         m_singleClickTimer.stop();
-        showGear();
+        showQuickActions();
         event->accept();
         return;
     }
     QWidget::mouseDoubleClickEvent(event);
 }
 
-void PetWindow::showGear()
+void PetWindow::showQuickActions()
 {
-    m_gearButton->move(width() - m_gearButton->width() - 2, 2);
-    m_gearButton->show();
-    m_gearButton->raise();
-    m_gearFade->stop();
-    m_gearFade->setStartValue(m_gearOpacity->opacity());
-    m_gearFade->setEndValue(1.0);
-    m_gearFade->start();
-    m_gearHideTimer.start(5000);
+    if (!m_quickActionMenu) {
+        return;
+    }
+    m_quickActionMenu->showMenu(frameGeometry());
 }
 
-void PetWindow::hideGear()
+void PetWindow::hideQuickActions()
 {
-    m_gearHideTimer.stop();
-    m_gearFade->stop();
-    m_gearFade->setStartValue(m_gearOpacity->opacity());
-    m_gearFade->setEndValue(0.0);
-    connect(m_gearFade, &QPropertyAnimation::finished, this, [this]() {
-        if (m_gearOpacity && m_gearOpacity->opacity() < 0.05) {
-            m_gearButton->hide();
-        }
-    }, Qt::SingleShotConnection);
-    m_gearFade->start();
+    if (!m_quickActionMenu) {
+        return;
+    }
+    m_quickActionMenu->hideMenu();
 }
 
-void PetWindow::onGearClicked()
+void PetWindow::onSettingsQuickAction()
 {
     if (m_uiSound) {
         m_uiSound->playClick();
     }
-    m_gearHideTimer.stop();
     openSettings();
+}
+
+void PetWindow::onSpotifyQuickAction()
+{
+    if (m_uiSound) {
+        m_uiSound->playClick();
+    }
+    if (!m_spotifyLauncher) {
+        return;
+    }
+    const SpotifyLauncher::Result result = m_spotifyLauncher->openOrActivate();
+    if (result.status == SpotifyLauncher::Status::NotInstalled && m_spotifyNotice) {
+        m_spotifyNotice->showNear(
+            frameGeometry(),
+            QStringLiteral("Spotify isn't installed"),
+            QStringLiteral("Install the Spotify desktop app or open the web player."),
+            true);
+    } else if (result.status == SpotifyLauncher::Status::LaunchFailed && m_spotifyNotice) {
+        m_spotifyNotice->showNear(
+            frameGeometry(),
+            QStringLiteral("Couldn't open Spotify"),
+            QStringLiteral("Spotify couldn't be started right now. You can try the web player instead."),
+            true);
+    }
 }
 
 void PetWindow::enterEvent(QEnterEvent* event)
 {
     Q_UNUSED(event);
     m_hovering = true;
-    if (m_gearButton->isVisible()) {
-        m_gearHideTimer.start(5000);
+    if (m_quickActionMenu) {
+        m_quickActionMenu->resetAutoHideTimer();
     }
     updateHoverBubble();
 }
@@ -914,10 +926,18 @@ void PetWindow::paintEvent(QPaintEvent* event)
 void PetWindow::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
-    if (m_gearButton) {
-        m_gearButton->move(width() - m_gearButton->width() - 2, 2);
+    if (m_quickActionMenu) {
+        m_quickActionMenu->updateAnchor(frameGeometry());
     }
     updateHitMask();
+}
+
+void PetWindow::moveEvent(QMoveEvent* event)
+{
+    QWidget::moveEvent(event);
+    if (m_quickActionMenu) {
+        m_quickActionMenu->updateAnchor(frameGeometry());
+    }
 }
 
 bool PetWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
@@ -953,6 +973,12 @@ void PetWindow::closeEvent(QCloseEvent* event)
 void PetWindow::hideEvent(QHideEvent* event)
 {
     QWidget::hideEvent(event);
+    if (m_quickActionMenu) {
+        m_quickActionMenu->hideImmediately();
+    }
+    if (m_spotifyNotice) {
+        m_spotifyNotice->dismiss();
+    }
     if (m_movement) {
         m_movement->pause();
     }

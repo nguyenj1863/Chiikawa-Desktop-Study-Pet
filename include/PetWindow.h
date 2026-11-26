@@ -9,9 +9,6 @@
 
 class QImage;
 class QLabel;
-class QPushButton;
-class QPropertyAnimation;
-class QGraphicsOpacityEffect;
 class AppSettings;
 class AnimationManager;
 class MovementController;
@@ -26,6 +23,9 @@ class AlarmSoundManager;
 class AlarmNotification;
 class OnboardingWindow;
 class UISoundManager;
+class QuickActionMenu;
+class SpotifyNoticePopup;
+class SpotifyLauncher;
 
 #include "AnimationManager.h"
 #include "DesktopLayerHelper.h"
@@ -46,6 +46,10 @@ public:
     [[nodiscard]] AlarmScheduler* alarmScheduler() const { return m_alarmScheduler.get(); }
     [[nodiscard]] MovementController* movementController() const { return m_movement.get(); }
     [[nodiscard]] OnboardingWindow* onboardingWindow() const { return m_onboardingWindow.get(); }
+    [[nodiscard]] QuickActionMenu* quickActionMenu() const { return m_quickActionMenu.get(); }
+    [[nodiscard]] SpotifyNoticePopup* spotifyNotice() const { return m_spotifyNotice.get(); }
+
+    void setSpotifyLauncher(std::unique_ptr<SpotifyLauncher> launcher);
 
     /** Entry point after construction: shows first-launch onboarding or reveals the pet directly. */
     void startApplication();
@@ -77,6 +81,7 @@ protected:
     void leaveEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void moveEvent(QMoveEvent* event) override;
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
     void closeEvent(QCloseEvent* event) override;
     void hideEvent(QHideEvent* event) override;
@@ -90,8 +95,9 @@ private slots:
     void onAlarmDismissed();
     void onFacingChanged(bool facingLeft);
     void onPositionMoved(const QPoint& pos);
-    void hideGear();
-    void onGearClicked();
+    void hideQuickActions();
+    void onSettingsQuickAction();
+    void onSpotifyQuickAction();
     void updateHoverBubble();
     void onOnboardingFinished(bool wasReplay);
 
@@ -102,7 +108,7 @@ private:
     [[nodiscard]] QPoint defaultBottomRight() const;
     [[nodiscard]] bool isSavedPositionSafe(const QPoint& pos) const;
     void updateHitMask();
-    void showGear();
+    void showQuickActions();
     void showCompletionToast();
     void playCompletionFeedback();
 
@@ -121,12 +127,11 @@ private:
     std::unique_ptr<CompletionToast> m_completionToast;
     std::unique_ptr<AlarmNotification> m_alarmNotification;
     std::unique_ptr<OnboardingWindow> m_onboardingWindow;
+    std::unique_ptr<QuickActionMenu> m_quickActionMenu;
+    std::unique_ptr<SpotifyNoticePopup> m_spotifyNotice;
+    std::unique_ptr<SpotifyLauncher> m_spotifyLauncher;
     DesktopLayerHelper m_desktopLayer;
 
-    QPushButton* m_gearButton = nullptr;
-    QGraphicsOpacityEffect* m_gearOpacity = nullptr;
-    QPropertyAnimation* m_gearFade = nullptr;
-    QTimer m_gearHideTimer;
     QTimer m_snoozeBubbleTimer;
 
     bool m_dragging = false;

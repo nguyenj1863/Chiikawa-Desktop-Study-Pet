@@ -38,6 +38,9 @@ set(CHIICAWA_SOURCES
     src/TimerBubble.cpp
     src/CompletionToast.cpp
     src/PixelTheme.cpp
+    src/AnimatedQuickActionButton.cpp
+    src/QuickActionMenu.cpp
+    src/SpotifyLauncher.cpp
     src/CollapsibleSection.cpp
     src/AlarmSoundManager.cpp
     src/UISoundManager.cpp
@@ -64,6 +67,9 @@ set(CHIICAWA_HEADERS
     include/TimerBubble.h
     include/CompletionToast.h
     include/PixelTheme.h
+    include/AnimatedQuickActionButton.h
+    include/QuickActionMenu.h
+    include/SpotifyLauncher.h
     include/CollapsibleSection.h
     include/AlarmSoundManager.h
     include/UISoundManager.h
@@ -103,10 +109,14 @@ if(WIN32)
         OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/chiikawa.ico"
     )
     target_sources(ChiikawaStudyPet PRIVATE resources/app.rc)
-    target_link_libraries(ChiikawaStudyPet PRIVATE user32 shell32 ole32)
+    target_link_libraries(ChiikawaStudyPet PRIVATE user32 shell32 ole32 advapi32)
 elseif(APPLE)
     enable_language(OBJCXX)
-    target_sources(ChiikawaStudyPet PRIVATE src/MacWindowHelper.mm include/MacWindowHelper.h)
+    target_sources(ChiikawaStudyPet PRIVATE
+        src/MacWindowHelper.mm
+        include/MacWindowHelper.h
+        src/SpotifyLauncher_mac.mm
+    )
     target_link_libraries(ChiikawaStudyPet PRIVATE "-framework AppKit")
     configure_file(
         "${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in"
@@ -211,6 +221,12 @@ chiikawa_add_test(test_onboarding
     include/CompletionToast.h
     src/PixelTheme.cpp
     include/PixelTheme.h
+    src/AnimatedQuickActionButton.cpp
+    include/AnimatedQuickActionButton.h
+    src/QuickActionMenu.cpp
+    include/QuickActionMenu.h
+    src/SpotifyLauncher.cpp
+    include/SpotifyLauncher.h
     src/CollapsibleSection.cpp
     include/CollapsibleSection.h
     src/AlarmSoundManager.cpp
@@ -240,9 +256,13 @@ chiikawa_add_test(test_onboarding
     resources/resources.qrc
 )
 if(WIN32)
-    target_link_libraries(test_onboarding PRIVATE user32)
+    target_link_libraries(test_onboarding PRIVATE user32 shell32 advapi32)
 elseif(APPLE)
-    target_sources(test_onboarding PRIVATE src/MacWindowHelper.mm include/MacWindowHelper.h)
+    target_sources(test_onboarding PRIVATE
+        src/MacWindowHelper.mm
+        include/MacWindowHelper.h
+        src/SpotifyLauncher_mac.mm
+    )
     target_link_libraries(test_onboarding PRIVATE "-framework AppKit")
 endif()
 
