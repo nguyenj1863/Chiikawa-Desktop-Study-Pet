@@ -10,6 +10,7 @@
 #include "CollapsibleSection.h"
 #include "DesktopLayerHelper.h"
 #include "PixelTheme.h"
+#include "QuickActionsEditor.h"
 #include "SettingsDefaults.h"
 #include "StartupManager.h"
 #include "StudyTimer.h"
@@ -884,6 +885,21 @@ void SettingsPanel::buildUi()
         petBody->addWidget(cb);
     }
 
+    m_quickActionsEditor = new QuickActionsEditor(m_contentWidget);
+    m_quickActionsEditor->setObjectName(QStringLiteral("quickActionsEditor"));
+    connect(m_quickActionsEditor, &QuickActionsEditor::userInteracted,
+            this, &SettingsPanel::playUiClick);
+    connect(m_quickActionsEditor, &QuickActionsEditor::shortcutsChanged,
+            this, [this](const QVector<QuickActionItem>& items) {
+                if (m_syncingUi || !m_settings) {
+                    return;
+                }
+                m_settings->setQuickActions(items);
+                m_settings->save();
+                emit settingsApplied();
+            });
+    petBody->addWidget(m_quickActionsEditor);
+
     auto* restoreBtn = new QPushButton(
         PixelTheme::icon(PixelIcon::RestoreDefaults, PixelTheme::kSecondaryText, 12),
         QStringLiteral(" Restore Defaults"), m_contentWidget);
@@ -1030,6 +1046,9 @@ void SettingsPanel::syncFromSettings()
     m_animCheck->setChecked(m_settings->autoAnimationEnabled());
     m_desktopOnlyCheck->setChecked(DesktopLayerHelper::isSupported() && m_settings->desktopOnlyMode());
     m_startupCheck->setChecked(m_settings->launchOnStartup());
+    if (m_quickActionsEditor) {
+        m_quickActionsEditor->setShortcuts(m_settings->quickActions());
+    }
 
     m_soundCheck->setChecked(m_settings->soundEnabled());
     m_buttonSoundsCheck->setChecked(m_settings->buttonSoundsEnabled());

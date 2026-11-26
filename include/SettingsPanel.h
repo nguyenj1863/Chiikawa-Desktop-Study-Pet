@@ -8,6 +8,7 @@ class AlarmSoundManager;
 class AppSettings;
 class CollapsibleSection;
 class PixelIconButton;
+class QuickActionsEditor;
 class QCheckBox;
 class QComboBox;
 class QLabel;
@@ -170,6 +171,7 @@ private:
     QCheckBox* m_animCheck = nullptr;
     QCheckBox* m_desktopOnlyCheck = nullptr;
     QCheckBox* m_startupCheck = nullptr;
+    QuickActionsEditor* m_quickActionsEditor = nullptr;
 
     bool m_use24Hour = false;
     bool m_syncingUi = false;
