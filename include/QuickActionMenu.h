@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ExternalAppLauncher.h"
+#include "SettingsDefaults.h"
 
 #include <QElapsedTimer>
 #include <QPointF>
@@ -122,13 +123,17 @@ public:
     static constexpr qreal kRetargetThresholdPx = 3.0;
     static constexpr int kDefaultAutoHideMs = 5000;
     static constexpr int kDefaultLeaveHideMs = 2500;
-    static constexpr qreal kTargetVerticalStepPx = 19.0; // ~40.6% overlap on 32px visual tiles
-    static constexpr qreal kSilhouetteClearancePx = 54.0; // ~27px farther right than prior 27px
+    static constexpr qreal kTargetOverlapRatio = 0.15; // ~15% layered-card overlap
+    static constexpr qreal kArcHalfSpanDeg = 60.0;     // 120° C-shaped circular arc
+    static constexpr qreal kSpriteEdgeGapPx = 18.0;    // minimum clear gap from sprite silhouette
 
     explicit QuickActionMenu(QWidget* parent = nullptr);
     ~QuickActionMenu() override;
 
     void setAnchorWidget(QWidget* petWidget);
+
+    void setIconScalePercent(int percent);
+    [[nodiscard]] int iconScalePercent() const { return m_iconScalePercent; }
 
     void showMenu(const QRect& petGlobalGeometry, const QRect& visibleSpriteLocalRect = {});
     void toggleMenu(const QRect& petGlobalGeometry, const QRect& visibleSpriteLocalRect = {});
@@ -180,12 +185,15 @@ public:
 
     [[nodiscard]] static Layout computeLayout(const QRect& petGlobalGeometry,
                                               const QRect& visibleSpriteLocalRect,
-                                              const QRect& screenBounds);
+                                              const QRect& screenBounds,
+                                              int iconScalePercent = SettingsDefaults::kQuickActionIconScalePercent);
 
     [[nodiscard]] static Layout computeLayout(const QRect& petGlobalGeometry,
-                                              const QRect& screenBounds);
+                                              const QRect& screenBounds,
+                                              int iconScalePercent = SettingsDefaults::kQuickActionIconScalePercent);
 
 signals:
+    void activeStateChanged(bool active);
     void externalAppRequested(ExternalAppLauncher::AppId app);
     void spotifyRequested();
     void settingsRequested();
@@ -207,6 +215,7 @@ private slots:
 
 private:
     void triggerAction(int index);
+    void setActiveFlag(bool active);
     void applyDefaultStackOrder();
     void syncOutwardDirection();
     void startRevealForIndex(int index);
@@ -235,6 +244,8 @@ private:
     Layout m_retargetFrom;
     Layout m_retargetTo;
     State m_state = State::Closed;
+    bool m_active = false;
+    int m_iconScalePercent = SettingsDefaults::kQuickActionIconScalePercent;
     int m_hoveredIndex = -1;
     int m_pressedIndex = -1;
     int m_autoHideMs = kDefaultAutoHideMs;

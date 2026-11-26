@@ -1,11 +1,13 @@
 #pragma once
 
 #include "PixelTheme.h"
+#include "SettingsDefaults.h"
 
 #include <QAbstractButton>
 #include <QColor>
 #include <QPixmap>
 #include <QPointF>
+#include <QRectF>
 
 class QEnterEvent;
 class QEvent;
@@ -16,16 +18,18 @@ class QTimer;
 
 /**
  * Compact translucent quick-action card with a two-phase "pull file out of a
- * folder" hover micro-interaction:
+ * folder" hover micro-interaction and dynamic base-size scaling (80%–150%,
+ * default 110%).
  *
  *   Phase 1 (Pull-Out, ~100 ms): slides upward and outward from the stack while
  *                                brightening its translucent glass surface.
  *   Phase 2 (Grow & Twist, ~185 ms, staggered ~45 ms after Phase 1): enlarges
- *                                to ~1.32x and tilts ±5–7° around its visual center.
+ *                                to ~1.32x and tilts ±5.5–6.5° around its visual center.
  *
- * All transforms are painted inside a fixed 84×84 canvas centered on the 32×32
- * resting tile so widget geometry never resizes and hover enlargement never clips.
- * Menu reveal/dismiss opacity is animated independently via `menuOpacity`.
+ * All dimensions are derived directly from immutable base constants and the
+ * configured scale percentage so repeated slider adjustments never compound.
+ * Transforms paint inside a generously padded fixed canvas so widget geometry
+ * never shifts during hover and enlargement never clips.
  */
 class AnimatedQuickActionButton : public QAbstractButton {
     Q_OBJECT
@@ -37,16 +41,15 @@ class AnimatedQuickActionButton : public QAbstractButton {
     Q_PROPERTY(qreal menuOpacity READ menuOpacity WRITE setMenuOpacity)
 
 public:
-    static constexpr int kWidgetSize = 84;
-    static constexpr int kVisualSize = 32;
-    static constexpr int kIconSize = 18;
+    static constexpr int kBaseVisualSize = 34;
+    static constexpr int kBaseIconSize = 19;
 
     static constexpr qreal kRestScale = 1.00;
     static constexpr qreal kHoverScale = 1.32;
     static constexpr qreal kPressScale = 1.20;
 
-    static constexpr qreal kPullOutX = 11.0;
-    static constexpr qreal kPullOutY = -13.0;
+    static constexpr qreal kBasePullOutX = 11.0;
+    static constexpr qreal kBasePullOutY = -13.0;
 
     static constexpr int kPullOutMs = 100;
     static constexpr int kGrowTwistDelayMs = 45;
@@ -60,6 +63,17 @@ public:
                               const QColor& hoverIconColor,
                               qreal hoverRotationDegrees,
                               QWidget* parent = nullptr);
+
+    [[nodiscard]] static int clampScalePercent(int percent);
+    [[nodiscard]] static int visualSizeForScale(int percent);
+    [[nodiscard]] static int iconSizeForScale(int percent);
+    [[nodiscard]] static int widgetSizeForScale(int percent);
+
+    void setScalePercent(int percent);
+    [[nodiscard]] int scalePercent() const { return m_scalePercent; }
+    [[nodiscard]] int visualSize() const { return m_visualSize; }
+    [[nodiscard]] int iconSizePx() const { return m_iconSize; }
+    [[nodiscard]] int widgetSizePx() const { return m_widgetSize; }
 
     [[nodiscard]] qreal hoverScale() const { return m_hoverScale; }
     void setHoverScale(qreal scale);
@@ -98,11 +112,10 @@ public:
     /** Immediately stops hover/press animations and restores resting scale=1, rotation=0, offset=(0,0). */
     void resetVisualState();
 
-    /** Returns the 32×32 resting visual rect in this widget's local coordinates. */
-    [[nodiscard]] static QRectF restingVisualRectLocal();
+    [[nodiscard]] QRectF restingVisualRectLocal() const;
 
-    [[nodiscard]] QSize sizeHint() const override { return {kWidgetSize, kWidgetSize}; }
-    [[nodiscard]] QSize minimumSizeHint() const override { return {kWidgetSize, kWidgetSize}; }
+    [[nodiscard]] QSize sizeHint() const override { return {m_widgetSize, m_widgetSize}; }
+    [[nodiscard]] QSize minimumSizeHint() const override { return {m_widgetSize, m_widgetSize}; }
 
 signals:
     void hoveredChanged(bool hovered);
@@ -126,6 +139,14 @@ private:
     QColor m_hoverIconColor;
     QPixmap m_restPixmap;
     QPixmap m_hoverPixmap;
+    int m_cachedPixmapIconSize = 0;
+
+    int m_scalePercent = SettingsDefaults::kQuickActionIconScalePercent;
+    int m_visualSize = 37;
+    int m_iconSize = 21;
+    int m_widgetSize = 96;
+    qreal m_pullOutX = kBasePullOutX;
+    qreal m_pullOutY = kBasePullOutY;
 
     qreal m_targetHoverRotation = 6.0;
     qreal m_outwardDirection = 1.0;

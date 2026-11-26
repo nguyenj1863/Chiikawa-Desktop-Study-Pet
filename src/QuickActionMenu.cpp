@@ -32,9 +32,6 @@
 
 namespace {
 
-constexpr int kBtnSize = AnimatedQuickActionButton::kWidgetSize;
-constexpr int kBtnHalf = kBtnSize / 2;
-constexpr qreal kVisHalf = AnimatedQuickActionButton::kVisualSize * 0.5;
 constexpr qreal kPi = 3.14159265358979323846;
 constexpr qreal kTwoPi = 2.0 * kPi;
 constexpr qreal kDegToRad = kPi / 180.0;
@@ -353,6 +350,54 @@ void QuickActionMenu::setAnchorWidget(QWidget* petWidget)
     m_anchorWidget = petWidget;
 }
 
+void QuickActionMenu::setIconScalePercent(int percent)
+{
+    const int clamped = AnimatedQuickActionButton::clampScalePercent(percent);
+    if (m_iconScalePercent == clamped) {
+        return;
+    }
+    m_iconScalePercent = clamped;
+    for (auto* btn : m_buttons) {
+        if (btn) {
+            btn->setScalePercent(m_iconScalePercent);
+        }
+    }
+
+    if (m_state != State::Closed && m_lastPetRect.isValid()) {
+        const Layout next = computeLayout(
+            m_lastPetRect, m_lastSpriteLocalRect, screenBoundsForPet(m_lastPetRect), m_iconScalePercent);
+        if (isReducedMotionActive()) {
+            m_retargetAnim->stop();
+            m_layout = next;
+            setGeometry(m_layout.overlayRect);
+            syncOutwardDirection();
+            applyAllIconProgress();
+        } else {
+            m_retargetFrom = m_layout;
+            m_retargetTo = next;
+            {
+                QSignalBlocker blocker(m_retargetAnim);
+                m_retargetAnim->stop();
+                m_retargetAnim->setDuration(kRetargetMs);
+                m_retargetAnim->setEasingCurve(QEasingCurve::OutCubic);
+                m_retargetAnim->setStartValue(0.0);
+                m_retargetAnim->setEndValue(1.0);
+                m_retargetAnim->setCurrentTime(0);
+            }
+            m_retargetAnim->start();
+        }
+    }
+}
+
+void QuickActionMenu::setActiveFlag(bool active)
+{
+    if (m_active == active) {
+        return;
+    }
+    m_active = active;
+    emit activeStateChanged(m_active);
+}
+
 AnimatedQuickActionButton* QuickActionMenu::buttonAt(int index) const
 {
     if (index < 0 || index >= ActionCount) {
@@ -391,19 +436,25 @@ qreal QuickActionMenu::opacityForProgress(qreal t)
 }
 
 QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeometry,
-                                                       const QRect& screenBounds)
+                                                       const QRect& screenBounds,
+                                                       int iconScalePercent)
 {
-    return computeLayout(petGlobalGeometry, QRect{}, screenBounds);
+    return computeLayout(petGlobalGeometry, QRect{}, screenBounds, iconScalePercent);
 }
 
 QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeometry,
                                                        const QRect& visibleSpriteLocalRect,
-                                                       const QRect& screenBounds)
+                                                       const QRect& screenBounds,
+                                                       int iconScalePercent)
 {
     Layout layout;
 
     const int petW = std::max(40, petGlobalGeometry.width());
     const int petH = std::max(40, petGlobalGeometry.height());
+    const int visualSize = AnimatedQuickActionButton::visualSizeForScale(iconScalePercent);
+    const int btnSize = AnimatedQuickActionButton::widgetSizeForScale(iconScalePercent);
+    const qreal btnHalf = btnSize * 0.5;
+    const qreal visHalf = visualSize * 0.5;
 
     // Derive visible sprite rect in global coordinates (fallback to inset pet rect).
     QRect spriteGlobal;
@@ -415,47 +466,49 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
         spriteGlobal = petGlobalGeometry.adjusted(insetX, insetY, -insetX, -insetY);
     }
 
-    QPointF orbitCenter(spriteGlobal.left() + spriteGlobal.width() * 0.50,
-                        spriteGlobal.top() + spriteGlobal.height() * 0.50);
+    // Pronounced C-shaped circular arc spanning 120° (-60°..+60°) with ~15% layered-card overlap.
+    constexpr qreal kHalfSpanRad = kArcHalfSpanDeg * kDegToRad;
+    const qreal stepAngle = (2.0 * kHalfSpanRad) / static_cast<qreal>(ActionCount - 1); // 24°
+    const qreal targetChord = visualSize * (1.0 - kTargetOverlapRatio);
+    const qreal baseRadius = targetChord / (2.0 * std::sin(stepAngle * 0.5));
+    const qreal radiusX = baseRadius * 1.06;
+    const qreal radiusY = baseRadius * 0.96;
 
-    const qreal spriteHalfW = std::max<qreal>(16.0, spriteGlobal.width() * 0.50);
-    const qreal spriteHalfH = std::max<qreal>(16.0, spriteGlobal.height() * 0.50);
-
-    // Position the overlapping stack ~24–27 px farther right of Chiikawa's visible silhouette.
-    const qreal radiusX = std::max<qreal>(86.0, spriteHalfW + kSilhouetteClearancePx);
-    // Vertical radius chosen so 6 cards along a gentle arc overlap ~40–45% (~19px center-to-center).
-    const qreal radiusY = std::max<qreal>(118.0, spriteHalfH + 58.0);
-
-    const qreal sinStep = std::clamp(kTargetVerticalStepPx / radiusY, 0.12, 0.28);
-    const qreal stepAngle = std::asin(sinStep); // ~9.2° at default sprite size
+    // Place orbit center so even the innermost top/bottom cards (cos 60° = 0.50) clear
+    // Chiikawa's visible silhouette by at least kSpriteEdgeGapPx (~18px).
+    const qreal cosEdge = std::cos(kHalfSpanRad);
+    const qreal centerY = spriteGlobal.top() + spriteGlobal.height() * 0.50;
+    const qreal rightOrbitX = (spriteGlobal.right() + 1) + kSpriteEdgeGapPx + visHalf - cosEdge * radiusX;
+    const qreal leftOrbitX = spriteGlobal.left() - kSpriteEdgeGapPx - visHalf + cosEdge * radiusX;
 
     // Mirror to the left side when there isn't enough room on the right screen edge.
     if (screenBounds.isValid()
-        && (orbitCenter.x() + radiusX + kBtnHalf + 2.0 > screenBounds.right() + 1)) {
-        const qreal spaceRight = (screenBounds.right() + 1) - orbitCenter.x();
-        const qreal spaceLeft = orbitCenter.x() - screenBounds.left();
+        && (rightOrbitX + radiusX + btnHalf + 2.0 > screenBounds.right() + 1)) {
+        const qreal spaceRight = (screenBounds.right() + 1) - (spriteGlobal.right() + 1);
+        const qreal spaceLeft = spriteGlobal.left() - screenBounds.left();
         if (spaceLeft > spaceRight) {
             layout.mirroredLeft = true;
         }
     }
 
+    QPointF orbitCenter(layout.mirroredLeft ? leftOrbitX : rightOrbitX, centerY);
+
     std::array<qreal, ActionCount> endAngles{};
     std::array<qreal, ActionCount> startAngles{};
-    const qreal halfSpan = (ActionCount - 1) * 0.5; // 2.5 for 6 icons
+    const qreal halfSteps = (ActionCount - 1) * 0.5; // 2.5 for 6 icons
 
     if (!layout.mirroredLeft) {
-        constexpr qreal kMidAngle = -4.0 * kDegToRad;
         for (int i = 0; i < ActionCount; ++i) {
-            endAngles[static_cast<std::size_t>(i)] = kMidAngle + (i - halfSpan) * stepAngle;
+            endAngles[static_cast<std::size_t>(i)] = (i - halfSteps) * stepAngle;
             // All six sweep upward counter-clockwise from lower-right of Chiikawa.
-            startAngles[static_cast<std::size_t>(i)] = (66.0 + i * 4.0) * kDegToRad;
+            startAngles[static_cast<std::size_t>(i)] = (84.0 + i * 4.0) * kDegToRad;
         }
     } else {
-        constexpr qreal kMidAngle = (180.0 + 4.0) * kDegToRad;
+        constexpr qreal kMidAngle = 180.0 * kDegToRad;
         for (int i = 0; i < ActionCount; ++i) {
-            endAngles[static_cast<std::size_t>(i)] = kMidAngle - (i - halfSpan) * stepAngle;
+            endAngles[static_cast<std::size_t>(i)] = kMidAngle - (i - halfSteps) * stepAngle;
             // All six sweep upward clockwise from lower-left of Chiikawa.
-            startAngles[static_cast<std::size_t>(i)] = (114.0 - i * 4.0) * kDegToRad;
+            startAngles[static_cast<std::size_t>(i)] = (96.0 - i * 4.0) * kDegToRad;
         }
     }
 
@@ -468,8 +521,8 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
             minEndY = std::min(minEndY, y);
             maxEndY = std::max(maxEndY, y);
         }
-        const qreal allowedTop = screenBounds.top() + kBtnHalf + 2.0;
-        const qreal allowedBottom = (screenBounds.bottom() + 1) - kBtnHalf - 2.0;
+        const qreal allowedTop = screenBounds.top() + btnHalf + 2.0;
+        const qreal allowedBottom = (screenBounds.bottom() + 1) - btnHalf - 2.0;
         if (minEndY < allowedTop) {
             orbitCenter.ry() += (allowedTop - minEndY);
         } else if (maxEndY > allowedBottom) {
@@ -513,12 +566,12 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
         }
     }
 
-    const int pad = kBtnHalf + 4;
+    const int pad = static_cast<int>(std::ceil(btnHalf)) + 4;
     const int left = static_cast<int>(std::floor(minX)) - pad;
     const int top = static_cast<int>(std::floor(minY)) - pad;
     const int right = static_cast<int>(std::ceil(maxX)) + pad;
     const int bottom = static_cast<int>(std::ceil(maxY)) + pad;
-    layout.overlayRect = QRect(left, top, std::max(kBtnSize, right - left), std::max(kBtnSize, bottom - top));
+    layout.overlayRect = QRect(left, top, std::max(btnSize, right - left), std::max(btnSize, bottom - top));
 
     const QPointF offset(layout.overlayRect.topLeft());
     for (int i = 0; i < ActionCount; ++i) {
@@ -555,10 +608,9 @@ QRectF QuickActionMenu::restingVisualRect(int index) const
     if (!btn) {
         return {};
     }
+    const qreal vis = static_cast<qreal>(btn->visualSize());
     const QPointF center = QRectF(btn->geometry()).center();
-    return QRectF(center.x() - kVisHalf, center.y() - kVisHalf,
-                  AnimatedQuickActionButton::kVisualSize,
-                  AnimatedQuickActionButton::kVisualSize);
+    return QRectF(center.x() - vis * 0.5, center.y() - vis * 0.5, vis, vis);
 }
 
 int QuickActionMenu::hitTestButton(const QPoint& localPos) const
@@ -668,10 +720,11 @@ void QuickActionMenu::applyIconProgress(int index, qreal t) const
     if (index < 0 || index >= ActionCount || !m_buttons[static_cast<std::size_t>(index)]) {
         return;
     }
+    AnimatedQuickActionButton* btn = m_buttons[static_cast<std::size_t>(index)];
+    const int btnHalf = btn->widgetSizePx() / 2;
     const QPointF center = evaluateArc(m_layout.arcAt(index), t);
-    m_buttons[static_cast<std::size_t>(index)]->move(qRound(center.x()) - kBtnHalf,
-                                                     qRound(center.y()) - kBtnHalf);
-    m_buttons[static_cast<std::size_t>(index)]->setMenuOpacity(opacityForProgress(t));
+    btn->move(qRound(center.x()) - btnHalf, qRound(center.y()) - btnHalf);
+    btn->setMenuOpacity(opacityForProgress(t));
 }
 
 void QuickActionMenu::applyAllIconProgress() const
@@ -723,7 +776,7 @@ void QuickActionMenu::updateAnchor(const QRect& petGlobalGeometry,
         return;
     }
 
-    const Layout next = computeLayout(petGlobalGeometry, m_lastSpriteLocalRect, screenBoundsForPet(petGlobalGeometry));
+    const Layout next = computeLayout(petGlobalGeometry, m_lastSpriteLocalRect, screenBoundsForPet(petGlobalGeometry), m_iconScalePercent);
     if (isRetargeting()) {
         const QPoint delta = next.overlayRect.topLeft() - m_retargetTo.overlayRect.topLeft();
         m_retargetFrom.overlayRect.translate(delta);
@@ -753,7 +806,7 @@ void QuickActionMenu::updateSpriteBounds(const QRect& petGlobalGeometry,
         return;
     }
 
-    const Layout next = computeLayout(petGlobalGeometry, visibleSpriteLocalRect, screenBoundsForPet(petGlobalGeometry));
+    const Layout next = computeLayout(petGlobalGeometry, visibleSpriteLocalRect, screenBoundsForPet(petGlobalGeometry), m_iconScalePercent);
 
     const Layout& refLayout = isRetargeting() ? m_retargetTo : m_layout;
     const QPointF refOffset(refLayout.overlayRect.topLeft());
@@ -821,9 +874,10 @@ void QuickActionMenu::showMenu(const QRect& petGlobalGeometry,
     }
     m_retargetAnim->stop();
 
-    m_layout = computeLayout(petGlobalGeometry, m_lastSpriteLocalRect, screenBoundsForPet(petGlobalGeometry));
+    m_layout = computeLayout(petGlobalGeometry, m_lastSpriteLocalRect, screenBoundsForPet(petGlobalGeometry), m_iconScalePercent);
     setGeometry(m_layout.overlayRect);
     syncOutwardDirection();
+    setActiveFlag(true);
 
     for (auto* btn : m_buttons) {
         btn->show();
@@ -986,6 +1040,7 @@ void QuickActionMenu::finishDismissal()
     const bool wasActive = (m_state != State::Closed);
     m_state = State::Closed;
     hide();
+    setActiveFlag(false);
     if (wasActive) {
         emit dismissed();
     }

@@ -11,6 +11,37 @@
 #include <algorithm>
 #include <cmath>
 
+int AnimatedQuickActionButton::clampScalePercent(int percent)
+{
+    return std::clamp(percent,
+                      SettingsDefaults::kMinQuickActionIconScalePercent,
+                      SettingsDefaults::kMaxQuickActionIconScalePercent);
+}
+
+int AnimatedQuickActionButton::visualSizeForScale(int percent)
+{
+    const qreal factor = clampScalePercent(percent) / 100.0;
+    return std::max(24, qRound(kBaseVisualSize * factor));
+}
+
+int AnimatedQuickActionButton::iconSizeForScale(int percent)
+{
+    const qreal factor = clampScalePercent(percent) / 100.0;
+    return std::max(14, qRound(kBaseIconSize * factor));
+}
+
+int AnimatedQuickActionButton::widgetSizeForScale(int percent)
+{
+    const qreal factor = clampScalePercent(percent) / 100.0;
+    const int vis = visualSizeForScale(percent);
+    const qreal pullScale = std::clamp(factor, 0.85, 1.30);
+    const qreal pullReach = std::max(std::abs(kBasePullOutX), std::abs(kBasePullOutY)) * pullScale;
+    // Account for 1.32x hover scale, ±6.5° rotation, and OutBack overshoot (~1.16x)
+    const qreal halfExtent = vis * 0.5 * kHoverScale * 1.18 + pullReach + 5.0;
+    const int size = static_cast<int>(std::ceil(halfExtent)) * 2;
+    return std::max(80, size);
+}
+
 AnimatedQuickActionButton::AnimatedQuickActionButton(PixelIcon iconKind,
                                                      const QColor& iconColor,
                                                      const QColor& hoverIconColor,
@@ -22,7 +53,6 @@ AnimatedQuickActionButton::AnimatedQuickActionButton(PixelIcon iconKind,
     , m_hoverIconColor(hoverIconColor)
     , m_targetHoverRotation(hoverRotationDegrees)
 {
-    setFixedSize(kWidgetSize, kWidgetSize);
     setCursor(Qt::PointingHandCursor);
     setFocusPolicy(Qt::NoFocus);
     setMouseTracking(true);
@@ -38,22 +68,45 @@ AnimatedQuickActionButton::AnimatedQuickActionButton(PixelIcon iconKind,
     m_phase2Timer->setSingleShot(true);
     connect(m_phase2Timer, &QTimer::timeout, this, &AnimatedQuickActionButton::startPhase2GrowAndTwist);
 
-    rebuildIconPixmaps();
+    setScalePercent(SettingsDefaults::kQuickActionIconScalePercent);
 }
 
-QRectF AnimatedQuickActionButton::restingVisualRectLocal()
+void AnimatedQuickActionButton::setScalePercent(int percent)
 {
-    const qreal margin = (kWidgetSize - kVisualSize) * 0.5;
-    return QRectF(margin, margin, kVisualSize, kVisualSize);
+    const int clamped = clampScalePercent(percent);
+    const qreal factor = clamped / 100.0;
+    const qreal pullScale = std::clamp(factor, 0.85, 1.30);
+
+    m_scalePercent = clamped;
+    m_visualSize = visualSizeForScale(clamped);
+    m_iconSize = iconSizeForScale(clamped);
+    m_widgetSize = widgetSizeForScale(clamped);
+    m_pullOutX = kBasePullOutX * pullScale;
+    m_pullOutY = kBasePullOutY * pullScale;
+
+    if (size() != QSize(m_widgetSize, m_widgetSize)) {
+        setFixedSize(m_widgetSize, m_widgetSize);
+    }
+    if (m_cachedPixmapIconSize != m_iconSize) {
+        rebuildIconPixmaps();
+    }
+    update();
+}
+
+QRectF AnimatedQuickActionButton::restingVisualRectLocal() const
+{
+    const qreal margin = (m_widgetSize - m_visualSize) * 0.5;
+    return QRectF(margin, margin, m_visualSize, m_visualSize);
 }
 
 void AnimatedQuickActionButton::rebuildIconPixmaps()
 {
-    const QIcon restIcon = PixelTheme::icon(m_iconKind, m_iconColor, kIconSize);
-    const QIcon hoverIcon = PixelTheme::icon(m_iconKind, m_hoverIconColor, kIconSize);
-    // Request 3x DPR pixmaps so 1.32x hover enlargement + rotation stays crisp.
-    m_restPixmap = restIcon.pixmap(QSize(kIconSize, kIconSize), 3.0);
-    m_hoverPixmap = hoverIcon.pixmap(QSize(kIconSize, kIconSize), 3.0);
+    m_cachedPixmapIconSize = m_iconSize;
+    const QIcon restIcon = PixelTheme::icon(m_iconKind, m_iconColor, m_iconSize);
+    const QIcon hoverIcon = PixelTheme::icon(m_iconKind, m_hoverIconColor, m_iconSize);
+    // Request 3x DPR pixmaps so 1.32x hover enlargement + rotation stays crisp at any scale.
+    m_restPixmap = restIcon.pixmap(QSize(m_iconSize, m_iconSize), 3.0);
+    m_hoverPixmap = hoverIcon.pixmap(QSize(m_iconSize, m_iconSize), 3.0);
 }
 
 void AnimatedQuickActionButton::setHoverScale(qreal scale)
@@ -200,8 +253,8 @@ void AnimatedQuickActionButton::startHoverInAnimation()
         return;
     }
 
-    // Phase 1: Pull out upward & outward from the overlapping stack + brighten glass
-    const QPointF targetOffset(kPullOutX * m_outwardDirection, kPullOutY);
+    // Phase 1: Pull out upward & outward from the overlapping arc + brighten glass
+    const QPointF targetOffset(m_pullOutX * m_outwardDirection, m_pullOutY);
     m_offsetAnim->stop();
     m_offsetAnim->setDuration(kPullOutMs);
     m_offsetAnim->setEasingCurve(QEasingCurve::OutCubic);
@@ -216,11 +269,10 @@ void AnimatedQuickActionButton::startHoverInAnimation()
     m_hoverProgressAnim->setEndValue(1.0);
     m_hoverProgressAnim->start();
 
-    // Stop any reverse scale/rotation animation that was returning to rest
     m_scaleAnim->stop();
     m_rotationAnim->stop();
 
-    // Phase 2: Begin noticeable enlargement & subtle twist shortly after pull-out starts
+    // Phase 2: Enlarge to 1.32x and twist shortly after pull-out begins
     m_phase2Timer->start(kGrowTwistDelayMs);
 }
 
@@ -269,7 +321,6 @@ void AnimatedQuickActionButton::startHoverOutAnimation()
         return;
     }
 
-    // Smoothly slide the card back into its resting slot in the stack
     m_rotationAnim->stop();
     m_rotationAnim->setDuration(kHoverOutMs);
     m_rotationAnim->setEasingCurve(QEasingCurve::OutCubic);
@@ -379,24 +430,24 @@ void AnimatedQuickActionButton::paintEvent(QPaintEvent* event)
     p.scale(m_hoverScale, m_hoverScale);
     p.translate(-center);
 
-    const qreal halfVis = kVisualSize * 0.5;
-    const QRectF surface(center.x() - halfVis, center.y() - halfVis, kVisualSize, kVisualSize);
-    constexpr qreal kCornerRadius = 9.0;
+    const qreal halfVis = m_visualSize * 0.5;
+    const QRectF surface(center.x() - halfVis, center.y() - halfVis, m_visualSize, m_visualSize);
+    const qreal cornerRadius = std::clamp(m_visualSize * 0.27, 7.5, 13.0);
 
     QPainterPath surfacePath;
-    surfacePath.addRoundedRect(surface, kCornerRadius, kCornerRadius);
+    surfacePath.addRoundedRect(surface, cornerRadius, cornerRadius);
 
-    // Subtle elevation shadow only when pulled out of the stack (keeps stack clean at rest)
+    // Subtle elevation shadow when pulled out of the stack
     if (m_hoverProgress > 0.02) {
         const QRectF shadowRect = surface.translated(0.0, 2.5 * m_hoverProgress);
         QPainterPath shadowPath;
-        shadowPath.addRoundedRect(shadowRect, kCornerRadius, kCornerRadius);
+        shadowPath.addRoundedRect(shadowRect, cornerRadius, cornerRadius);
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(0, 0, 0, qRound(58.0 * m_hoverProgress)));
         p.drawPath(shadowPath);
     }
 
-    // Smoked-black translucent glass base (more prominent on hover while remaining translucent)
+    // Smoked-black translucent glass base
     const int baseAlpha = std::clamp(qRound(162.0 + 34.0 * m_hoverProgress + 16.0 * m_pressProgress), 0, 224);
     p.setPen(Qt::NoPen);
     p.setBrush(QColor(PixelTheme::kBackground.red(),
@@ -412,17 +463,17 @@ void AnimatedQuickActionButton::paintEvent(QPaintEvent* event)
         p.drawPath(surfacePath);
     }
 
-    // Restrained translucent hairline border (helps separate overlapping cards without white outlines)
+    // Restrained translucent hairline border
     const int borderAlpha = std::clamp(qRound(22.0 + 28.0 * m_hoverProgress + 16.0 * m_pressProgress), 0, 74);
     p.setBrush(Qt::NoBrush);
     p.setPen(QPen(QColor(255, 255, 255, borderAlpha), 1.0));
     p.drawPath(surfacePath);
 
     // Crisp foreground icon centered on the button surface
-    const QRectF iconRect(center.x() - kIconSize * 0.5,
-                          center.y() - kIconSize * 0.5,
-                          kIconSize,
-                          kIconSize);
+    const QRectF iconRect(center.x() - m_iconSize * 0.5,
+                          center.y() - m_iconSize * 0.5,
+                          m_iconSize,
+                          m_iconSize);
     if (!m_restPixmap.isNull()) {
         if (m_hoverProgress <= 0.01 || m_hoverPixmap.isNull()) {
             p.drawPixmap(iconRect, m_restPixmap, QRectF(m_restPixmap.rect()));
