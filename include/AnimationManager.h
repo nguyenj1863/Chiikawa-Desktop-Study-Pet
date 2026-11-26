@@ -47,6 +47,17 @@ public:
     void setAutoSwitchEnabled(bool enabled);
     [[nodiscard]] bool autoSwitchEnabled() const { return m_autoSwitchEnabled; }
 
+    enum class AutoSwitchSuspendReason : quint32 {
+        Hidden              = 1u << 0,
+        QuickActionMenuOpen = 1u << 1
+    };
+
+    void setAutoSwitchSuspended(AutoSwitchSuspendReason reason, bool suspended);
+    [[nodiscard]] bool isAutoSwitchSuspendedFor(AutoSwitchSuspendReason reason) const;
+    [[nodiscard]] bool isAutoSwitchSuspended() const { return m_autoSwitchSuspendReasons != 0; }
+    [[nodiscard]] bool effectiveAutoSwitchEnabled() const { return m_autoSwitchEnabled && m_autoSwitchSuspendReasons == 0; }
+    [[nodiscard]] bool isAutoSwitchTimerActive() const { return m_autoSwitchTimer.isActive(); }
+
     void setTargetSize(int size);
     [[nodiscard]] int targetSize() const { return m_targetSize; }
 
@@ -97,6 +108,7 @@ private:
     bool m_mirrored = false;
     bool m_ready = false;
     bool m_autoSwitchEnabled = true;
+    quint32 m_autoSwitchSuspendReasons = 0;
     int m_targetSize = 120;
     QTimer m_autoSwitchTimer;
     std::mt19937 m_rng;

@@ -83,9 +83,20 @@ PetWindow::PetWindow(QWidget* parent)
     m_onboardingWindow = std::make_unique<OnboardingWindow>(m_uiSound.get(), nullptr);
     m_quickActionMenu = std::make_unique<QuickActionMenu>(nullptr);
     m_quickActionMenu->setAnchorWidget(this);
+    m_quickActionMenu->setIconScalePercent(m_settings->quickActionIconScale());
     m_appNotice = std::make_unique<AppLaunchNoticePopup>(nullptr);
     m_appLauncher = std::make_unique<ExternalAppLauncher>();
 
+    connect(m_quickActionMenu.get(), &QuickActionMenu::activeStateChanged,
+            this, [this](bool active) {
+                if (m_movement) {
+                    m_movement->setPaused(MovementController::PauseReason::QuickActionMenuOpen, active);
+                }
+                if (m_animations) {
+                    m_animations->setAutoSwitchSuspended(
+                        AnimationManager::AutoSwitchSuspendReason::QuickActionMenuOpen, active);
+                }
+            });
     connect(m_quickActionMenu.get(), &QuickActionMenu::settingsRequested,
             this, &PetWindow::onSettingsQuickAction);
     connect(m_quickActionMenu.get(), &QuickActionMenu::externalAppRequested,
@@ -166,9 +177,8 @@ PetWindow::PetWindow(QWidget* parent)
     connect(m_settingsPanel.get(), &SettingsPanel::exitApplicationRequested,
             this, &PetWindow::exitApplication);
     connect(m_settingsPanel.get(), &SettingsPanel::closedByUser, this, [this]() {
-        const bool onboardingActive = m_onboardingWindow && m_onboardingWindow->isVisible();
-        if (isVisible() && m_settings->movementEnabled() && !onboardingActive) {
-            m_movement->resume();
+        if (m_movement) {
+            m_movement->setPaused(MovementController::PauseReason::SettingsOpen, false);
         }
     });
     connect(m_settingsPanel.get(), &SettingsPanel::dragRequested,
@@ -364,19 +374,19 @@ void PetWindow::applySettings()
         m_animations->setTargetSize(size);
         m_animations->setAutoSwitchEnabled(m_settings->autoAnimationEnabled());
     }
+    if (m_quickActionMenu) {
+        m_quickActionMenu->setIconScalePercent(m_settings->quickActionIconScale());
+        m_quickActionMenu->updateSpriteBounds(frameGeometry(), currentVisibleSpriteBounds());
+    }
     if (m_movement) {
         m_movement->setSpeedMultiplier(m_settings->movementSpeed());
         m_movement->setEnabled(m_settings->movementEnabled());
         const bool onboardingActive = m_onboardingWindow && m_onboardingWindow->isVisible();
-        if (isVisible() && !m_settingsPanel->isVisible() && !m_dragging && !onboardingActive) {
-            if (m_settings->movementEnabled()) {
-                m_movement->resume();
-            } else {
-                m_movement->pause();
-            }
-        } else {
-            m_movement->pause();
-        }
+        m_movement->setPaused(MovementController::PauseReason::Hidden, !isVisible());
+        m_movement->setPaused(MovementController::PauseReason::SettingsOpen,
+                              m_settingsPanel && m_settingsPanel->isVisible());
+        m_movement->setPaused(MovementController::PauseReason::Onboarding, onboardingActive);
+        m_movement->setPaused(MovementController::PauseReason::Dragging, m_dragging);
     }
 
     if (m_soundManager) {
@@ -428,7 +438,7 @@ void PetWindow::startApplication()
     if (m_onboardingWindow) {
         // Always show onboarding on startup before revealing the desktop pet
         if (m_movement) {
-            m_movement->pause();
+            m_movement->setPaused(MovementController::PauseReason::Onboarding, true);
         }
         m_onboardingWindow->openOnboarding(false);
         return;
@@ -448,15 +458,21 @@ void PetWindow::showTutorialReplay()
     }
     if (m_settingsPanel && m_settingsPanel->isVisible()) {
         m_settingsPanel->hide();
+        if (m_movement) {
+            m_movement->setPaused(MovementController::PauseReason::SettingsOpen, false);
+        }
     }
     if (m_movement) {
-        m_movement->pause();
+        m_movement->setPaused(MovementController::PauseReason::Onboarding, true);
     }
     m_onboardingWindow->openOnboarding(true);
 }
 
 void PetWindow::onOnboardingFinished(bool wasReplay)
 {
+    if (m_movement) {
+        m_movement->setPaused(MovementController::PauseReason::Onboarding, false);
+    }
     if (!wasReplay) {
         if (m_settings) {
             m_settings->setOnboardingCompleted(true);
@@ -464,12 +480,6 @@ void PetWindow::onOnboardingFinished(bool wasReplay)
         }
         showPet();
         return;
-    }
-
-    // Replay closed: preserve saved onboarding state, timers, alarms, and pet position
-    if (isVisible() && m_movement && m_settings && m_settings->movementEnabled()
-        && !(m_settingsPanel && m_settingsPanel->isVisible())) {
-        m_movement->resume();
     }
 }
 
@@ -499,7 +509,7 @@ void PetWindow::hidePet()
 void PetWindow::openSettings()
 {
     if (m_movement) {
-        m_movement->pause();
+        m_movement->setPaused(MovementController::PauseReason::SettingsOpen, true);
     }
     hideQuickActions();
     if (!m_settingsPanel) {
@@ -612,7 +622,7 @@ void PetWindow::mousePressEvent(QMouseEvent* event)
         m_singleClickTimer.stop();
         m_dragOffset = event->globalPosition().toPoint() - frameGeometry().topLeft();
         if (m_movement) {
-            m_movement->pause();
+            m_movement->setPaused(MovementController::PauseReason::Dragging, true);
         }
         event->accept();
         return;
@@ -651,8 +661,8 @@ void PetWindow::mouseReleaseEvent(QMouseEvent* event)
             m_singleClickTimer.start(QApplication::doubleClickInterval());
         }
 
-        if (m_settings->movementEnabled() && !m_settingsPanel->isVisible()) {
-            m_movement->resume();
+        if (m_movement) {
+            m_movement->setPaused(MovementController::PauseReason::Dragging, false);
         }
         event->accept();
         return;
@@ -1011,10 +1021,10 @@ void PetWindow::hideEvent(QHideEvent* event)
         m_appNotice->dismiss();
     }
     if (m_movement) {
-        m_movement->pause();
+        m_movement->setPaused(MovementController::PauseReason::Hidden, true);
     }
     if (m_animations) {
-        m_animations->setAutoSwitchEnabled(false);
+        m_animations->setAutoSwitchSuspended(AnimationManager::AutoSwitchSuspendReason::Hidden, true);
     }
     if (m_bubble) {
         m_bubble->hide();
@@ -1030,13 +1040,10 @@ void PetWindow::showEvent(QShowEvent* event)
 #ifdef Q_OS_MACOS
     MacWindowHelper::configureFloatingOverlay(this, true);
 #endif
-    if (m_animations && m_settings) {
-        m_animations->setAutoSwitchEnabled(m_settings->autoAnimationEnabled());
+    if (m_animations) {
+        m_animations->setAutoSwitchSuspended(AnimationManager::AutoSwitchSuspendReason::Hidden, false);
     }
-    const bool onboardingActive = m_onboardingWindow && m_onboardingWindow->isVisible();
-    if (m_movement && m_settings && m_settings->movementEnabled()
-        && !(m_settingsPanel && m_settingsPanel->isVisible())
-        && !onboardingActive) {
-        m_movement->resume();
+    if (m_movement) {
+        m_movement->setPaused(MovementController::PauseReason::Hidden, false);
     }
 }

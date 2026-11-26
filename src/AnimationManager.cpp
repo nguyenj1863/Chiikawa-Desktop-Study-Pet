@@ -501,16 +501,38 @@ void AnimationManager::playCelebration()
 void AnimationManager::setAutoSwitchEnabled(bool enabled)
 {
     m_autoSwitchEnabled = enabled;
-    if (enabled) {
+    if (effectiveAutoSwitchEnabled()) {
         scheduleNextAutoSwitch();
     } else {
         m_autoSwitchTimer.stop();
     }
 }
 
+void AnimationManager::setAutoSwitchSuspended(AutoSwitchSuspendReason reason, bool suspended)
+{
+    const quint32 mask = static_cast<quint32>(reason);
+    const bool wasEffective = effectiveAutoSwitchEnabled();
+    if (suspended) {
+        m_autoSwitchSuspendReasons |= mask;
+        if (!effectiveAutoSwitchEnabled()) {
+            m_autoSwitchTimer.stop();
+        }
+    } else {
+        m_autoSwitchSuspendReasons &= ~mask;
+        if (!wasEffective && effectiveAutoSwitchEnabled()) {
+            scheduleNextAutoSwitch();
+        }
+    }
+}
+
+bool AnimationManager::isAutoSwitchSuspendedFor(AutoSwitchSuspendReason reason) const
+{
+    return (m_autoSwitchSuspendReasons & static_cast<quint32>(reason)) != 0;
+}
+
 void AnimationManager::scheduleNextAutoSwitch()
 {
-    if (!m_autoSwitchEnabled) {
+    if (!effectiveAutoSwitchEnabled()) {
         return;
     }
     std::uniform_int_distribution<int> dist(10'000, 30'000);
@@ -519,7 +541,7 @@ void AnimationManager::scheduleNextAutoSwitch()
 
 void AnimationManager::onAutoSwitchTimeout()
 {
-    if (!m_autoSwitchEnabled) {
+    if (!effectiveAutoSwitchEnabled()) {
         return;
     }
     std::uniform_int_distribution<int> roll(0, 9);

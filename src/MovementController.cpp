@@ -49,7 +49,7 @@ void MovementController::setEnabled(bool enabled)
         stopMoveTicks();
         m_sessionTimer.stop();
         m_phase = Phase::Idle;
-    } else if (!m_paused) {
+    } else if (!isPaused()) {
         beginIdle();
     }
 }
@@ -59,22 +59,38 @@ void MovementController::setSpeedMultiplier(double speed)
     m_speed = std::clamp(speed, 0.25, 3.0);
 }
 
+void MovementController::setPaused(PauseReason reason, bool paused)
+{
+    const quint32 mask = static_cast<quint32>(reason);
+    const bool wasPaused = isPaused();
+    if (paused) {
+        m_pauseReasons |= mask;
+        if (!wasPaused) {
+            stopMoveTicks();
+            m_sessionTimer.stop();
+            m_phase = Phase::Idle;
+        }
+    } else {
+        m_pauseReasons &= ~mask;
+        if (wasPaused && !isPaused() && m_enabled) {
+            beginIdle();
+        }
+    }
+}
+
+bool MovementController::isPausedFor(PauseReason reason) const
+{
+    return (m_pauseReasons & static_cast<quint32>(reason)) != 0;
+}
+
 void MovementController::pause()
 {
-    m_paused = true;
-    stopMoveTicks();
-    m_sessionTimer.stop();
+    setPaused(PauseReason::General, true);
 }
 
 void MovementController::resume()
 {
-    if (!m_paused) {
-        return;
-    }
-    m_paused = false;
-    if (m_enabled) {
-        beginIdle();
-    }
+    setPaused(PauseReason::General, false);
 }
 
 void MovementController::setFacingLeft(bool left)
@@ -114,7 +130,7 @@ void MovementController::stopMoveTicks()
 
 void MovementController::beginIdle()
 {
-    if (!m_enabled || m_paused || !m_target) {
+    if (!m_enabled || isPaused() || !m_target) {
         return;
     }
     m_phase = Phase::Idle;
@@ -125,7 +141,7 @@ void MovementController::beginIdle()
 
 void MovementController::beginMoving()
 {
-    if (!m_enabled || m_paused || !m_target) {
+    if (!m_enabled || isPaused() || !m_target) {
         return;
     }
     m_phase = Phase::Moving;
@@ -149,7 +165,7 @@ void MovementController::beginMoving()
 
 void MovementController::onSessionTimeout()
 {
-    if (!m_enabled || m_paused) {
+    if (!m_enabled || isPaused()) {
         return;
     }
     if (m_phase == Phase::Idle) {
@@ -161,7 +177,7 @@ void MovementController::onSessionTimeout()
 
 void MovementController::onMoveTick()
 {
-    if (m_phase != Phase::Moving || m_paused || !m_enabled) {
+    if (m_phase != Phase::Moving || isPaused() || !m_enabled) {
         stopMoveTicks();
         return;
     }
