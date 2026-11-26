@@ -18,6 +18,7 @@
 #include "quickactions/QuickActionItem.h"
 #include "quickactions/QuickActionMenu.h"
 #include "quickactions/QuickActionsEditor.h"
+#include "ui/PixelTheme.h"
 #include "ui/SettingsPanel.h"
 
 #include <cmath>
@@ -920,6 +921,48 @@ private slots:
         // Adjusting icon-size slider inside Quick Actions still updates settings
         slider->setValue(130);
         QCOMPARE(settings.quickActionIconScale(), 130);
+    }
+
+    void testQuickActionTogglesMatchPetPreferenceCheckboxes()
+    {
+        AppSettings settings;
+        settings.load();
+        SettingsPanel panel(&settings, nullptr, nullptr, nullptr, nullptr);
+
+        QuickActionsEditor* editor = panel.quickActionsEditor();
+        QVERIFY(editor != nullptr);
+        const QList<QCheckBox*> toggles = editor->findChildren<QCheckBox*>(QStringLiteral("quickActionEnabledCheck"));
+        QCOMPARE(toggles.size(), editor->shortcuts().size());
+        for (QCheckBox* toggle : toggles) {
+            QVERIFY(qobject_cast<PixelCheckBox*>(toggle) != nullptr);
+        }
+
+        PixelCheckBox* petCheck = nullptr;
+        for (QCheckBox* cb : panel.findChildren<QCheckBox*>()) {
+            if (cb->text() == QStringLiteral("Autonomous movement")) {
+                petCheck = qobject_cast<PixelCheckBox*>(cb);
+            }
+        }
+        QVERIFY(petCheck != nullptr);
+
+        auto* qaToggle = qobject_cast<PixelCheckBox*>(toggles.first());
+        // Indicator square (14px box drawn 4px from the left edge, vertically centered)
+        auto indicator = [](PixelCheckBox* cb, bool checked) {
+            constexpr int kIndicator = 14;
+            QSignalBlocker blocker(cb);
+            cb->setChecked(checked);
+            cb->resize(cb->sizeHint());
+            QImage img(cb->size(), QImage::Format_ARGB32_Premultiplied);
+            img.fill(Qt::transparent);
+            cb->render(&img, QPoint(), QRegion(), QWidget::DrawChildren);
+            const int boxY = (cb->height() - kIndicator) / 2;
+            return img.copy(QRect(0, boxY, kIndicator + 6, kIndicator));
+        };
+        // Pet Preferences is collapsed (zero height), so render an equivalent standalone reference
+        PixelCheckBox petReference(petCheck->text());
+        petReference.setFont(petCheck->font());
+        QCOMPARE(indicator(qaToggle, true), indicator(&petReference, true));
+        QCOMPARE(indicator(qaToggle, false), indicator(&petReference, false));
     }
 };
 

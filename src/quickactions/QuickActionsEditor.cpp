@@ -680,9 +680,10 @@ void QuickActionsEditor::rebuildList()
             ? QStringLiteral("color: #F4F6FA;")
             : QStringLiteral("color: rgba(244, 246, 250, 0.45);"));
 
-        auto* enableCheck = new QCheckBox(rowWidget);
+        auto* enableCheck = new PixelCheckBox(QString(), rowWidget);
+        enableCheck->setObjectName(QStringLiteral("quickActionEnabledCheck"));
+        enableCheck->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         enableCheck->setChecked(item.enabled);
-        enableCheck->setCursor(Qt::PointingHandCursor);
         enableCheck->setFocusPolicy(Qt::NoFocus);
         enableCheck->setToolTip(item.enabled ? QStringLiteral("Disable shortcut") : QStringLiteral("Enable shortcut"));
         const QString itemId = item.id;
