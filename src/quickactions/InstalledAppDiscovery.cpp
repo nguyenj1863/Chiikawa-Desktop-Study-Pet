@@ -3,17 +3,19 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+#include <QHash>
 #include <QMetaObject>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QPointer>
-#include <QSet>
-#include <QStandardPaths>
+#include <QRegularExpression>
 #include <QThread>
 #include <algorithm>
 
 #ifdef Q_OS_WIN
 #  include <windows.h>
+#  include <winver.h>
+#  include <vector>
 #endif
 
 namespace {
@@ -23,53 +25,97 @@ bool g_cacheValid = false;
 QVector<InstalledAppDiscovery::DetectedApp> g_cachedApps;
 InstalledAppDiscovery::ProviderFn g_testProvider;
 
-bool isNoiseShortcutName(const QString& lowerName)
+QString normalizedPath(const QString& path)
 {
-    static const QStringList kNoise = {
-        QStringLiteral("uninstall"),
-        QStringLiteral("readme"),
-        QStringLiteral("help"),
-        QStringLiteral("manual"),
-        QStringLiteral("documentation"),
-        QStringLiteral("website"),
-        QStringLiteral("license"),
-        QStringLiteral("release notes"),
-        QStringLiteral("command prompt"),
-        QStringLiteral("safe mode")
-    };
-    for (const QString& token : kNoise) {
-        if (lowerName.contains(token)) {
-            return true;
-        }
-    }
-    return false;
+    return QDir::cleanPath(QDir::fromNativeSeparators(path.trimmed())).toLower();
+}
+
+bool isShortcutFile(const QString& path)
+{
+    return path.endsWith(QStringLiteral(".lnk"), Qt::CaseInsensitive);
 }
 
 #ifdef Q_OS_WIN
 
-void scanStartMenuDir(const QString& dirPath,
-                      const QString& subtitle,
-                      QVector<InstalledAppDiscovery::DetectedApp>& out)
+// Reads the FileDescription (or ProductName) version resource so App Paths
+// entries such as "chrome.exe" are listed under their product name.
+QString readExeDescription(const QString& exePath)
 {
-    if (dirPath.isEmpty() || !QDir(dirPath).exists()) {
+    const std::wstring wPath = QDir::toNativeSeparators(exePath).toStdWString();
+    DWORD handle = 0;
+    const DWORD size = GetFileVersionInfoSizeW(wPath.c_str(), &handle);
+    if (size == 0) {
+        return {};
+    }
+    std::vector<BYTE> data(size);
+    if (!GetFileVersionInfoW(wPath.c_str(), 0, size, data.data())) {
+        return {};
+    }
+
+    struct LangCodePage {
+        WORD language;
+        WORD codePage;
+    };
+    LangCodePage* translations = nullptr;
+    UINT translationBytes = 0;
+    if (!VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation",
+                        reinterpret_cast<LPVOID*>(&translations), &translationBytes)
+        || translationBytes < sizeof(LangCodePage)) {
+        return {};
+    }
+
+    for (const wchar_t* field : {L"FileDescription", L"ProductName"}) {
+        wchar_t query[128]{};
+        swprintf_s(query, L"\\StringFileInfo\\%04x%04x\\%s",
+                   translations[0].language, translations[0].codePage, field);
+        wchar_t* value = nullptr;
+        UINT valueLen = 0;
+        if (VerQueryValueW(data.data(), query, reinterpret_cast<LPVOID*>(&value), &valueLen)
+            && value && valueLen > 1) {
+            const QString text = QString::fromWCharArray(value).trimmed();
+            if (!text.isEmpty()) {
+                return text;
+            }
+        }
+    }
+    return {};
+}
+
+void scanStartMenuDir(const QString& rootPath, QVector<InstalledAppDiscovery::DetectedApp>& out)
+{
+    const QDir root(rootPath);
+    if (rootPath.isEmpty() || !root.exists()) {
         return;
     }
-    QDirIterator it(dirPath, {QStringLiteral("*.lnk")},
+    QDirIterator it(rootPath, {QStringLiteral("*.lnk")},
                     QDir::Files | QDir::Readable,
                     QDirIterator::Subdirectories);
     while (it.hasNext()) {
-        const QString lnkPath = it.next();
-        const QFileInfo info(lnkPath);
+        const QFileInfo info(it.next());
         const QString name = info.completeBaseName().trimmed();
-        if (name.isEmpty() || isNoiseShortcutName(name.toLower())) {
+        if (name.isEmpty()) {
             continue;
         }
-        out.push_back({name, info.absoluteFilePath(), subtitle});
+        const QString folder = root.relativeFilePath(info.absolutePath());
+        const QString location = (folder.isEmpty() || folder == QStringLiteral("."))
+            ? QStringLiteral("Start Menu")
+            : folder;
+        out.push_back({name, info.absoluteFilePath(), location, true, {}});
     }
 }
 
-void scanAppPathsHive(HKEY root,
-                      QVector<InstalledAppDiscovery::DetectedApp>& out)
+// App Paths also registers helper processes that apps launch internally
+// (message hosts, pairing helpers, servers); those are not worth suggesting.
+bool looksLikeBackgroundComponent(const QString& name, const QString& exeBaseName)
+{
+    static const QRegularExpression kComponentWords(QStringLiteral(
+        "(helper|host|server|service|component|handler|shim|broker|agent|background|"
+        "pairing|telemetry|daemon)"),
+        QRegularExpression::CaseInsensitiveOption);
+    return kComponentWords.match(name).hasMatch() || kComponentWords.match(exeBaseName).hasMatch();
+}
+
+void scanAppPathsHive(HKEY root, QVector<InstalledAppDiscovery::DetectedApp>& out)
 {
     HKEY parentKey = nullptr;
     if (RegOpenKeyExW(root, L"Software\\Microsoft\\Windows\\CurrentVersion\\App Paths",
@@ -97,9 +143,14 @@ void scanAppPathsHive(HKEY root,
                 }
                 const QFileInfo info(exePath);
                 if (info.exists() && info.isFile() && info.suffix().compare(QStringLiteral("exe"), Qt::CaseInsensitive) == 0) {
-                    const QString name = info.completeBaseName().trimmed();
-                    if (!name.isEmpty() && !isNoiseShortcutName(name.toLower())) {
-                        out.push_back({name, info.absoluteFilePath(), QStringLiteral("Installed App")});
+                    QString name = readExeDescription(info.absoluteFilePath());
+                    if (name.isEmpty()) {
+                        name = info.completeBaseName().trimmed();
+                    }
+                    if (!name.isEmpty()) {
+                        const bool suggested = !looksLikeBackgroundComponent(name, info.completeBaseName());
+                        out.push_back({name, info.absoluteFilePath(), QStringLiteral("Registered App"),
+                                       suggested, info.absoluteFilePath()});
                     }
                 }
             }
@@ -125,7 +176,7 @@ void scanMacAppsDir(const QString& dirPath,
         if (entry.suffix().compare(QStringLiteral("app"), Qt::CaseInsensitive) == 0) {
             const QString name = entry.completeBaseName().trimmed();
             if (!name.isEmpty()) {
-                out.push_back({name, entry.absoluteFilePath(), subtitle});
+                out.push_back({name, entry.absoluteFilePath(), subtitle, true, entry.absoluteFilePath()});
             }
         } else {
             // Check 1 level deeper (e.g. /Applications/Utilities)
@@ -133,7 +184,7 @@ void scanMacAppsDir(const QString& dirPath,
             for (const QFileInfo& nested : sub.entryInfoList({QStringLiteral("*.app")}, QDir::Dirs | QDir::NoDotAndDotDot)) {
                 const QString name = nested.completeBaseName().trimmed();
                 if (!name.isEmpty()) {
-                    out.push_back({name, nested.absoluteFilePath(), entry.fileName()});
+                    out.push_back({name, nested.absoluteFilePath(), entry.fileName(), true, nested.absoluteFilePath()});
                 }
             }
         }
@@ -142,26 +193,133 @@ void scanMacAppsDir(const QString& dirPath,
 
 #endif
 
+int matchRank(const QString& lowerName, const QString& needle)
+{
+    if (lowerName.startsWith(needle)) {
+        return 0;
+    }
+    const int idx = lowerName.indexOf(needle);
+    if (idx > 0 && !lowerName.at(idx - 1).isLetterOrNumber()) {
+        return 1;
+    }
+    return idx >= 0 ? 2 : 3;
+}
+
 } // namespace
 
-QVector<InstalledAppDiscovery::DetectedApp> InstalledAppDiscovery::deduplicateAndSort(QVector<DetectedApp> apps)
+bool InstalledAppDiscovery::isLikelyUserFacing(const DetectedApp& app)
+{
+    const QString name = app.displayName.toLower();
+    const QString location = app.subtitle.toLower();
+    const QString target = normalizedPath(app.targetPath.isEmpty() ? app.launchReference : app.targetPath);
+
+    // Maintenance, documentation, and developer-plumbing entries.
+    static const QRegularExpression kMaintenanceWords(QStringLiteral(
+        "\\b(uninstall|uninstaller|uninst|updater|update|updates|help|readme|manual|documentation|"
+        "website|homepage|license|eula|changelog|support|feedback|diagnostic|diagnostics|"
+        "troubleshooter|troubleshooting|repair|recovery|debug|debugger|crash|reporter|setup|"
+        "installer|configuration|config|redistributable|runtime|sdk|driver|drivers|telemetry)\\b"));
+    static const QStringList kSystemPhrases = {
+        QStringLiteral("read me"), QStringLiteral("release notes"), QStringLiteral("what's new"),
+        QStringLiteral("safe mode"), QStringLiteral("command prompt"), QStringLiteral("administrative tools"),
+        QStringLiteral("system information"), QStringLiteral("system configuration"),
+        QStringLiteral("event viewer"), QStringLiteral("task scheduler"), QStringLiteral("disk cleanup"),
+        QStringLiteral("defragment"), QStringLiteral("resource monitor"), QStringLiteral("performance monitor"),
+        QStringLiteral("registry editor"), QStringLiteral("component services"),
+        QStringLiteral("computer management"), QStringLiteral("odbc"), QStringLiteral("iscsi"),
+        QStringLiteral("print management"), QStringLiteral("recovery drive"),
+        QStringLiteral("on-screen keyboard"), QStringLiteral("character map"), QStringLiteral("steps recorder"),
+        QStringLiteral("windows fax"), QStringLiteral("xps viewer"), QStringLiteral("local security policy")
+    };
+    if (name == QStringLiteral("services") || kMaintenanceWords.match(name).hasMatch()) {
+        return false;
+    }
+    for (const QString& phrase : kSystemPhrases) {
+        if (name.contains(phrase)) {
+            return false;
+        }
+    }
+
+    // Start Menu folders and bundle locations that group operating-system utilities.
+    static const QStringList kSystemLocations = {
+        QStringLiteral("administrative tools"), QStringLiteral("windows tools"),
+        QStringLiteral("system tools"), QStringLiteral("windows system"),
+        QStringLiteral("accessibility"), QStringLiteral("windows powershell"),
+        QStringLiteral("maintenance"), QStringLiteral("startup"), QStringLiteral("windows kits"),
+        QStringLiteral("office tools"), QStringLiteral("utilities")
+    };
+    for (const QString& loc : kSystemLocations) {
+        if (location.contains(loc)) {
+            return false;
+        }
+    }
+
+    // Shortcuts to documents, web links, or management consoles rather than apps.
+    static const QStringList kNonAppSuffixes = {
+        QStringLiteral(".url"), QStringLiteral(".chm"), QStringLiteral(".txt"), QStringLiteral(".pdf"),
+        QStringLiteral(".htm"), QStringLiteral(".html"), QStringLiteral(".rtf"), QStringLiteral(".msc"),
+        QStringLiteral(".cpl"), QStringLiteral(".bat"), QStringLiteral(".cmd"), QStringLiteral(".ps1"),
+        QStringLiteral(".vbs"), QStringLiteral(".ini"), QStringLiteral(".log"), QStringLiteral(".md"),
+        QStringLiteral(".xml")
+    };
+    for (const QString& suffix : kNonAppSuffixes) {
+        if (target.endsWith(suffix)) {
+            return false;
+        }
+    }
+
+    // Built-in operating-system binaries and bundles.
+    QString systemRoot = normalizedPath(qEnvironmentVariable("SystemRoot"));
+    if (systemRoot.isEmpty()) {
+        systemRoot = QStringLiteral("c:/windows");
+    }
+    if (target.startsWith(systemRoot + QLatin1Char('/'))
+        || target.contains(QStringLiteral("/applications/utilities/"))
+        || target.startsWith(QStringLiteral("/system/library/"))) {
+        return false;
+    }
+    return true;
+}
+
+QVector<InstalledAppDiscovery::DetectedApp> InstalledAppDiscovery::finalize(QVector<DetectedApp> apps)
 {
     QVector<DetectedApp> unique;
     unique.reserve(apps.size());
-    QSet<QString> seenNames;
-    QSet<QString> seenPaths;
+    QHash<QString, qsizetype> indexByName;
+    QHash<QString, qsizetype> indexByTarget;
 
     for (DetectedApp& app : apps) {
-        const QString normName = app.displayName.trimmed().toLower();
-        const QString normPath = QDir::cleanPath(app.launchReference.trimmed()).toLower();
-        if (normName.isEmpty() || normPath.isEmpty()) {
+        app.displayName = app.displayName.trimmed();
+        if (app.displayName.isEmpty() || app.launchReference.trimmed().isEmpty()) {
             continue;
         }
-        if (seenNames.contains(normName) || seenPaths.contains(normPath)) {
+        if (app.targetPath.isEmpty()) {
+            app.targetPath = isShortcutFile(app.launchReference)
+                ? QFileInfo(app.launchReference).symLinkTarget()
+                : app.launchReference;
+        }
+        // Shortcut whose resolved target no longer exists: it cannot be launched.
+        if (isShortcutFile(app.launchReference) && !app.targetPath.isEmpty()
+            && !QFileInfo::exists(app.targetPath)) {
             continue;
         }
-        seenNames.insert(normName);
-        seenPaths.insert(normPath);
+        app.suggested = app.suggested && isLikelyUserFacing(app);
+
+        const QString nameKey = app.displayName.toLower();
+        const QString targetKey = normalizedPath(app.targetPath.isEmpty() ? app.launchReference : app.targetPath);
+        const qsizetype existing = indexByName.value(nameKey, indexByTarget.value(targetKey, -1));
+        if (existing >= 0) {
+            // Keep the first entry unless a later duplicate is the user-facing one
+            // (e.g. a Startup-folder copy listed before the main shortcut).
+            if (app.suggested && !unique[existing].suggested) {
+                unique[existing] = std::move(app);
+                indexByName.insert(nameKey, existing);
+                indexByTarget.insert(targetKey, existing);
+            }
+            continue;
+        }
+        indexByName.insert(nameKey, unique.size());
+        indexByTarget.insert(targetKey, unique.size());
         unique.push_back(std::move(app));
     }
 
@@ -179,7 +337,7 @@ QVector<InstalledAppDiscovery::DetectedApp> InstalledAppDiscovery::scanPlatformA
         provider = g_testProvider;
     }
     if (provider) {
-        return deduplicateAndSort(provider());
+        return finalize(provider());
     }
 
     QVector<DetectedApp> apps;
@@ -188,8 +346,8 @@ QVector<InstalledAppDiscovery::DetectedApp> InstalledAppDiscovery::scanPlatformA
         .filePath(QStringLiteral("Microsoft/Windows/Start Menu/Programs"));
     const QString commonStartMenu = QDir(qEnvironmentVariable("PROGRAMDATA"))
         .filePath(QStringLiteral("Microsoft/Windows/Start Menu/Programs"));
-    scanStartMenuDir(userStartMenu, QStringLiteral("Start Menu"), apps);
-    scanStartMenuDir(commonStartMenu, QStringLiteral("Start Menu"), apps);
+    scanStartMenuDir(userStartMenu, apps);
+    scanStartMenuDir(commonStartMenu, apps);
     scanAppPathsHive(HKEY_CURRENT_USER, apps);
     scanAppPathsHive(HKEY_LOCAL_MACHINE, apps);
 #elif defined(Q_OS_MACOS)
@@ -198,7 +356,7 @@ QVector<InstalledAppDiscovery::DetectedApp> InstalledAppDiscovery::scanPlatformA
     const QString homeApps = QDir::home().filePath(QStringLiteral("Applications"));
     scanMacAppsDir(homeApps, QStringLiteral("User Applications"), apps);
 #endif
-    return deduplicateAndSort(std::move(apps));
+    return finalize(std::move(apps));
 }
 
 QVector<InstalledAppDiscovery::DetectedApp> InstalledAppDiscovery::discover(bool forceRefresh)
@@ -273,19 +431,33 @@ void InstalledAppDiscovery::setTestProvider(ProviderFn provider)
 }
 
 QVector<InstalledAppDiscovery::DetectedApp> InstalledAppDiscovery::filter(const QVector<DetectedApp>& apps,
-                                                                          const QString& query)
+                                                                          const QString& query,
+                                                                          bool showAll)
 {
     const QString needle = query.trimmed().toLower();
-    if (needle.isEmpty()) {
-        return apps;
-    }
     QVector<DetectedApp> matches;
     matches.reserve(apps.size());
+
+    if (needle.isEmpty()) {
+        for (const DetectedApp& app : apps) {
+            if (showAll || app.suggested) {
+                matches.push_back(app);
+            }
+        }
+        return matches;
+    }
+
     for (const DetectedApp& app : apps) {
         if (app.displayName.toLower().contains(needle)
             || app.subtitle.toLower().contains(needle)) {
             matches.push_back(app);
         }
     }
+    std::stable_sort(matches.begin(), matches.end(), [&needle](const DetectedApp& a, const DetectedApp& b) {
+        if (a.suggested != b.suggested) {
+            return a.suggested;
+        }
+        return matchRank(a.displayName.toLower(), needle) < matchRank(b.displayName.toLower(), needle);
+    });
     return matches;
 }

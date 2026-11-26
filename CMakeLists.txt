@@ -141,7 +141,7 @@ target_include_directories(chiikawa_core PUBLIC
 target_link_libraries(chiikawa_core PUBLIC Qt6::Widgets Qt6::Multimedia)
 
 if(WIN32)
-    target_link_libraries(chiikawa_core PUBLIC user32 shell32 ole32 advapi32)
+    target_link_libraries(chiikawa_core PUBLIC user32 shell32 ole32 advapi32 version)
 elseif(APPLE)
     target_sources(chiikawa_core PRIVATE ${CHIIKAWA_MACOS_SOURCES})
     target_link_libraries(chiikawa_core PUBLIC "-framework AppKit")

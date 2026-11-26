@@ -718,6 +718,119 @@ private slots:
         InstalledAppDiscovery::setTestProvider({});
     }
 
+    void testDiscoveryPrioritizesUserFacingApps()
+    {
+        using App = InstalledAppDiscovery::DetectedApp;
+        InstalledAppDiscovery::setTestProvider([]() {
+            return QVector<App>{
+                {QStringLiteral("Steam"), QStringLiteral("C:/Program Files (x86)/Steam/steam.exe"), QStringLiteral("Steam")},
+                {QStringLiteral("Uninstall Steam"), QStringLiteral("C:/Program Files (x86)/Steam/uninstall.exe"), QStringLiteral("Steam")},
+                {QStringLiteral("Google Chrome"), QStringLiteral("C:/Program Files/Google/Chrome/chrome.exe"), QStringLiteral("Start Menu")},
+                {QStringLiteral("Google Docs"), QStringLiteral("C:/Program Files/Google/Docs/docs.exe"), QStringLiteral("Chrome Apps")},
+                {QStringLiteral("Discord"), QStringLiteral("C:/Users/me/AppData/Local/Discord/Update.exe"), QStringLiteral("Discord Inc")},
+                {QStringLiteral("Visual Studio Code"), QStringLiteral("C:/Apps/Code/Code.exe"), QStringLiteral("Visual Studio Code")},
+                {QStringLiteral("Event Viewer"), QStringLiteral("C:/Apps/eventvwr.exe"), QStringLiteral("Windows Tools")},
+                {QStringLiteral("Command Prompt"), QStringLiteral("C:/Apps/cmd.exe"), QStringLiteral("Start Menu")},
+                {QStringLiteral("Notepad"), QStringLiteral("C:/Windows/System32/notepad.exe"), QStringLiteral("Start Menu")},
+                {QStringLiteral("Contoso Readme"), QStringLiteral("C:/Apps/Contoso/readme.txt"), QStringLiteral("Contoso")},
+                {QStringLiteral("Contoso Website"), QStringLiteral("C:/Apps/Contoso/site.url"), QStringLiteral("Contoso")},
+                {QStringLiteral("Contoso Help"), QStringLiteral("C:/Apps/Contoso/help.chm"), QStringLiteral("Contoso")},
+                {QStringLiteral("Disk Utility"), QStringLiteral("/System/Applications/Utilities/Disk Utility.app"), QStringLiteral("Utilities")},
+                // Duplicate registrations of the same executable collapse into one entry
+                {QStringLiteral("Code"), QStringLiteral("C:/apps/code/code.exe"), QStringLiteral("Registered App")},
+            };
+        });
+
+        const QVector<App> apps = InstalledAppDiscovery::discover(true);
+        QCOMPARE(apps.size(), 13);
+
+        QStringList suggested;
+        QStringList other;
+        for (const App& app : apps) {
+            (app.suggested ? suggested : other).push_back(app.displayName);
+        }
+        QCOMPARE(suggested, (QStringList{
+            QStringLiteral("Discord"), QStringLiteral("Google Chrome"), QStringLiteral("Google Docs"),
+            QStringLiteral("Steam"), QStringLiteral("Visual Studio Code")}));
+        QCOMPARE(other, (QStringList{
+            QStringLiteral("Command Prompt"), QStringLiteral("Contoso Help"), QStringLiteral("Contoso Readme"),
+            QStringLiteral("Contoso Website"), QStringLiteral("Disk Utility"), QStringLiteral("Event Viewer"),
+            QStringLiteral("Notepad"), QStringLiteral("Uninstall Steam")}));
+
+        // Default list shows suggestions only; Show All lists everything
+        QCOMPARE(InstalledAppDiscovery::filter(apps, QString(), false).size(), 5);
+        QCOMPARE(InstalledAppDiscovery::filter(apps, QString(), true).size(), 13);
+
+        // Search still finds uncommon apps even when Show All is off
+        const auto eventMatches = InstalledAppDiscovery::filter(apps, QStringLiteral("event"), false);
+        QCOMPARE(eventMatches.size(), 1);
+        QCOMPARE(eventMatches[0].displayName, QStringLiteral("Event Viewer"));
+
+        // Suggested matches are listed before system or maintenance matches
+        const auto steamMatches = InstalledAppDiscovery::filter(apps, QStringLiteral("steam"), false);
+        QCOMPARE(steamMatches.size(), 2);
+        QCOMPARE(steamMatches[0].displayName, QStringLiteral("Steam"));
+        QCOMPARE(steamMatches[1].displayName, QStringLiteral("Uninstall Steam"));
+
+        InstalledAppDiscovery::setTestProvider({});
+    }
+
+    void testDiscoveryDropsBrokenShortcuts()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString targetPath = tempDir.filePath(QStringLiteral("Target.exe"));
+        QFile target(targetPath);
+        QVERIFY(target.open(QIODevice::WriteOnly));
+        target.write("stub");
+        target.close();
+        const QString brokenTarget = tempDir.filePath(QStringLiteral("Removed.exe"));
+        const QString workingLink = tempDir.filePath(QStringLiteral("Working.lnk"));
+        const QString brokenLink = tempDir.filePath(QStringLiteral("Broken.lnk"));
+
+        using App = InstalledAppDiscovery::DetectedApp;
+        InstalledAppDiscovery::setTestProvider([=]() {
+            return QVector<App>{
+                {QStringLiteral("Working"), workingLink, QStringLiteral("Start Menu"), true, targetPath},
+                {QStringLiteral("Broken"), brokenLink, QStringLiteral("Start Menu"), true, brokenTarget},
+            };
+        });
+        const QVector<App> apps = InstalledAppDiscovery::discover(true);
+        QCOMPARE(apps.size(), 1);
+        QCOMPARE(apps[0].displayName, QStringLiteral("Working"));
+        InstalledAppDiscovery::setTestProvider({});
+    }
+
+    void testDialogShowAllApplicationsToggle()
+    {
+        using App = InstalledAppDiscovery::DetectedApp;
+        InstalledAppDiscovery::setTestProvider([]() {
+            return QVector<App>{
+                {QStringLiteral("Obsidian"), QStringLiteral("C:/Apps/Obsidian/Obsidian.exe"), QStringLiteral("Start Menu")},
+                {QStringLiteral("Obsidian Uninstaller"), QStringLiteral("C:/Apps/Obsidian/Uninstall Obsidian.exe"), QStringLiteral("Start Menu")},
+                {QStringLiteral("Registry Editor"), QStringLiteral("C:/Apps/regedit.exe"), QStringLiteral("Windows Tools")},
+            };
+        });
+
+        QuickActionDialog dlg;
+        QVERIFY(dlg.showAllAppsCheck() != nullptr);
+        QVERIFY(qobject_cast<PixelCheckBox*>(dlg.showAllAppsCheck()) != nullptr);
+        QVERIFY(!dlg.showAllAppsCheck()->isChecked());
+        QTRY_COMPARE_WITH_TIMEOUT(dlg.detectedAppsList()->count(), 1, 2000);
+        QVERIFY(dlg.detectedAppsList()->item(0)->text().startsWith(QStringLiteral("Obsidian")));
+
+        dlg.showAllAppsCheck()->setChecked(true);
+        QCOMPARE(dlg.detectedAppsList()->count(), 3);
+
+        dlg.showAllAppsCheck()->setChecked(false);
+        dlg.searchEdit()->setText(QStringLiteral("registry"));
+        QCOMPARE(dlg.detectedAppsList()->count(), 1);
+        dlg.selectDetectedAppRow(0);
+        QCOMPARE(dlg.nameEdit()->text(), QStringLiteral("Registry Editor"));
+
+        InstalledAppDiscovery::setTestProvider({});
+    }
+
     void testQuickActionDialogFloatsIndependentlyWithNaturalTranslucency()
     {
         QTemporaryDir tempDir;

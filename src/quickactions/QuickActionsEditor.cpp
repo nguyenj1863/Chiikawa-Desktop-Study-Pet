@@ -144,9 +144,20 @@ QuickActionDialog::QuickActionDialog(const QuickActionItem* existing, QWidget* p
                 this, &QuickActionDialog::onDetectedAppClicked);
         root->addWidget(m_appsList);
 
+        auto* statusRow = new QHBoxLayout();
+        statusRow->setSpacing(6);
         m_appsStatusLabel = new QLabel(QStringLiteral("Scanning installed applications…"), this);
         m_appsStatusLabel->setObjectName(QStringLiteral("muted"));
-        root->addWidget(m_appsStatusLabel);
+        m_showAllAppsCheck = new PixelCheckBox(QStringLiteral("Show all applications"), this);
+        m_showAllAppsCheck->setObjectName(QStringLiteral("showAllAppsCheck"));
+        m_showAllAppsCheck->setToolTip(QStringLiteral("Include system tools, utilities, and maintenance shortcuts"));
+        m_showAllAppsCheck->setFocusPolicy(Qt::NoFocus);
+        connect(m_showAllAppsCheck, &QCheckBox::toggled, this, [this]() {
+            populateAppsList(m_searchEdit ? m_searchEdit->text() : QString{});
+        });
+        statusRow->addWidget(m_appsStatusLabel, 1);
+        statusRow->addWidget(m_showAllAppsCheck);
+        root->addLayout(statusRow);
 
         auto* browseRow = new QHBoxLayout();
         browseRow->setSpacing(6);
@@ -350,7 +361,8 @@ void QuickActionDialog::populateAppsList(const QString& query)
     if (!m_appsList) {
         return;
     }
-    m_filteredApps = InstalledAppDiscovery::filter(m_allDetectedApps, query);
+    const bool showAll = m_showAllAppsCheck && m_showAllAppsCheck->isChecked();
+    m_filteredApps = InstalledAppDiscovery::filter(m_allDetectedApps, query, showAll);
     m_appsList->clear();
 
     const int maxDisplay = std::min(static_cast<int>(m_filteredApps.size()), 80);
@@ -361,7 +373,12 @@ void QuickActionDialog::populateAppsList(const QString& query)
             : QStringLiteral("%1   ·   %2").arg(app.displayName, app.subtitle);
         auto* item = new QListWidgetItem(label, m_appsList);
         item->setData(Qt::UserRole, i);
-        const QIcon icon = ExternalAppLauncher::extractAppIcon(app.launchReference);
+        auto cached = m_appIconCache.constFind(app.launchReference);
+        if (cached == m_appIconCache.constEnd()) {
+            cached = m_appIconCache.insert(app.launchReference,
+                                           ExternalAppLauncher::extractAppIcon(app.launchReference));
+        }
+        const QIcon& icon = cached.value();
         if (!icon.isNull()) {
             item->setIcon(icon);
         } else {
@@ -371,12 +388,17 @@ void QuickActionDialog::populateAppsList(const QString& query)
     }
 
     if (m_appsStatusLabel) {
-        if (m_filteredApps.isEmpty()) {
+        if (m_filteredApps.isEmpty() && query.trimmed().isEmpty() && !m_allDetectedApps.isEmpty()) {
+            m_appsStatusLabel->setText(QStringLiteral("No suggested apps. Search or show all…"));
+        } else if (m_filteredApps.isEmpty()) {
             m_appsStatusLabel->setText(query.trimmed().isEmpty()
                 ? QStringLiteral("No applications detected. Use Browse… below.")
                 : QStringLiteral("No matching apps. Try another search or Browse…"));
+        } else if (query.trimmed().isEmpty() && !showAll) {
+            m_appsStatusLabel->setText(QStringLiteral("%1 suggested · search to find more")
+                                           .arg(m_filteredApps.size()));
         } else {
-            m_appsStatusLabel->setText(QStringLiteral("%1 detected · click an app to select")
+            m_appsStatusLabel->setText(QStringLiteral("%1 found · click an app to select")
                                            .arg(m_filteredApps.size()));
         }
         m_appsStatusLabel->show();
@@ -390,6 +412,7 @@ void QuickActionDialog::onSearchTextChanged(const QString& text)
 
 void QuickActionDialog::onRefreshAppsClicked()
 {
+    m_appIconCache.clear();
     loadInstalledApps(true);
 }
 

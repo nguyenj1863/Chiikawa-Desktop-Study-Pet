@@ -4,12 +4,15 @@
 #include "quickactions/QuickActionItem.h"
 
 #include <QDialog>
+#include <QHash>
+#include <QIcon>
 #include <QPoint>
 #include <QPointer>
 #include <QRect>
 #include <QVector>
 #include <QWidget>
 
+class QCheckBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -28,7 +31,8 @@ class QPushButton;
  * - Paints a per-pixel translucent glass surface, so overlapping Settings
  *   simply composites into a darker intersection.
  * - Includes an asynchronous, cached, searchable Installed Applications picker
- *   with a "Browse for application…" fallback.
+ *   that lists suggested apps first, a "Show all applications" toggle, and a
+ *   "Browse for application…" fallback.
  */
 class QuickActionDialog : public QDialog {
     Q_OBJECT
@@ -47,6 +51,7 @@ public:
     [[nodiscard]] QWidget* headerWidget() const { return m_headerWidget; }
     [[nodiscard]] QLineEdit* searchEdit() const { return m_searchEdit; }
     [[nodiscard]] QListWidget* detectedAppsList() const { return m_appsList; }
+    [[nodiscard]] QCheckBox* showAllAppsCheck() const { return m_showAllAppsCheck; }
     [[nodiscard]] QLineEdit* nameEdit() const { return m_nameEdit; }
     [[nodiscard]] QLineEdit* pathEdit() const { return m_pathEdit; }
     void selectDetectedAppRow(int row);
@@ -81,12 +86,14 @@ private:
 
     QVector<InstalledAppDiscovery::DetectedApp> m_allDetectedApps;
     QVector<InstalledAppDiscovery::DetectedApp> m_filteredApps;
+    QHash<QString, QIcon> m_appIconCache;
 
     QWidget* m_headerWidget = nullptr;
     QLineEdit* m_searchEdit = nullptr;
     QPushButton* m_refreshAppsBtn = nullptr;
     QListWidget* m_appsList = nullptr;
     QLabel* m_appsStatusLabel = nullptr;
+    QCheckBox* m_showAllAppsCheck = nullptr;
 
     QLineEdit* m_nameEdit = nullptr;
     QLineEdit* m_pathEdit = nullptr;
