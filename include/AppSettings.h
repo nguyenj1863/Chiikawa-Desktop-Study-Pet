@@ -34,6 +34,9 @@ public:
     [[nodiscard]] int petSize() const { return m_petSize; }
     void setPetSize(int size);
 
+    [[nodiscard]] int quickActionIconScale() const { return m_quickActionIconScale; }
+    void setQuickActionIconScale(int percent);
+
     [[nodiscard]] double movementSpeed() const { return m_movementSpeed; }
     void setMovementSpeed(double speed);
 
@@ -113,6 +116,7 @@ private:
     void clampValues();
 
     int m_petSize = SettingsDefaults::kPetSize;
+    int m_quickActionIconScale = SettingsDefaults::kQuickActionIconScalePercent;
     double m_movementSpeed = SettingsDefaults::kMoveSpeed;
     bool m_movementEnabled = SettingsDefaults::kMovementEnabled;
     bool m_autoAnimationEnabled = SettingsDefaults::kAutoAnimationEnabled;

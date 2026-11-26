@@ -162,6 +162,8 @@ private:
     CollapsibleSection* m_petSection = nullptr;
     QSlider* m_sizeSlider = nullptr;
     QLabel* m_sizeValue = nullptr;
+    QSlider* m_iconSizeSlider = nullptr;
+    QLabel* m_iconSizeValue = nullptr;
     QSlider* m_speedSlider = nullptr;
     QLabel* m_speedValue = nullptr;
     QCheckBox* m_moveCheck = nullptr;

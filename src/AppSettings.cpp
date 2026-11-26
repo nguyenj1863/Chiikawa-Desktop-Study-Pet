@@ -28,6 +28,12 @@ void AppSettings::load()
     QSettings settings(kOrg, kApp);
 
     m_petSize = settings.value(QStringLiteral("pet/size"), SettingsDefaults::kPetSize).toInt();
+    {
+        bool ok = false;
+        const QVariant rawScale = settings.value(QStringLiteral("pet/quickActionIconScale"));
+        const int parsed = rawScale.isValid() ? rawScale.toInt(&ok) : SettingsDefaults::kQuickActionIconScalePercent;
+        m_quickActionIconScale = ok ? parsed : SettingsDefaults::kQuickActionIconScalePercent;
+    }
     m_movementSpeed = settings.value(QStringLiteral("pet/movementSpeed"), SettingsDefaults::kMoveSpeed).toDouble();
     m_movementEnabled = settings.value(QStringLiteral("pet/movementEnabled"), SettingsDefaults::kMovementEnabled).toBool();
     m_autoAnimationEnabled = settings.value(QStringLiteral("pet/autoAnimation"), SettingsDefaults::kAutoAnimationEnabled).toBool();
@@ -91,6 +97,7 @@ void AppSettings::save() const
     QSettings settings(kOrg, kApp);
 
     settings.setValue(QStringLiteral("pet/size"), m_petSize);
+    settings.setValue(QStringLiteral("pet/quickActionIconScale"), m_quickActionIconScale);
     settings.setValue(QStringLiteral("pet/movementSpeed"), m_movementSpeed);
     settings.setValue(QStringLiteral("pet/movementEnabled"), m_movementEnabled);
     settings.setValue(QStringLiteral("pet/autoAnimation"), m_autoAnimationEnabled);
@@ -132,6 +139,7 @@ void AppSettings::save() const
 void AppSettings::restoreDefaults()
 {
     m_petSize = SettingsDefaults::kPetSize;
+    m_quickActionIconScale = SettingsDefaults::kQuickActionIconScalePercent;
     m_movementSpeed = SettingsDefaults::kMoveSpeed;
     m_movementEnabled = SettingsDefaults::kMovementEnabled;
     m_autoAnimationEnabled = SettingsDefaults::kAutoAnimationEnabled;
@@ -150,6 +158,18 @@ void AppSettings::restoreDefaults()
 void AppSettings::setPetSize(int size)
 {
     m_petSize = std::clamp(size, SettingsDefaults::kMinPetSize, SettingsDefaults::kMaxPetSize);
+}
+
+void AppSettings::setQuickActionIconScale(int percent)
+{
+    const int clamped = std::clamp(percent,
+                                   SettingsDefaults::kMinQuickActionIconScalePercent,
+                                   SettingsDefaults::kMaxQuickActionIconScalePercent);
+    const int step = SettingsDefaults::kQuickActionIconScaleStep;
+    m_quickActionIconScale = std::clamp(
+        static_cast<int>(std::lround(static_cast<double>(clamped) / step)) * step,
+        SettingsDefaults::kMinQuickActionIconScalePercent,
+        SettingsDefaults::kMaxQuickActionIconScalePercent);
 }
 
 void AppSettings::setMovementSpeed(double speed)
@@ -277,6 +297,7 @@ void AppSettings::setLastTriggeredOccurrenceUtcMs(qint64 utcMs)
 void AppSettings::clampValues()
 {
     m_petSize = std::clamp(m_petSize, SettingsDefaults::kMinPetSize, SettingsDefaults::kMaxPetSize);
+    setQuickActionIconScale(m_quickActionIconScale);
     if (!std::isfinite(m_movementSpeed)) {
         m_movementSpeed = SettingsDefaults::kMoveSpeed;
     }

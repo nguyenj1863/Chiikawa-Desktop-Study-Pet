@@ -33,6 +33,8 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QSignalBlocker>
+#include <cmath>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
@@ -799,6 +801,40 @@ void SettingsPanel::buildUi()
     sizeRow->addWidget(m_sizeValue);
     petBody->addLayout(sizeRow);
 
+    auto* iconSizeRow = new QHBoxLayout();
+    iconSizeRow->setSpacing(6);
+    auto* iconSizeLabel = new QLabel(QStringLiteral("Quick-Action Icon Size"), m_contentWidget);
+    m_iconSizeSlider = new QSlider(Qt::Horizontal, m_contentWidget);
+    m_iconSizeSlider->setObjectName(QStringLiteral("quickActionIconSizeSlider"));
+    m_iconSizeSlider->setRange(SettingsDefaults::kMinQuickActionIconScalePercent,
+                               SettingsDefaults::kMaxQuickActionIconScalePercent);
+    m_iconSizeSlider->setSingleStep(SettingsDefaults::kQuickActionIconScaleStep);
+    m_iconSizeSlider->setPageStep(SettingsDefaults::kQuickActionIconScaleStep * 2);
+    m_iconSizeSlider->setCursor(Qt::PointingHandCursor);
+    m_iconSizeSlider->setFocusPolicy(Qt::StrongFocus);
+    m_iconSizeValue = new QLabel(m_contentWidget);
+    m_iconSizeValue->setObjectName(QStringLiteral("valueBadge"));
+    m_iconSizeValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_iconSizeValue->setFixedWidth(40);
+    connect(m_iconSizeSlider, &QSlider::valueChanged, this, [this](int v) {
+        const int step = SettingsDefaults::kQuickActionIconScaleStep;
+        const int snapped = std::clamp(
+            static_cast<int>(std::lround(static_cast<double>(v) / step)) * step,
+            SettingsDefaults::kMinQuickActionIconScalePercent,
+            SettingsDefaults::kMaxQuickActionIconScalePercent);
+        if (snapped != v) {
+            QSignalBlocker blocker(m_iconSizeSlider);
+            m_iconSizeSlider->setValue(snapped);
+        }
+        m_iconSizeValue->setText(QStringLiteral("%1%").arg(snapped));
+        onPreferenceChanged();
+    });
+    connect(m_iconSizeSlider, &QSlider::sliderReleased, this, &SettingsPanel::playUiClick);
+    iconSizeRow->addWidget(iconSizeLabel);
+    iconSizeRow->addWidget(m_iconSizeSlider, 1);
+    iconSizeRow->addWidget(m_iconSizeValue);
+    petBody->addLayout(iconSizeRow);
+
     auto* speedRow = new QHBoxLayout();
     speedRow->setSpacing(6);
     auto* speedLabel = new QLabel(QStringLiteral("Speed"), m_contentWidget);
@@ -986,6 +1022,8 @@ void SettingsPanel::syncFromSettings()
 
     m_sizeSlider->setValue(m_settings->petSize());
     m_sizeValue->setText(QStringLiteral("%1px").arg(m_settings->petSize()));
+    m_iconSizeSlider->setValue(m_settings->quickActionIconScale());
+    m_iconSizeValue->setText(QStringLiteral("%1%").arg(m_settings->quickActionIconScale()));
     m_speedSlider->setValue(static_cast<int>(m_settings->movementSpeed() * 100.0));
     m_speedValue->setText(QStringLiteral("%1x").arg(m_settings->movementSpeed(), 0, 'f', 2));
     m_moveCheck->setChecked(m_settings->movementEnabled());
@@ -1469,6 +1507,7 @@ void SettingsPanel::onPreferenceChanged()
         return;
     }
     m_settings->setPetSize(m_sizeSlider->value());
+    m_settings->setQuickActionIconScale(m_iconSizeSlider->value());
     m_settings->setMovementSpeed(m_speedSlider->value() / 100.0);
     m_settings->setMovementEnabled(m_moveCheck->isChecked());
     m_settings->setAutoAnimationEnabled(m_animCheck->isChecked());

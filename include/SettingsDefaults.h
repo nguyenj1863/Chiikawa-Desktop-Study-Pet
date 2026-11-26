@@ -12,6 +12,11 @@ inline constexpr int kPetSize = 120;
 inline constexpr int kMinPetSize = 64;
 inline constexpr int kMaxPetSize = 256;
 
+inline constexpr int kQuickActionIconScalePercent = 110;
+inline constexpr int kMinQuickActionIconScalePercent = 80;
+inline constexpr int kMaxQuickActionIconScalePercent = 150;
+inline constexpr int kQuickActionIconScaleStep = 5;
+
 inline constexpr double kMoveSpeed = 1.0;
 inline constexpr double kMinMoveSpeed = 0.25;
 inline constexpr double kMaxMoveSpeed = 3.0;
