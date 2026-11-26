@@ -10,7 +10,9 @@
 #include "ExternalAppLauncher.h"
 #include "MovementController.h"
 #include "PetWindow.h"
+#include "QuickActionItem.h"
 #include "QuickActionMenu.h"
+#include "QuickActionsEditor.h"
 #include "SettingsPanel.h"
 
 #include <cmath>
@@ -38,7 +40,7 @@ private slots:
         QuickActionMenu menu;
         menu.setNativeOutsideObserverEnabled(false);
 
-        QCOMPARE(static_cast<int>(QuickActionMenu::ActionCount), 6);
+        QCOMPARE(menu.actionCount(), 6);
 
         QVERIFY(menu.spotifyButton() != nullptr);
         QVERIFY(menu.discordButton() != nullptr);
@@ -85,7 +87,7 @@ private slots:
                     QPointF prevGlobal;
                     qreal minX = 1e9;
                     qreal maxX = -1e9;
-                    for (int i = 0; i < QuickActionMenu::ActionCount; ++i) {
+                    for (int i = 0; i < layout.count(); ++i) {
                         const QPointF localEnd = QuickActionMenu::evaluateArc(layout.arcAt(i), 1.0);
                         const QPointF globalEnd = QPointF(layout.overlayRect.topLeft()) + localEnd;
                         minX = std::min(minX, globalEnd.x());
@@ -134,7 +136,7 @@ private slots:
         const QuickActionMenu::Layout layout = QuickActionMenu::computeLayout(petNearRight, spriteLocal, screen);
 
         QVERIFY(layout.mirroredLeft);
-        for (int i = 0; i < QuickActionMenu::ActionCount; ++i) {
+        for (int i = 0; i < layout.count(); ++i) {
             const QPointF globalEnd = QPointF(layout.overlayRect.topLeft())
                                     + QuickActionMenu::evaluateArc(layout.arcAt(i), 1.0);
             QVERIFY(globalEnd.x() < petNearRight.left());
@@ -157,8 +159,8 @@ private slots:
         AnimatedQuickActionButton* spotify = menu.spotifyButton();
         AnimatedQuickActionButton* league = menu.leagueButton();
 
-        menu.setHoveredIndex(QuickActionMenu::DiscordIndex);
-        QCOMPARE(menu.hoveredIndex(), static_cast<int>(QuickActionMenu::DiscordIndex));
+        menu.setHoveredIndex(1);
+        QCOMPARE(menu.hoveredIndex(), 1);
         QVERIFY(discord->isHovered());
         QVERIFY(!spotify->isHovered());
         QVERIFY(!league->isHovered());
@@ -189,8 +191,8 @@ private slots:
         QCOMPARE(league->hoverOffset(), QPointF(0.0, 0.0));
 
         // Rapid transition to League: Discord returns cleanly, League becomes elevated top
-        menu.setHoveredIndex(QuickActionMenu::LeagueIndex);
-        QCOMPARE(menu.hoveredIndex(), static_cast<int>(QuickActionMenu::LeagueIndex));
+        menu.setHoveredIndex(2);
+        QCOMPARE(menu.hoveredIndex(), 2);
         QVERIFY(!discord->isHovered());
         QVERIFY(league->isHovered());
 
@@ -225,7 +227,7 @@ private slots:
         QCOMPARE(menu.state(), QuickActionMenu::State::Open);
 
         // For every card 0..5, its top exposed band must hit-test to THAT exact card
-        for (int i = 0; i < QuickActionMenu::ActionCount; ++i) {
+        for (int i = 0; i < menu.actionCount(); ++i) {
             menu.setHoveredIndex(-1);
             const QRectF r = menu.restingVisualRect(i);
             const QPoint probe(qRound(r.center().x()), qRound(r.top() + 6.0));
@@ -250,12 +252,12 @@ private slots:
 
         QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1500);
         QCOMPARE(revealedSpy.count(), 1);
-        for (int i = 0; i < QuickActionMenu::ActionCount; ++i) {
+        for (int i = 0; i < menu.actionCount(); ++i) {
             QCOMPARE(menu.progressAt(i), 1.0);
         }
 
         // Hover Cursor while open, then toggle closed: hover must resolve cleanly while dismissing
-        menu.setHoveredIndex(QuickActionMenu::CursorIndex);
+        menu.setHoveredIndex(3);
         QTRY_VERIFY_WITH_TIMEOUT(menu.cursorButton()->hoverOffset().y() < -5.0, 300);
 
         menu.toggleMenu(petRect, QRect(15, 15, 90, 90));
@@ -540,6 +542,110 @@ private slots:
         QVERIFY(!pet.movementController()->isPausedFor(MovementController::PauseReason::QuickActionMenuOpen));
         QVERIFY(pet.movementController()->isPausedFor(MovementController::PauseReason::SettingsOpen));
         QVERIFY(pet.movementController()->isPaused());
+    }
+
+    void dynamicShortcutCountsAndReorderingAdaptRadialArc()
+    {
+        const QRect screen(0, 0, 1920, 1080);
+        const QRect petRect(600, 420, 120, 120);
+        const QRect spriteLocal(18, 18, 84, 84);
+
+        for (int count : {1, 2, 4, 6, 10}) {
+            const QuickActionMenu::Layout layout =
+                QuickActionMenu::computeLayout(petRect, spriteLocal, screen, 110, count);
+            QCOMPARE(layout.count(), count);
+            QVERIFY(screen.contains(layout.overlayRect));
+            const int widgetSize = AnimatedQuickActionButton::widgetSizeForScale(110);
+            for (int i = 0; i < count; ++i) {
+                const QPointF pt = QuickActionMenu::evaluateArc(layout.arcAt(i), 1.0);
+                QVERIFY(pt.x() >= widgetSize * 0.5);
+                QVERIFY(pt.y() >= widgetSize * 0.5);
+                QVERIFY(pt.x() <= layout.overlayRect.width() - widgetSize * 0.5);
+                QVERIFY(pt.y() <= layout.overlayRect.height() - widgetSize * 0.5);
+                if (i > 0) {
+                    const QPointF prev = QuickActionMenu::evaluateArc(layout.arcAt(i - 1), 1.0);
+                    QVERIFY(pt.y() > prev.y());
+                }
+            }
+        }
+
+        // Disable Discord & League, reorder Cursor to top, add custom VS Code
+        QuickActionMenu menu;
+        menu.setNativeOutsideObserverEnabled(false);
+        menu.setReducedMotionOverride(1);
+        QVector<QuickActionItem> items = QuickActionItem::defaultShortcuts();
+        items[1].enabled = false; // Discord
+        items[2].enabled = false; // League
+        QuickActionItem cursor = items.takeAt(3);
+        items.prepend(cursor);
+        items.push_back({QStringLiteral("custom:vscode"), QStringLiteral("VS Code"),
+                         QuickActionType::CustomApp, QStringLiteral("C:/Apps/Code.exe"), {}, true});
+
+        menu.setShortcuts(items);
+        QCOMPARE(menu.actionCount(), 5);
+        QCOMPARE(menu.indexOfId(QStringLiteral("builtin:cursor")), 0);
+        QCOMPARE(menu.indexOfId(QStringLiteral("builtin:spotify")), 1);
+        QCOMPARE(menu.indexOfId(QStringLiteral("builtin:discord")), -1);
+        QCOMPARE(menu.indexOfId(QStringLiteral("custom:vscode")), 4);
+
+        menu.showMenu(petRect, spriteLocal);
+        QCOMPARE(menu.state(), QuickActionMenu::State::Open);
+        // Cursor is now visually above Spotify
+        QVERIFY(menu.restingVisualRect(0).center().y() < menu.restingVisualRect(1).center().y());
+    }
+
+    void quickActionsEditorAndCustomLauncherIntegration()
+    {
+        QuickActionsEditor editor;
+        editor.setShortcuts(QuickActionItem::defaultShortcuts());
+        QCOMPARE(editor.shortcuts().size(), 6);
+
+        QSignalSpy changedSpy(&editor, &QuickActionsEditor::shortcutsChanged);
+
+        // Toggle, reorder, add, edit, and remove custom app
+        editor.setShortcutEnabled(QStringLiteral("builtin:discord"), false);
+        QCOMPARE(changedSpy.count(), 1);
+        QCOMPARE(editor.shortcuts().at(1).enabled, false);
+
+        editor.moveShortcut(3, 0); // Move Cursor to top
+        QCOMPARE(editor.shortcuts().at(0).id, QStringLiteral("builtin:cursor"));
+
+        QuickActionItem custom{QStringLiteral("custom:obsidian"), QStringLiteral("Obsidian"),
+                               QuickActionType::CustomApp, QStringLiteral("C:/Apps/Obsidian.exe"), {}, true};
+        editor.addShortcut(custom);
+        QCOMPARE(editor.shortcuts().size(), 7);
+
+        custom.displayName = QStringLiteral("Obsidian Notes");
+        editor.updateShortcut(custom);
+        QCOMPARE(editor.shortcuts().last().displayName, QStringLiteral("Obsidian Notes"));
+
+        editor.removeShortcut(QStringLiteral("custom:obsidian"));
+        QCOMPARE(editor.shortcuts().size(), 6);
+
+        // Built-in items cannot be removed (only disabled)
+        editor.removeShortcut(QStringLiteral("builtin:settings"));
+        QCOMPARE(editor.shortcuts().size(), 6);
+
+        // Mocked custom application launcher (running, launched, missing, failed)
+        ExternalAppLauncher launcher;
+        QString launchedPath;
+        launcher.setCustomBackend({
+            [](const QString& p) { return p.contains(QStringLiteral("running")); },
+            [](const QString& p) { return !p.contains(QStringLiteral("missing")); },
+            [&](const QString& p) {
+                launchedPath = p;
+                return !p.contains(QStringLiteral("fail"));
+            }
+        });
+        QCOMPARE(launcher.openOrActivateCustom(QStringLiteral("App"), QStringLiteral("C:/running.exe")).status,
+                 ExternalAppLauncher::Status::ActivatedRunning);
+        QCOMPARE(launcher.openOrActivateCustom(QStringLiteral("App"), QStringLiteral("C:/ok.exe")).status,
+                 ExternalAppLauncher::Status::LaunchedApp);
+        QCOMPARE(launchedPath, QStringLiteral("C:/ok.exe"));
+        QCOMPARE(launcher.openOrActivateCustom(QStringLiteral("App"), QStringLiteral("C:/missing.exe")).status,
+                 ExternalAppLauncher::Status::NotInstalled);
+        QCOMPARE(launcher.openOrActivateCustom(QStringLiteral("App"), QStringLiteral("C:/fail.exe")).status,
+                 ExternalAppLauncher::Status::LaunchFailed);
     }
 };
 

@@ -18,6 +18,7 @@ private slots:
     void persistsDesktopAndAlarmPreferences();
     void restoreDefaultsPreservesActiveSessionsAndAlarms();
     void persistsQuickActionIconScaleAndHandlesInvalidValues();
+    void persistsCustomQuickActionsAndValidatesMalformedData();
 
 private:
     void clearSettings();
@@ -222,6 +223,56 @@ void TestAppSettings::persistsQuickActionIconScaleAndHandlesInvalidValues()
 
         AppSettings s;
         QCOMPARE(s.quickActionIconScale(), SettingsDefaults::kQuickActionIconScalePercent);
+    }
+    clearSettings();
+}
+
+void TestAppSettings::persistsCustomQuickActionsAndValidatesMalformedData()
+{
+    clearSettings();
+    {
+        // Fresh/upgrading user gets the 6 default shortcuts
+        AppSettings s;
+        QCOMPARE(s.quickActions().size(), 6);
+        QCOMPARE(s.quickActions().at(0).id, QStringLiteral("builtin:spotify"));
+        QCOMPARE(s.quickActions().at(5).id, QStringLiteral("builtin:exit"));
+
+        // Reorder, disable Discord, and add a custom app
+        QVector<QuickActionItem> items = s.quickActions();
+        items[1].enabled = false; // Discord disabled
+        QuickActionItem cursor = items.takeAt(3);
+        items.prepend(cursor); // Cursor first
+        items.push_back({QStringLiteral("custom:vscode"), QStringLiteral("VS Code"),
+                         QuickActionType::CustomApp, QStringLiteral("C:/Apps/Code.exe"), {}, true});
+        s.setQuickActions(items);
+        s.setPetSize(150);
+        s.save();
+    }
+    {
+        // Reloaded after restart
+        AppSettings s;
+        QCOMPARE(s.quickActions().size(), 7);
+        QCOMPARE(s.quickActions().at(0).id, QStringLiteral("builtin:cursor"));
+        QCOMPARE(s.quickActions().at(2).id, QStringLiteral("builtin:discord"));
+        QCOMPARE(s.quickActions().at(2).enabled, false);
+        QCOMPARE(s.quickActions().at(6).id, QStringLiteral("custom:vscode"));
+        QCOMPARE(s.quickActions().at(6).applicationReference, QStringLiteral("C:/Apps/Code.exe"));
+
+        // restoreDefaultQuickActions resets only shortcuts, preserving Pet Size
+        s.restoreDefaultQuickActions();
+        QCOMPARE(s.quickActions().size(), 6);
+        QCOMPARE(s.quickActions().at(0).id, QStringLiteral("builtin:spotify"));
+        QCOMPARE(s.petSize(), 150);
+    }
+    {
+        // Malformed JSON safely falls back to defaults
+        QSettings raw(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPet"));
+        raw.setValue(QStringLiteral("pet/quickActionsJson"), QByteArray("{bad json"));
+        raw.sync();
+
+        AppSettings s;
+        QCOMPARE(s.quickActions().size(), 6);
+        QCOMPARE(s.quickActions().at(0).id, QStringLiteral("builtin:spotify"));
     }
     clearSettings();
 }
