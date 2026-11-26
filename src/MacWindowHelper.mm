@@ -50,4 +50,16 @@ void configureFloatingOverlay(QWidget* widget, bool disableShadow)
 #endif
 }
 
+bool prefersReducedMotion()
+{
+#ifdef Q_OS_MACOS
+    if (QGuiApplication::platformName() != QLatin1String("cocoa")) {
+        return false;
+    }
+    return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceMotion] == YES;
+#else
+    return false;
+#endif
+}
+
 } // namespace MacWindowHelper

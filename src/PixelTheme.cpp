@@ -220,6 +220,7 @@ PixelGrid gridFor(PixelIcon kind)
             "............",
         }};
     case PixelIcon::Gear:
+    case PixelIcon::Spotify:
         return {{
             "....####....",
             ".##.####.##.",
@@ -381,6 +382,46 @@ QIcon icon(PixelIcon kind, const QColor& color, int logicalSize)
         // Punch out crisp circular center hole
         p.setCompositionMode(QPainter::CompositionMode_Clear);
         p.drawEllipse(QPointF(cx, cy), holeR, holeR);
+
+        p.end();
+        QIcon result(pm);
+        cache.insert(key, result);
+        return result;
+    }
+
+    if (kind == PixelIcon::Spotify) {
+        // Recognizable Spotify circular mark with three gently arched soundwaves
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const qreal s = static_cast<qreal>(logicalSize);
+        const qreal cx = s * 0.5;
+        const qreal cy = s * 0.5;
+        const qreal radius = s * 0.45;
+
+        p.setPen(Qt::NoPen);
+        p.setBrush(color);
+        p.drawEllipse(QPointF(cx, cy), radius, radius);
+
+        // Cut out three slightly tilted concentric soundwave arcs with rounded caps
+        p.save();
+        p.translate(cx, cy);
+        p.rotate(8.0);
+        p.setCompositionMode(QPainter::CompositionMode_Clear);
+        p.setBrush(Qt::NoBrush);
+
+        auto drawWave = [&](qreal halfSpan, qreal yEnd, qreal yCtrl, qreal widthFactor) {
+            QPen wavePen(Qt::black, std::max<qreal>(1.1, s * widthFactor),
+                         Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+            p.setPen(wavePen);
+            QPainterPath arc;
+            arc.moveTo(-s * halfSpan, s * yEnd);
+            arc.quadTo(0.0, s * yCtrl, s * halfSpan, s * yEnd);
+            p.drawPath(arc);
+        };
+
+        drawWave(0.265, -0.075, -0.205, 0.095);
+        drawWave(0.220,  0.055, -0.055, 0.082);
+        drawWave(0.170,  0.175,  0.090, 0.070);
+        p.restore();
 
         p.end();
         QIcon result(pm);

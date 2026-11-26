@@ -13,4 +13,10 @@ namespace MacWindowHelper {
  */
 void configureFloatingOverlay(QWidget* widget, bool disableShadow = false);
 
+/**
+ * Returns true when macOS "Reduce Motion" accessibility preference is enabled.
+ * Returns false on non-macOS platforms.
+ */
+[[nodiscard]] bool prefersReducedMotion();
+
 } // namespace MacWindowHelper

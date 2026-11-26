@@ -25,7 +25,8 @@ enum class PixelIcon {
     Exit,
     Edit,
     Help,
-    Gear
+    Gear,
+    Spotify
 };
 
 namespace PixelTheme {
