@@ -802,40 +802,6 @@ void SettingsPanel::buildUi()
     sizeRow->addWidget(m_sizeValue);
     petBody->addLayout(sizeRow);
 
-    auto* iconSizeRow = new QHBoxLayout();
-    iconSizeRow->setSpacing(6);
-    auto* iconSizeLabel = new QLabel(QStringLiteral("Quick-Action Icon Size"), m_contentWidget);
-    m_iconSizeSlider = new QSlider(Qt::Horizontal, m_contentWidget);
-    m_iconSizeSlider->setObjectName(QStringLiteral("quickActionIconSizeSlider"));
-    m_iconSizeSlider->setRange(SettingsDefaults::kMinQuickActionIconScalePercent,
-                               SettingsDefaults::kMaxQuickActionIconScalePercent);
-    m_iconSizeSlider->setSingleStep(SettingsDefaults::kQuickActionIconScaleStep);
-    m_iconSizeSlider->setPageStep(SettingsDefaults::kQuickActionIconScaleStep * 2);
-    m_iconSizeSlider->setCursor(Qt::PointingHandCursor);
-    m_iconSizeSlider->setFocusPolicy(Qt::StrongFocus);
-    m_iconSizeValue = new QLabel(m_contentWidget);
-    m_iconSizeValue->setObjectName(QStringLiteral("valueBadge"));
-    m_iconSizeValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_iconSizeValue->setFixedWidth(40);
-    connect(m_iconSizeSlider, &QSlider::valueChanged, this, [this](int v) {
-        const int step = SettingsDefaults::kQuickActionIconScaleStep;
-        const int snapped = std::clamp(
-            static_cast<int>(std::lround(static_cast<double>(v) / step)) * step,
-            SettingsDefaults::kMinQuickActionIconScalePercent,
-            SettingsDefaults::kMaxQuickActionIconScalePercent);
-        if (snapped != v) {
-            QSignalBlocker blocker(m_iconSizeSlider);
-            m_iconSizeSlider->setValue(snapped);
-        }
-        m_iconSizeValue->setText(QStringLiteral("%1%").arg(snapped));
-        onPreferenceChanged();
-    });
-    connect(m_iconSizeSlider, &QSlider::sliderReleased, this, &SettingsPanel::playUiClick);
-    iconSizeRow->addWidget(iconSizeLabel);
-    iconSizeRow->addWidget(m_iconSizeSlider, 1);
-    iconSizeRow->addWidget(m_iconSizeValue);
-    petBody->addLayout(iconSizeRow);
-
     auto* speedRow = new QHBoxLayout();
     speedRow->setSpacing(6);
     auto* speedLabel = new QLabel(QStringLiteral("Speed"), m_contentWidget);
@@ -885,21 +851,6 @@ void SettingsPanel::buildUi()
         petBody->addWidget(cb);
     }
 
-    m_quickActionsEditor = new QuickActionsEditor(m_contentWidget);
-    m_quickActionsEditor->setObjectName(QStringLiteral("quickActionsEditor"));
-    connect(m_quickActionsEditor, &QuickActionsEditor::userInteracted,
-            this, &SettingsPanel::playUiClick);
-    connect(m_quickActionsEditor, &QuickActionsEditor::shortcutsChanged,
-            this, [this](const QVector<QuickActionItem>& items) {
-                if (m_syncingUi || !m_settings) {
-                    return;
-                }
-                m_settings->setQuickActions(items);
-                m_settings->save();
-                emit settingsApplied();
-            });
-    petBody->addWidget(m_quickActionsEditor);
-
     auto* restoreBtn = new QPushButton(
         PixelTheme::icon(PixelIcon::RestoreDefaults, PixelTheme::kSecondaryText, 12),
         QStringLiteral(" Restore Defaults"), m_contentWidget);
@@ -912,6 +863,75 @@ void SettingsPanel::buildUi()
 
     m_petSection->setContentLayout(petBody);
     root->addWidget(m_petSection);
+
+    // =========================================================================
+    // SECTION 4: QUICK ACTIONS (Collapsible, collapsed by default)
+    // =========================================================================
+    m_quickActionsSection = new CollapsibleSection(QStringLiteral("Quick Actions"), false, m_contentWidget);
+    m_quickActionsSection->setObjectName(QStringLiteral("quickActionsSection"));
+    connect(m_quickActionsSection, &CollapsibleSection::userToggled, this, [this](bool) {
+        playUiClick();
+    });
+    connect(m_quickActionsSection, &CollapsibleSection::heightChanged, this, [this]() {
+        updateLayoutSize();
+        emit panelResized();
+    });
+
+    auto* qaBody = new QVBoxLayout();
+    qaBody->setSpacing(6);
+
+    auto* iconSizeRow = new QHBoxLayout();
+    iconSizeRow->setSpacing(6);
+    auto* iconSizeLabel = new QLabel(QStringLiteral("Icon Size"), m_contentWidget);
+    m_iconSizeSlider = new QSlider(Qt::Horizontal, m_contentWidget);
+    m_iconSizeSlider->setObjectName(QStringLiteral("quickActionIconSizeSlider"));
+    m_iconSizeSlider->setRange(SettingsDefaults::kMinQuickActionIconScalePercent,
+                               SettingsDefaults::kMaxQuickActionIconScalePercent);
+    m_iconSizeSlider->setSingleStep(SettingsDefaults::kQuickActionIconScaleStep);
+    m_iconSizeSlider->setPageStep(SettingsDefaults::kQuickActionIconScaleStep * 2);
+    m_iconSizeSlider->setCursor(Qt::PointingHandCursor);
+    m_iconSizeSlider->setFocusPolicy(Qt::StrongFocus);
+    m_iconSizeValue = new QLabel(m_contentWidget);
+    m_iconSizeValue->setObjectName(QStringLiteral("valueBadge"));
+    m_iconSizeValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_iconSizeValue->setFixedWidth(40);
+    connect(m_iconSizeSlider, &QSlider::valueChanged, this, [this](int v) {
+        const int step = SettingsDefaults::kQuickActionIconScaleStep;
+        const int snapped = std::clamp(
+            static_cast<int>(std::lround(static_cast<double>(v) / step)) * step,
+            SettingsDefaults::kMinQuickActionIconScalePercent,
+            SettingsDefaults::kMaxQuickActionIconScalePercent);
+        if (snapped != v) {
+            QSignalBlocker blocker(m_iconSizeSlider);
+            m_iconSizeSlider->setValue(snapped);
+        }
+        m_iconSizeValue->setText(QStringLiteral("%1%").arg(snapped));
+        onPreferenceChanged();
+    });
+    connect(m_iconSizeSlider, &QSlider::sliderReleased, this, &SettingsPanel::playUiClick);
+    iconSizeRow->addWidget(iconSizeLabel);
+    iconSizeRow->addWidget(m_iconSizeSlider, 1);
+    iconSizeRow->addWidget(m_iconSizeValue);
+    qaBody->addLayout(iconSizeRow);
+
+    m_quickActionsEditor = new QuickActionsEditor(m_contentWidget);
+    m_quickActionsEditor->setObjectName(QStringLiteral("quickActionsEditor"));
+    connect(m_quickActionsEditor, &QuickActionsEditor::userInteracted,
+            this, &SettingsPanel::playUiClick);
+    connect(m_quickActionsEditor, &QuickActionsEditor::shortcutsChanged,
+            this, [this](const QVector<QuickActionItem>& items) {
+                if (m_syncingUi || !m_settings) {
+                    return;
+                }
+                m_settings->setQuickActions(items);
+                m_settings->save();
+                refreshQuickActionsSummary();
+                emit settingsApplied();
+            });
+    qaBody->addWidget(m_quickActionsEditor);
+
+    m_quickActionsSection->setContentLayout(qaBody);
+    root->addWidget(m_quickActionsSection);
 
     m_scrollArea->setWidget(m_contentWidget);
     shell->addWidget(m_scrollArea, 1);
@@ -1077,6 +1097,7 @@ void SettingsPanel::syncFromSettings()
     updateSnoozeChips();
     updateTimeFormatButtons();
     refreshPetSummary();
+    refreshQuickActionsSummary();
     refreshAlarmSummary();
 }
 
@@ -1261,6 +1282,18 @@ void SettingsPanel::refreshPetSummary()
         ? QStringLiteral(" · Desktop-Only")
         : QString();
     m_petSection->setSummary(QStringLiteral("Size %1px%2").arg(m_settings->petSize()).arg(mode));
+}
+
+void SettingsPanel::refreshQuickActionsSummary()
+{
+    if (!m_quickActionsSection || !m_settings) {
+        return;
+    }
+    const int activeCount = m_quickActionsEditor
+        ? m_quickActionsEditor->enabledShortcutCount()
+        : static_cast<int>(m_settings->quickActions().size());
+    m_quickActionsSection->setSummary(
+        QStringLiteral("%1 active · %2%").arg(activeCount).arg(m_settings->quickActionIconScale()));
 }
 
 void SettingsPanel::updateLayoutSize(const QScreen* screen)
@@ -1550,6 +1583,7 @@ void SettingsPanel::onPreferenceChanged()
 
     m_settings->save();
     refreshPetSummary();
+    refreshQuickActionsSummary();
     refreshAlarmSummary();
     emit settingsApplied();
 }

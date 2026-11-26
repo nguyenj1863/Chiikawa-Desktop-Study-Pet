@@ -111,6 +111,7 @@ private:
     void refreshTimerUi();
     void refreshAlarmSummary();
     void refreshPetSummary();
+    void refreshQuickActionsSummary();
     void updateLayoutSize(const QScreen* screen = nullptr);
     void clampToScreen(QPoint& pos) const;
 
@@ -163,14 +164,17 @@ private:
     CollapsibleSection* m_petSection = nullptr;
     QSlider* m_sizeSlider = nullptr;
     QLabel* m_sizeValue = nullptr;
-    QSlider* m_iconSizeSlider = nullptr;
-    QLabel* m_iconSizeValue = nullptr;
     QSlider* m_speedSlider = nullptr;
     QLabel* m_speedValue = nullptr;
     QCheckBox* m_moveCheck = nullptr;
     QCheckBox* m_animCheck = nullptr;
     QCheckBox* m_desktopOnlyCheck = nullptr;
     QCheckBox* m_startupCheck = nullptr;
+
+    // Quick Actions (Collapsible, collapsed by default)
+    CollapsibleSection* m_quickActionsSection = nullptr;
+    QSlider* m_iconSizeSlider = nullptr;
+    QLabel* m_iconSizeValue = nullptr;
     QuickActionsEditor* m_quickActionsEditor = nullptr;
 
     bool m_use24Hour = false;

@@ -1,5 +1,7 @@
 #include <QtTest/QtTest>
 #include <QApplication>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QMouseEvent>
 #include <QSignalSpy>
 #include <QSlider>
@@ -7,7 +9,9 @@
 #include "AnimatedQuickActionButton.h"
 #include "AnimationManager.h"
 #include "AppSettings.h"
+#include "CollapsibleSection.h"
 #include "ExternalAppLauncher.h"
+#include "InstalledAppDiscovery.h"
 #include "MovementController.h"
 #include "PetWindow.h"
 #include "QuickActionItem.h"
@@ -646,6 +650,159 @@ private slots:
                  ExternalAppLauncher::Status::NotInstalled);
         QCOMPARE(launcher.openOrActivateCustom(QStringLiteral("App"), QStringLiteral("C:/fail.exe")).status,
                  ExternalAppLauncher::Status::LaunchFailed);
+    }
+
+    void testInstalledAppDiscoveryAndFiltering()
+    {
+        int providerCalls = 0;
+        InstalledAppDiscovery::setTestProvider([&providerCalls]() {
+            ++providerCalls;
+            return QVector<InstalledAppDiscovery::DetectedApp>{
+                {QStringLiteral("Visual Studio Code"), QStringLiteral("C:/Apps/Code.exe"), QStringLiteral("Start Menu")},
+                {QStringLiteral("Google Chrome"), QStringLiteral("C:/Apps/chrome.exe"), QStringLiteral("Start Menu")},
+                {QStringLiteral("visual studio code"), QStringLiteral("C:/Apps/Code.exe"), QStringLiteral("Installed App")},
+                {QStringLiteral("Notion"), QStringLiteral("C:/Apps/Notion.exe"), QStringLiteral("Installed App")},
+            };
+        });
+
+        QVector<InstalledAppDiscovery::DetectedApp> first;
+        bool firstReady = false;
+        InstalledAppDiscovery::discoverAsync(this, [&](const auto& apps) {
+            first = apps;
+            firstReady = true;
+        }, true);
+        QTRY_VERIFY_WITH_TIMEOUT(firstReady, 2000);
+        QCOMPARE(providerCalls, 1);
+        QCOMPARE(first.size(), 3); // Deduplicated & alphabetically sorted
+        QCOMPARE(first[0].displayName, QStringLiteral("Google Chrome"));
+        QCOMPARE(first[1].displayName, QStringLiteral("Notion"));
+        QCOMPARE(first[2].displayName, QStringLiteral("Visual Studio Code"));
+
+        // Second call without forceRefresh uses cache
+        QVector<InstalledAppDiscovery::DetectedApp> cached;
+        bool cachedReady = false;
+        InstalledAppDiscovery::discoverAsync(this, [&](const auto& apps) {
+            cached = apps;
+            cachedReady = true;
+        }, false);
+        QTRY_VERIFY_WITH_TIMEOUT(cachedReady, 2000);
+        QCOMPARE(providerCalls, 1);
+        QCOMPARE(cached.size(), 3);
+
+        // Search filtering matches display name or subtitle
+        const auto codeMatches = InstalledAppDiscovery::filter(first, QStringLiteral("code"));
+        QCOMPARE(codeMatches.size(), 1);
+        QCOMPARE(codeMatches[0].displayName, QStringLiteral("Visual Studio Code"));
+
+        const auto emptyMatches = InstalledAppDiscovery::filter(first, QStringLiteral("nonexistent"));
+        QVERIFY(emptyMatches.isEmpty());
+
+        InstalledAppDiscovery::setTestProvider({});
+    }
+
+    void testQuickActionDialogDragOverlapSearchAndEdit()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString fakeAppPath = tempDir.filePath(QStringLiteral("FakeStudio.exe"));
+        const QString otherAppPath = tempDir.filePath(QStringLiteral("AnotherApp.exe"));
+        for (const QString& p : {fakeAppPath, otherAppPath}) {
+            QFile f(p);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("stub");
+            f.close();
+        }
+
+        InstalledAppDiscovery::setTestProvider([fakeAppPath, otherAppPath]() {
+            return QVector<InstalledAppDiscovery::DetectedApp>{
+                {QStringLiteral("Fake Studio"), fakeAppPath, QStringLiteral("Start Menu")},
+                {QStringLiteral("Another App"), otherAppPath, QStringLiteral("Installed App")},
+            };
+        });
+
+        QWidget mockSettings(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+        mockSettings.setGeometry(120, 120, 342, 420);
+        mockSettings.show();
+        QTest::qWait(20);
+
+        QuickActionDialog addDlg(nullptr, &mockSettings);
+        addDlg.show();
+        QTest::qWait(20);
+
+        // Initial placement beside Settings should not overlap it
+        QVERIFY(addDlg.overlapRectLocal().isEmpty());
+
+        // Detected apps loaded asynchronously and searchable
+        QVERIFY(addDlg.detectedAppsList() != nullptr);
+        QTRY_COMPARE_WITH_TIMEOUT(addDlg.detectedAppsList()->count(), 2, 2000);
+        addDlg.searchEdit()->setText(QStringLiteral("Fake"));
+        QCOMPARE(addDlg.detectedAppsList()->count(), 1);
+
+        // Selecting a detected app populates Name and Launch Reference
+        addDlg.selectDetectedAppRow(0);
+        QCOMPARE(addDlg.nameEdit()->text(), QStringLiteral("Fake Studio"));
+        QCOMPARE(addDlg.pathEdit()->text(), fakeAppPath);
+
+        // Dragging via header moves the dialog over Settings and computes overlap rect
+        const QPoint startPos = addDlg.pos();
+        const QPoint headerLocal = addDlg.headerWidget()->geometry().center();
+        const QPoint pressGlobal = addDlg.mapToGlobal(headerLocal);
+        const QPoint targetGlobal = mockSettings.frameGeometry().center();
+
+        QMouseEvent press(QEvent::MouseButtonPress, headerLocal, pressGlobal,
+                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(&addDlg, &press);
+
+        QMouseEvent moveEv(QEvent::MouseMove, headerLocal, targetGlobal,
+                           Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(&addDlg, &moveEv);
+
+        QMouseEvent release(QEvent::MouseButtonRelease, headerLocal, targetGlobal,
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&addDlg, &release);
+
+        QVERIFY(addDlg.pos() != startPos);
+        QVERIFY(!addDlg.overlapRectLocal().isEmpty());
+
+        // Edit mode preserves stable id, enabled state, and order; Cancel makes no changes
+        QuickActionItem existing;
+        existing.id = QStringLiteral("custom:stable-123");
+        existing.type = QuickActionType::CustomApp;
+        existing.displayName = QStringLiteral("Original Name");
+        existing.applicationReference = fakeAppPath;
+        existing.enabled = false;
+
+        QuickActionDialog editDlg(&existing, &mockSettings);
+        QCOMPARE(editDlg.nameEdit()->text(), QStringLiteral("Original Name"));
+        QCOMPARE(editDlg.pathEdit()->text(), fakeAppPath);
+        editDlg.nameEdit()->setText(QStringLiteral("Edited Name"));
+        editDlg.reject(); // Cancel discards changes
+        QCOMPARE(editDlg.result(), static_cast<int>(QDialog::Rejected));
+        QCOMPARE(editDlg.resultItem().id, QStringLiteral("custom:stable-123"));
+        QCOMPARE(editDlg.resultItem().enabled, false);
+
+        InstalledAppDiscovery::setTestProvider({});
+    }
+
+    void testSettingsHasDedicatedQuickActionsSection()
+    {
+        AppSettings settings;
+        settings.load();
+        SettingsPanel panel(&settings, nullptr, nullptr, nullptr, nullptr);
+
+        auto* qaSection = panel.findChild<CollapsibleSection*>(QStringLiteral("quickActionsSection"));
+        QVERIFY(qaSection != nullptr);
+        QVERIFY(!qaSection->isExpanded()); // Collapsed by default to keep Settings compact
+
+        // Both the icon-size slider and shortcut editor live inside the Quick Actions section
+        auto* slider = qaSection->findChild<QSlider*>(QStringLiteral("quickActionIconSizeSlider"));
+        auto* editor = qaSection->findChild<QuickActionsEditor*>(QStringLiteral("quickActionsEditor"));
+        QVERIFY(slider != nullptr);
+        QVERIFY(editor != nullptr);
+
+        // Adjusting icon-size slider inside Quick Actions still updates settings
+        slider->setValue(130);
+        QCOMPARE(settings.quickActionIconScale(), 130);
     }
 };
 
