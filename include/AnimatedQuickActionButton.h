@@ -64,6 +64,12 @@ public:
                               qreal hoverRotationDegrees,
                               QWidget* parent = nullptr);
 
+    AnimatedQuickActionButton(const QIcon& customIcon,
+                              qreal hoverRotationDegrees,
+                              QWidget* parent = nullptr);
+
+    void setCustomIcon(const QIcon& customIcon);
+
     [[nodiscard]] static int clampScalePercent(int percent);
     [[nodiscard]] static int visualSizeForScale(int percent);
     [[nodiscard]] static int iconSizeForScale(int percent);
@@ -137,6 +143,8 @@ private:
     PixelIcon m_iconKind;
     QColor m_iconColor;
     QColor m_hoverIconColor;
+    QIcon m_customIcon;
+    bool m_useCustomIcon = false;
     QPixmap m_restPixmap;
     QPixmap m_hoverPixmap;
     int m_cachedPixmapIconSize = 0;

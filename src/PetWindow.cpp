@@ -84,6 +84,7 @@ PetWindow::PetWindow(QWidget* parent)
     m_quickActionMenu = std::make_unique<QuickActionMenu>(nullptr);
     m_quickActionMenu->setAnchorWidget(this);
     m_quickActionMenu->setIconScalePercent(m_settings->quickActionIconScale());
+    m_quickActionMenu->setShortcuts(m_settings->quickActions());
     m_appNotice = std::make_unique<AppLaunchNoticePopup>(nullptr);
     m_appLauncher = std::make_unique<ExternalAppLauncher>();
 
@@ -95,6 +96,30 @@ PetWindow::PetWindow(QWidget* parent)
                 if (m_animations) {
                     m_animations->setAutoSwitchSuspended(
                         AnimationManager::AutoSwitchSuspendReason::QuickActionMenuOpen, active);
+                }
+            });
+    connect(m_quickActionMenu.get(), &QuickActionMenu::shortcutTriggered,
+            this, [this](const QuickActionItem& item) {
+                if (item.type != QuickActionType::CustomApp) {
+                    return;
+                }
+                if (m_uiSound) {
+                    m_uiSound->playClick();
+                }
+                if (!m_appLauncher) {
+                    return;
+                }
+                const ExternalAppLauncher::Result result =
+                    m_appLauncher->openOrActivateCustom(item.displayName, item.applicationReference);
+                if ((result.status == ExternalAppLauncher::Status::NotInstalled
+                     || result.status == ExternalAppLauncher::Status::LaunchFailed)
+                    && m_appNotice) {
+                    m_appNotice->showNear(
+                        frameGeometry(),
+                        result.title,
+                        result.message,
+                        result.fallbackActionLabel,
+                        result.fallbackUrl);
                 }
             });
     connect(m_quickActionMenu.get(), &QuickActionMenu::settingsRequested,
@@ -376,6 +401,7 @@ void PetWindow::applySettings()
     }
     if (m_quickActionMenu) {
         m_quickActionMenu->setIconScalePercent(m_settings->quickActionIconScale());
+        m_quickActionMenu->setShortcuts(m_settings->quickActions());
         m_quickActionMenu->updateSpriteBounds(frameGeometry(), currentVisibleSpriteBounds());
     }
     if (m_movement) {

@@ -14,6 +14,7 @@
 #include <QApplication>
 #include <QEasingCurve>
 #include <QEnterEvent>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QHelpEvent>
 #include <QHBoxLayout>
@@ -36,42 +37,6 @@ constexpr qreal kPi = 3.14159265358979323846;
 constexpr qreal kTwoPi = 2.0 * kPi;
 constexpr qreal kDegToRad = kPi / 180.0;
 
-struct ActionSpec {
-    QuickActionMenu::ActionIndex index;
-    PixelIcon icon;
-    QColor restColor;
-    QColor hoverColor;
-    qreal hoverRotationDeg;
-    const char* objectName;
-    const char* toolTip;
-    const char* accessibleName;
-};
-
-const std::array<ActionSpec, QuickActionMenu::ActionCount>& actionSpecs()
-{
-    static const std::array<ActionSpec, QuickActionMenu::ActionCount> kSpecs = {{
-        {QuickActionMenu::SpotifyIndex, PixelIcon::Spotify,
-         QColor(0x1D, 0xB9, 0x54), QColor(0x24, 0xD8, 0x64), -6.5,
-         "quickActionSpotify", "Open Spotify", "Open Spotify"},
-        {QuickActionMenu::DiscordIndex, PixelIcon::Discord,
-         QColor(0x58, 0x65, 0xF2), QColor(0x79, 0x83, 0xF5), 6.0,
-         "quickActionDiscord", "Open Discord", "Open Discord"},
-        {QuickActionMenu::LeagueIndex, PixelIcon::LeagueOfLegends,
-         QColor(0xC8, 0xAA, 0x6E), QColor(0xE3, 0xC7, 0x89), -5.5,
-         "quickActionLeague", "Open League of Legends", "Open League of Legends"},
-        {QuickActionMenu::CursorIndex, PixelIcon::Cursor,
-         QColor(0xE4, 0xE8, 0xF0), QColor(0xFF, 0xFF, 0xFF), 6.5,
-         "quickActionCursor", "Open Cursor", "Open Cursor"},
-        {QuickActionMenu::SettingsIndex, PixelIcon::Gear,
-         PixelTheme::kPrimaryText, QColor(0xFF, 0xFF, 0xFF), -5.5,
-         "quickActionSettings", "Open Settings", "Open Settings"},
-        {QuickActionMenu::ExitIndex, PixelIcon::Exit,
-         PixelTheme::kPrimaryText, PixelTheme::kDangerText, 5.5,
-         "quickActionExit", "Exit Chiikawa", "Exit application"}
-    }};
-    return kSpecs;
-}
-
 QRect screenBoundsForPet(const QRect& petRect)
 {
     return WindowCoordinator::availableGeometryFor(petRect.center());
@@ -89,6 +54,53 @@ QuickActionMenu::ArcPath lerpArc(const QuickActionMenu::ArcPath& a,
         a.startAngle + (b.startAngle - a.startAngle) * t,
         a.endAngle + (b.endAngle - a.endAngle) * t
     };
+}
+
+AnimatedQuickActionButton* createButtonForShortcut(const QuickActionItem& item,
+                                                   int index,
+                                                   QWidget* parent)
+{
+    const qreal rot = (index % 2 == 0) ? -6.0 : 6.0;
+    const bool hasCustomIcon = !item.customIconPath.isEmpty() && QFileInfo::exists(item.customIconPath);
+
+    AnimatedQuickActionButton* btn = nullptr;
+    if (!hasCustomIcon && item.type == QuickActionType::BuiltInApp) {
+        if (item.applicationReference == QStringLiteral("spotify")) {
+            btn = new AnimatedQuickActionButton(
+                PixelIcon::Spotify, QColor(0x1D, 0xB9, 0x54), QColor(0x24, 0xD8, 0x64), -6.5, parent);
+        } else if (item.applicationReference == QStringLiteral("discord")) {
+            btn = new AnimatedQuickActionButton(
+                PixelIcon::Discord, QColor(0x58, 0x65, 0xF2), QColor(0x79, 0x83, 0xF5), 6.0, parent);
+        } else if (item.applicationReference == QStringLiteral("league")) {
+            btn = new AnimatedQuickActionButton(
+                PixelIcon::LeagueOfLegends, QColor(0xC8, 0xAA, 0x6E), QColor(0xE3, 0xC7, 0x89), -5.5, parent);
+        } else if (item.applicationReference == QStringLiteral("cursor")) {
+            btn = new AnimatedQuickActionButton(
+                PixelIcon::Cursor, QColor(0xE4, 0xE8, 0xF0), QColor(0xFF, 0xFF, 0xFF), 6.5, parent);
+        }
+    } else if (!hasCustomIcon && item.type == QuickActionType::Settings) {
+        btn = new AnimatedQuickActionButton(
+            PixelIcon::Gear, PixelTheme::kPrimaryText, QColor(0xFF, 0xFF, 0xFF), -5.5, parent);
+    } else if (!hasCustomIcon && item.type == QuickActionType::Exit) {
+        btn = new AnimatedQuickActionButton(
+            PixelIcon::Exit, PixelTheme::kPrimaryText, PixelTheme::kDangerText, 5.5, parent);
+    }
+
+    if (!btn) {
+        btn = new AnimatedQuickActionButton(QuickActionItem::resolveIcon(item, 24), rot, parent);
+    }
+
+    btn->setObjectName(QStringLiteral("quickAction_") + item.id);
+    if (item.type == QuickActionType::Exit) {
+        btn->setToolTip(QStringLiteral("Exit Chiikawa"));
+        btn->setAccessibleName(QStringLiteral("Exit application"));
+    } else {
+        const QString label = QStringLiteral("Open %1").arg(item.displayName);
+        btn->setToolTip(label);
+        btn->setAccessibleName(label);
+    }
+    btn->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    return btn;
 }
 
 #ifdef Q_OS_WIN
@@ -270,44 +282,6 @@ QuickActionMenu::QuickActionMenu(QWidget* parent)
     setWindowFlag(Qt::WindowDoesNotAcceptFocus, true);
     setMouseTracking(true);
 
-    const auto& specs = actionSpecs();
-    for (int i = 0; i < ActionCount; ++i) {
-        const ActionSpec& spec = specs[static_cast<std::size_t>(i)];
-        auto* btn = new AnimatedQuickActionButton(
-            spec.icon,
-            spec.restColor,
-            spec.hoverColor,
-            spec.hoverRotationDeg,
-            this);
-        btn->setObjectName(QString::fromLatin1(spec.objectName));
-        btn->setToolTip(QString::fromLatin1(spec.toolTip));
-        btn->setAccessibleName(QString::fromLatin1(spec.accessibleName));
-        // Centralized hit-testing in QuickActionMenu prevents Z-order raise() flicker.
-        btn->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        m_buttons[static_cast<std::size_t>(i)] = btn;
-
-        connect(btn, &QAbstractButton::clicked,
-                this, [this, i]() { triggerAction(i); });
-        connect(btn, &AnimatedQuickActionButton::hoveredChanged,
-                this, &QuickActionMenu::onButtonHoveredChanged);
-
-        m_pathAnims[static_cast<std::size_t>(i)] = new QVariantAnimation(this);
-        connect(m_pathAnims[static_cast<std::size_t>(i)], &QVariantAnimation::valueChanged,
-                this, [this, i](const QVariant& value) {
-                    m_progress[static_cast<std::size_t>(i)] = value.toReal();
-                    applyIconProgress(i, m_progress[static_cast<std::size_t>(i)]);
-                });
-        connect(m_pathAnims[static_cast<std::size_t>(i)], &QVariantAnimation::finished,
-                this, &QuickActionMenu::checkAnimationCompletion);
-
-        m_staggerTimers[static_cast<std::size_t>(i)] = new QTimer(this);
-        m_staggerTimers[static_cast<std::size_t>(i)]->setSingleShot(true);
-        connect(m_staggerTimers[static_cast<std::size_t>(i)], &QTimer::timeout,
-                this, [this, i]() { startRevealForIndex(i); });
-    }
-
-    applyDefaultStackOrder();
-
     m_retargetAnim = new QVariantAnimation(this);
     m_retargetAnim->setDuration(kRetargetMs);
     m_retargetAnim->setEasingCurve(QEasingCurve::OutCubic);
@@ -329,7 +303,7 @@ QuickActionMenu::QuickActionMenu(QWidget* parent)
     connect(&m_autoHideTimer, &QTimer::timeout,
             this, &QuickActionMenu::hideMenu);
 
-    syncReducedMotion();
+    setShortcuts(QuickActionItem::defaultShortcuts());
     hide();
 }
 
@@ -350,6 +324,116 @@ void QuickActionMenu::setAnchorWidget(QWidget* petWidget)
     m_anchorWidget = petWidget;
 }
 
+void QuickActionMenu::setShortcuts(const QVector<QuickActionItem>& items)
+{
+    QVector<QuickActionItem> enabledItems;
+    enabledItems.reserve(std::min(static_cast<int>(items.size()), QuickActionItem::kMaxVisibleRadialShortcuts));
+    for (const QuickActionItem& item : QuickActionItem::sanitizeList(items)) {
+        if (item.enabled) {
+            enabledItems.push_back(item);
+            if (enabledItems.size() >= QuickActionItem::kMaxVisibleRadialShortcuts) {
+                break;
+            }
+        }
+    }
+
+    if (enabledItems == m_shortcuts && m_buttons.size() == enabledItems.size()) {
+        return;
+    }
+
+    const State prevState = m_state;
+    m_shortcuts = std::move(enabledItems);
+    rebuildActionWidgets();
+
+    if (prevState == State::Closed) {
+        return;
+    }
+
+    if (m_shortcuts.isEmpty()) {
+        hideImmediately();
+        return;
+    }
+
+    if (m_lastPetRect.isValid()) {
+        m_retargetAnim->stop();
+        m_layout = computeLayout(m_lastPetRect, m_lastSpriteLocalRect,
+                                 screenBoundsForPet(m_lastPetRect),
+                                 m_iconScalePercent, actionCount());
+        setGeometry(m_layout.overlayRect);
+        syncOutwardDirection();
+        const qreal targetProg = (prevState == State::Closing) ? 0.0 : 1.0;
+        for (int i = 0; i < actionCount(); ++i) {
+            m_progress[i] = targetProg;
+            m_buttons[i]->show();
+        }
+        applyDefaultStackOrder();
+        applyAllIconProgress();
+        if (prevState == State::Opening) {
+            m_state = State::Open;
+        }
+    }
+}
+
+void QuickActionMenu::rebuildActionWidgets()
+{
+    m_hoveredIndex = -1;
+    m_pressedIndex = -1;
+    unsetCursor();
+
+    for (auto* t : m_staggerTimers) {
+        if (t) { t->stop(); t->deleteLater(); }
+    }
+    for (auto* a : m_pathAnims) {
+        if (a) { a->stop(); a->deleteLater(); }
+    }
+    for (auto* b : m_buttons) {
+        if (b) { b->hide(); b->deleteLater(); }
+    }
+    m_staggerTimers.clear();
+    m_pathAnims.clear();
+    m_buttons.clear();
+    m_progress.clear();
+
+    const int n = static_cast<int>(m_shortcuts.size());
+    m_buttons.reserve(n);
+    m_pathAnims.reserve(n);
+    m_staggerTimers.reserve(n);
+    m_progress.fill(0.0, n);
+
+    for (int i = 0; i < n; ++i) {
+        AnimatedQuickActionButton* btn = createButtonForShortcut(m_shortcuts[i], i, this);
+        btn->setScalePercent(m_iconScalePercent);
+        btn->hide();
+        m_buttons.push_back(btn);
+
+        connect(btn, &QAbstractButton::clicked,
+                this, [this, i]() { triggerAction(i); });
+        connect(btn, &AnimatedQuickActionButton::hoveredChanged,
+                this, &QuickActionMenu::onButtonHoveredChanged);
+
+        auto* anim = new QVariantAnimation(this);
+        connect(anim, &QVariantAnimation::valueChanged,
+                this, [this, i](const QVariant& value) {
+                    if (i < m_progress.size()) {
+                        m_progress[i] = value.toReal();
+                        applyIconProgress(i, m_progress[i]);
+                    }
+                });
+        connect(anim, &QVariantAnimation::finished,
+                this, &QuickActionMenu::checkAnimationCompletion);
+        m_pathAnims.push_back(anim);
+
+        auto* timer = new QTimer(this);
+        timer->setSingleShot(true);
+        connect(timer, &QTimer::timeout,
+                this, [this, i]() { startRevealForIndex(i); });
+        m_staggerTimers.push_back(timer);
+    }
+
+    applyDefaultStackOrder();
+    syncReducedMotion();
+}
+
 void QuickActionMenu::setIconScalePercent(int percent)
 {
     const int clamped = AnimatedQuickActionButton::clampScalePercent(percent);
@@ -363,10 +447,11 @@ void QuickActionMenu::setIconScalePercent(int percent)
         }
     }
 
-    if (m_state != State::Closed && m_lastPetRect.isValid()) {
+    if (m_state != State::Closed && m_lastPetRect.isValid() && actionCount() > 0) {
         const Layout next = computeLayout(
-            m_lastPetRect, m_lastSpriteLocalRect, screenBoundsForPet(m_lastPetRect), m_iconScalePercent);
-        if (isReducedMotionActive()) {
+            m_lastPetRect, m_lastSpriteLocalRect, screenBoundsForPet(m_lastPetRect),
+            m_iconScalePercent, actionCount());
+        if (isReducedMotionActive() || m_layout.count() != next.count()) {
             m_retargetAnim->stop();
             m_layout = next;
             setGeometry(m_layout.overlayRect);
@@ -400,10 +485,33 @@ void QuickActionMenu::setActiveFlag(bool active)
 
 AnimatedQuickActionButton* QuickActionMenu::buttonAt(int index) const
 {
-    if (index < 0 || index >= ActionCount) {
+    if (index < 0 || index >= actionCount()) {
         return nullptr;
     }
-    return m_buttons[static_cast<std::size_t>(index)];
+    return m_buttons[index];
+}
+
+int QuickActionMenu::indexOfId(const QString& id) const
+{
+    for (int i = 0; i < m_shortcuts.size(); ++i) {
+        if (m_shortcuts[i].id == id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+AnimatedQuickActionButton* QuickActionMenu::findButtonById(const QString& id) const
+{
+    return buttonAt(indexOfId(id));
+}
+
+qreal QuickActionMenu::progressAt(int index) const
+{
+    if (index < 0 || index >= m_progress.size()) {
+        return 0.0;
+    }
+    return m_progress[index];
 }
 
 bool QuickActionMenu::isRetargeting() const
@@ -431,23 +539,28 @@ QPointF QuickActionMenu::evaluateArc(const ArcPath& arc, qreal t)
 qreal QuickActionMenu::opacityForProgress(qreal t)
 {
     const qreal x = std::clamp(t, 0.0, 1.0);
-    // Synchronized opacity: 0% -> 0%, 25% -> ~28%, 50% -> ~57%, 75% -> ~83%, 100% -> 100%.
     return std::clamp(x * (1.0 + 0.55 * x - 0.55 * x * x), 0.0, 1.0);
 }
 
 QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeometry,
                                                        const QRect& screenBounds,
-                                                       int iconScalePercent)
+                                                       int iconScalePercent,
+                                                       int visibleCount)
 {
-    return computeLayout(petGlobalGeometry, QRect{}, screenBounds, iconScalePercent);
+    return computeLayout(petGlobalGeometry, QRect{}, screenBounds, iconScalePercent, visibleCount);
 }
 
 QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeometry,
                                                        const QRect& visibleSpriteLocalRect,
                                                        const QRect& screenBounds,
-                                                       int iconScalePercent)
+                                                       int iconScalePercent,
+                                                       int visibleCount)
 {
     Layout layout;
+    const int count = std::clamp(visibleCount, 0, QuickActionItem::kMaxVisibleRadialShortcuts);
+    if (count == 0) {
+        return layout;
+    }
 
     const int petW = std::max(40, petGlobalGeometry.width());
     const int petH = std::max(40, petGlobalGeometry.height());
@@ -456,7 +569,6 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
     const qreal btnHalf = btnSize * 0.5;
     const qreal visHalf = visualSize * 0.5;
 
-    // Derive visible sprite rect in global coordinates (fallback to inset pet rect).
     QRect spriteGlobal;
     if (visibleSpriteLocalRect.isValid() && !visibleSpriteLocalRect.isEmpty()) {
         spriteGlobal = visibleSpriteLocalRect.translated(petGlobalGeometry.topLeft());
@@ -466,22 +578,31 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
         spriteGlobal = petGlobalGeometry.adjusted(insetX, insetY, -insetX, -insetY);
     }
 
-    // Pronounced C-shaped circular arc spanning 120° (-60°..+60°) with ~15% layered-card overlap.
-    constexpr qreal kHalfSpanRad = kArcHalfSpanDeg * kDegToRad;
-    const qreal stepAngle = (2.0 * kHalfSpanRad) / static_cast<qreal>(ActionCount - 1); // 24°
-    const qreal targetChord = visualSize * (1.0 - kTargetOverlapRatio);
-    const qreal baseRadius = targetChord / (2.0 * std::sin(stepAngle * 0.5));
-    const qreal radiusX = baseRadius * 1.06;
-    const qreal radiusY = baseRadius * 0.96;
+    qreal halfSpanDeg = 0.0;
+    qreal stepAngle = 0.0;
+    qreal radiusX = 0.0;
+    qreal radiusY = 0.0;
 
-    // Place orbit center so even the innermost top/bottom cards (cos 60° = 0.50) clear
-    // Chiikawa's visible silhouette by at least kSpriteEdgeGapPx (~18px).
-    const qreal cosEdge = std::cos(kHalfSpanRad);
+    if (count == 1) {
+        halfSpanDeg = 0.0;
+        stepAngle = 0.0;
+        radiusX = kSpriteEdgeGapPx + visHalf + 24.0;
+        radiusY = 48.0;
+    } else {
+        halfSpanDeg = std::min<qreal>(kMaxArcHalfSpanDeg, (count - 1) * (kBaseStepDeg * 0.5));
+        const qreal halfSpanRad = halfSpanDeg * kDegToRad;
+        stepAngle = (2.0 * halfSpanRad) / static_cast<qreal>(count - 1);
+        const qreal targetChord = visualSize * (1.0 - kTargetOverlapRatio);
+        const qreal baseRadius = targetChord / (2.0 * std::sin(stepAngle * 0.5));
+        radiusX = baseRadius * 1.06;
+        radiusY = baseRadius * 0.96;
+    }
+
+    const qreal cosEdge = std::cos(halfSpanDeg * kDegToRad);
     const qreal centerY = spriteGlobal.top() + spriteGlobal.height() * 0.50;
     const qreal rightOrbitX = (spriteGlobal.right() + 1) + kSpriteEdgeGapPx + visHalf - cosEdge * radiusX;
     const qreal leftOrbitX = spriteGlobal.left() - kSpriteEdgeGapPx - visHalf + cosEdge * radiusX;
 
-    // Mirror to the left side when there isn't enough room on the right screen edge.
     if (screenBounds.isValid()
         && (rightOrbitX + radiusX + btnHalf + 2.0 > screenBounds.right() + 1)) {
         const qreal spaceRight = (screenBounds.right() + 1) - (spriteGlobal.right() + 1);
@@ -493,31 +614,29 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
 
     QPointF orbitCenter(layout.mirroredLeft ? leftOrbitX : rightOrbitX, centerY);
 
-    std::array<qreal, ActionCount> endAngles{};
-    std::array<qreal, ActionCount> startAngles{};
-    const qreal halfSteps = (ActionCount - 1) * 0.5; // 2.5 for 6 icons
+    QVector<qreal> endAngles(count);
+    QVector<qreal> startAngles(count);
+    const qreal halfSteps = (count - 1) * 0.5;
+    const qreal startSpread = (count > 1) ? (20.0 / static_cast<qreal>(count - 1)) : 0.0;
 
     if (!layout.mirroredLeft) {
-        for (int i = 0; i < ActionCount; ++i) {
-            endAngles[static_cast<std::size_t>(i)] = (i - halfSteps) * stepAngle;
-            // All six sweep upward counter-clockwise from lower-right of Chiikawa.
-            startAngles[static_cast<std::size_t>(i)] = (84.0 + i * 4.0) * kDegToRad;
+        for (int i = 0; i < count; ++i) {
+            endAngles[i] = (i - halfSteps) * stepAngle;
+            startAngles[i] = (84.0 + i * startSpread) * kDegToRad;
         }
     } else {
         constexpr qreal kMidAngle = 180.0 * kDegToRad;
-        for (int i = 0; i < ActionCount; ++i) {
-            endAngles[static_cast<std::size_t>(i)] = kMidAngle - (i - halfSteps) * stepAngle;
-            // All six sweep upward clockwise from lower-left of Chiikawa.
-            startAngles[static_cast<std::size_t>(i)] = (96.0 - i * 4.0) * kDegToRad;
+        for (int i = 0; i < count; ++i) {
+            endAngles[i] = kMidAngle - (i - halfSteps) * stepAngle;
+            startAngles[i] = (96.0 - i * startSpread) * kDegToRad;
         }
     }
 
-    // Vertically clamp the orbit center only if needed so all 6 final icons + hover pull-out stay on-screen.
     if (screenBounds.isValid()) {
         qreal minEndY = orbitCenter.y();
         qreal maxEndY = orbitCenter.y();
-        for (int i = 0; i < ActionCount; ++i) {
-            const qreal y = pointOnArc(orbitCenter, radiusX, radiusY, endAngles[static_cast<std::size_t>(i)]).y();
+        for (int i = 0; i < count; ++i) {
+            const qreal y = pointOnArc(orbitCenter, radiusX, radiusY, endAngles[i]).y();
             minEndY = std::min(minEndY, y);
             maxEndY = std::max(maxEndY, y);
         }
@@ -530,10 +649,10 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
         }
     }
 
-    std::array<ArcPath, ActionCount> globalArcs{};
-    for (int i = 0; i < ActionCount; ++i) {
-        qreal startA = startAngles[static_cast<std::size_t>(i)];
-        qreal endA = endAngles[static_cast<std::size_t>(i)];
+    QVector<ArcPath> globalArcs(count);
+    for (int i = 0; i < count; ++i) {
+        qreal startA = startAngles[i];
+        qreal endA = endAngles[i];
         if (!layout.mirroredLeft) {
             while (endA >= startA) {
                 endA -= kTwoPi;
@@ -543,10 +662,9 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
                 endA += kTwoPi;
             }
         }
-        globalArcs[static_cast<std::size_t>(i)] = ArcPath{orbitCenter, radiusX, radiusY, startA, endA};
+        globalArcs[i] = ArcPath{orbitCenter, radiusX, radiusY, startA, endA};
     }
 
-    // Tight overlay bounding box covering the entire sweep of all six arcs + hover pull-out room.
     constexpr int kSamples = 20;
     const QPointF firstPt = evaluateArc(globalArcs[0], 1.0);
     qreal minX = firstPt.x();
@@ -559,10 +677,9 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
         minY = std::min(minY, pt.y());
         maxY = std::max(maxY, pt.y());
     };
-    for (int a = 0; a < ActionCount; ++a) {
+    for (int a = 0; a < count; ++a) {
         for (int s = 0; s <= kSamples; ++s) {
-            expand(evaluateArc(globalArcs[static_cast<std::size_t>(a)],
-                               static_cast<qreal>(s) / static_cast<qreal>(kSamples)));
+            expand(evaluateArc(globalArcs[a], static_cast<qreal>(s) / static_cast<qreal>(kSamples)));
         }
     }
 
@@ -573,11 +690,12 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
     const int bottom = static_cast<int>(std::ceil(maxY)) + pad;
     layout.overlayRect = QRect(left, top, std::max(btnSize, right - left), std::max(btnSize, bottom - top));
 
+    layout.arcs.resize(count);
     const QPointF offset(layout.overlayRect.topLeft());
-    for (int i = 0; i < ActionCount; ++i) {
-        ArcPath localArc = globalArcs[static_cast<std::size_t>(i)];
+    for (int i = 0; i < count; ++i) {
+        ArcPath localArc = globalArcs[i];
         localArc.center -= offset;
-        layout.arcAt(i) = localArc;
+        layout.arcs[i] = localArc;
     }
 
     return layout;
@@ -585,9 +703,9 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
 
 void QuickActionMenu::applyDefaultStackOrder()
 {
-    for (int i = 0; i < ActionCount; ++i) {
-        if (m_buttons[static_cast<std::size_t>(i)]) {
-            m_buttons[static_cast<std::size_t>(i)]->raise();
+    for (auto* btn : m_buttons) {
+        if (btn) {
+            btn->raise();
         }
     }
 }
@@ -621,10 +739,8 @@ int QuickActionMenu::hitTestButton(const QPoint& localPos) const
 
     const QPointF p(localPos);
 
-    // First give hysteresis to the currently active pulled-out card so hovering its
-    // raised surface stays rock-solid without flicker.
-    if (m_hoveredIndex >= 0 && m_hoveredIndex < ActionCount) {
-        const AnimatedQuickActionButton* active = m_buttons[static_cast<std::size_t>(m_hoveredIndex)];
+    if (m_hoveredIndex >= 0 && m_hoveredIndex < actionCount()) {
+        const AnimatedQuickActionButton* active = m_buttons[m_hoveredIndex];
         if (active && active->isVisible()) {
             const QRectF elevatedRect = restingVisualRect(m_hoveredIndex)
                 .translated(active->hoverOffset())
@@ -635,9 +751,8 @@ int QuickActionMenu::hitTestButton(const QPoint& localPos) const
         }
     }
 
-    // Otherwise test resting card surfaces front-to-back matching default stack order (5 down to 0).
-    for (int i = ActionCount - 1; i >= 0; --i) {
-        const AnimatedQuickActionButton* btn = m_buttons[static_cast<std::size_t>(i)];
+    for (int i = actionCount() - 1; i >= 0; --i) {
+        const AnimatedQuickActionButton* btn = m_buttons[i];
         if (btn && btn->isVisible() && restingVisualRect(i).contains(p)) {
             return i;
         }
@@ -647,7 +762,7 @@ int QuickActionMenu::hitTestButton(const QPoint& localPos) const
 
 void QuickActionMenu::setHoveredIndex(int index)
 {
-    if (index < -1 || index >= ActionCount) {
+    if (index < -1 || index >= actionCount()) {
         index = -1;
     }
     if (m_hoveredIndex == index) {
@@ -657,14 +772,14 @@ void QuickActionMenu::setHoveredIndex(int index)
     const int previous = m_hoveredIndex;
     m_hoveredIndex = index;
 
-    if (previous >= 0 && previous < ActionCount && m_buttons[static_cast<std::size_t>(previous)]) {
-        m_buttons[static_cast<std::size_t>(previous)]->setHovered(false);
+    if (previous >= 0 && previous < actionCount() && m_buttons[previous]) {
+        m_buttons[previous]->setHovered(false);
     }
 
     applyDefaultStackOrder();
 
-    if (m_hoveredIndex >= 0 && m_buttons[static_cast<std::size_t>(m_hoveredIndex)]) {
-        AnimatedQuickActionButton* active = m_buttons[static_cast<std::size_t>(m_hoveredIndex)];
+    if (m_hoveredIndex >= 0 && m_buttons[m_hoveredIndex]) {
+        AnimatedQuickActionButton* active = m_buttons[m_hoveredIndex];
         active->raise();
         active->setHovered(true);
         setCursor(Qt::PointingHandCursor);
@@ -717,10 +832,10 @@ bool QuickActionMenu::isAnyButtonHovered() const
 
 void QuickActionMenu::applyIconProgress(int index, qreal t) const
 {
-    if (index < 0 || index >= ActionCount || !m_buttons[static_cast<std::size_t>(index)]) {
+    if (index < 0 || index >= actionCount() || index >= m_layout.count() || !m_buttons[index]) {
         return;
     }
-    AnimatedQuickActionButton* btn = m_buttons[static_cast<std::size_t>(index)];
+    AnimatedQuickActionButton* btn = m_buttons[index];
     const int btnHalf = btn->widgetSizePx() / 2;
     const QPointF center = evaluateArc(m_layout.arcAt(index), t);
     btn->move(qRound(center.x()) - btnHalf, qRound(center.y()) - btnHalf);
@@ -729,13 +844,16 @@ void QuickActionMenu::applyIconProgress(int index, qreal t) const
 
 void QuickActionMenu::applyAllIconProgress() const
 {
-    for (int i = 0; i < ActionCount; ++i) {
-        applyIconProgress(i, m_progress[static_cast<std::size_t>(i)]);
+    for (int i = 0; i < actionCount(); ++i) {
+        applyIconProgress(i, m_progress[i]);
     }
 }
 
 void QuickActionMenu::applyRetargetBlend(qreal alpha)
 {
+    if (m_retargetFrom.count() != actionCount() || m_retargetTo.count() != actionCount()) {
+        return;
+    }
     const QRect unionRect = m_retargetFrom.overlayRect.united(m_retargetTo.overlayRect);
     if (geometry() != unionRect) {
         setGeometry(unionRect);
@@ -744,12 +862,13 @@ void QuickActionMenu::applyRetargetBlend(qreal alpha)
     Layout blended;
     blended.overlayRect = unionRect;
     blended.mirroredLeft = m_retargetTo.mirroredLeft;
+    blended.arcs.resize(actionCount());
 
     const QPointF fromOffset(m_retargetFrom.overlayRect.topLeft());
     const QPointF toOffset(m_retargetTo.overlayRect.topLeft());
     const QPointF unionOffset(unionRect.topLeft());
 
-    for (int i = 0; i < ActionCount; ++i) {
+    for (int i = 0; i < actionCount(); ++i) {
         ArcPath gFrom = m_retargetFrom.arcAt(i);
         gFrom.center += fromOffset;
         ArcPath gTo = m_retargetTo.arcAt(i);
@@ -757,7 +876,7 @@ void QuickActionMenu::applyRetargetBlend(qreal alpha)
 
         ArcPath gMid = lerpArc(gFrom, gTo, alpha);
         gMid.center -= unionOffset;
-        blended.arcAt(i) = gMid;
+        blended.arcs[i] = gMid;
     }
 
     m_layout = blended;
@@ -772,12 +891,14 @@ void QuickActionMenu::updateAnchor(const QRect& petGlobalGeometry,
     if (visibleSpriteLocalRect.isValid() && !visibleSpriteLocalRect.isEmpty()) {
         m_lastSpriteLocalRect = visibleSpriteLocalRect;
     }
-    if (m_state == State::Closed) {
+    if (m_state == State::Closed || actionCount() == 0) {
         return;
     }
 
-    const Layout next = computeLayout(petGlobalGeometry, m_lastSpriteLocalRect, screenBoundsForPet(petGlobalGeometry), m_iconScalePercent);
-    if (isRetargeting()) {
+    const Layout next = computeLayout(petGlobalGeometry, m_lastSpriteLocalRect,
+                                      screenBoundsForPet(petGlobalGeometry),
+                                      m_iconScalePercent, actionCount());
+    if (isRetargeting() && m_retargetTo.count() == next.count()) {
         const QPoint delta = next.overlayRect.topLeft() - m_retargetTo.overlayRect.topLeft();
         m_retargetFrom.overlayRect.translate(delta);
         m_retargetTo = next;
@@ -786,7 +907,8 @@ void QuickActionMenu::updateAnchor(const QRect& petGlobalGeometry,
     }
 
     const bool geometryChanged = (next.overlayRect.size() != size())
-                              || (next.mirroredLeft != m_layout.mirroredLeft);
+                              || (next.mirroredLeft != m_layout.mirroredLeft)
+                              || (next.count() != m_layout.count());
     m_layout = next;
     syncOutwardDirection();
     if (geometryChanged) {
@@ -802,26 +924,30 @@ void QuickActionMenu::updateSpriteBounds(const QRect& petGlobalGeometry,
 {
     m_lastPetRect = petGlobalGeometry;
     m_lastSpriteLocalRect = visibleSpriteLocalRect;
-    if (m_state == State::Closed) {
+    if (m_state == State::Closed || actionCount() == 0) {
         return;
     }
 
-    const Layout next = computeLayout(petGlobalGeometry, visibleSpriteLocalRect, screenBoundsForPet(petGlobalGeometry), m_iconScalePercent);
+    const Layout next = computeLayout(petGlobalGeometry, visibleSpriteLocalRect,
+                                      screenBoundsForPet(petGlobalGeometry),
+                                      m_iconScalePercent, actionCount());
 
     const Layout& refLayout = isRetargeting() ? m_retargetTo : m_layout;
-    const QPointF refOffset(refLayout.overlayRect.topLeft());
-    const QPointF nextOffset(next.overlayRect.topLeft());
-    qreal maxDelta = 0.0;
-    for (int i = 0; i < ActionCount; ++i) {
-        const QPointF a = refOffset + evaluateArc(refLayout.arcAt(i), 1.0);
-        const QPointF b = nextOffset + evaluateArc(next.arcAt(i), 1.0);
-        maxDelta = std::max(maxDelta, std::hypot(a.x() - b.x(), a.y() - b.y()));
-    }
-    if (maxDelta < kRetargetThresholdPx && next.mirroredLeft == refLayout.mirroredLeft) {
-        return;
+    if (refLayout.count() == next.count()) {
+        const QPointF refOffset(refLayout.overlayRect.topLeft());
+        const QPointF nextOffset(next.overlayRect.topLeft());
+        qreal maxDelta = 0.0;
+        for (int i = 0; i < actionCount(); ++i) {
+            const QPointF a = refOffset + evaluateArc(refLayout.arcAt(i), 1.0);
+            const QPointF b = nextOffset + evaluateArc(next.arcAt(i), 1.0);
+            maxDelta = std::max(maxDelta, std::hypot(a.x() - b.x(), a.y() - b.y()));
+        }
+        if (maxDelta < kRetargetThresholdPx && next.mirroredLeft == refLayout.mirroredLeft) {
+            return;
+        }
     }
 
-    if (isReducedMotionActive()) {
+    if (isReducedMotionActive() || m_layout.count() != next.count()) {
         m_retargetAnim->stop();
         m_layout = next;
         setGeometry(m_layout.overlayRect);
@@ -862,6 +988,10 @@ void QuickActionMenu::toggleMenu(const QRect& petGlobalGeometry,
 void QuickActionMenu::showMenu(const QRect& petGlobalGeometry,
                                const QRect& visibleSpriteLocalRect)
 {
+    if (actionCount() == 0) {
+        return;
+    }
+
     m_lastPetRect = petGlobalGeometry;
     if (visibleSpriteLocalRect.isValid() && !visibleSpriteLocalRect.isEmpty()) {
         m_lastSpriteLocalRect = visibleSpriteLocalRect;
@@ -874,7 +1004,9 @@ void QuickActionMenu::showMenu(const QRect& petGlobalGeometry,
     }
     m_retargetAnim->stop();
 
-    m_layout = computeLayout(petGlobalGeometry, m_lastSpriteLocalRect, screenBoundsForPet(petGlobalGeometry), m_iconScalePercent);
+    m_layout = computeLayout(petGlobalGeometry, m_lastSpriteLocalRect,
+                             screenBoundsForPet(petGlobalGeometry),
+                             m_iconScalePercent, actionCount());
     setGeometry(m_layout.overlayRect);
     syncOutwardDirection();
     setActiveFlag(true);
@@ -897,8 +1029,8 @@ void QuickActionMenu::showMenu(const QRect& petGlobalGeometry,
     installOutsideDismissObservers();
 
     if (m_state == State::Open) {
-        for (int i = 0; i < ActionCount; ++i) {
-            m_progress[static_cast<std::size_t>(i)] = 1.0;
+        for (int i = 0; i < actionCount(); ++i) {
+            m_progress[i] = 1.0;
         }
         applyAllIconProgress();
         if (!isAnyButtonHovered()) {
@@ -908,9 +1040,9 @@ void QuickActionMenu::showMenu(const QRect& petGlobalGeometry,
     }
 
     if (isReducedMotionActive()) {
-        for (int i = 0; i < ActionCount; ++i) {
-            m_pathAnims[static_cast<std::size_t>(i)]->stop();
-            m_progress[static_cast<std::size_t>(i)] = 1.0;
+        for (int i = 0; i < actionCount(); ++i) {
+            m_pathAnims[i]->stop();
+            m_progress[i] = 1.0;
         }
         applyAllIconProgress();
         m_state = State::Open;
@@ -927,18 +1059,21 @@ void QuickActionMenu::showMenu(const QRect& petGlobalGeometry,
     if (freshReveal) {
         m_hoveredIndex = -1;
         m_pressedIndex = -1;
-        for (int i = 0; i < ActionCount; ++i) {
-            m_progress[static_cast<std::size_t>(i)] = 0.0;
-            m_buttons[static_cast<std::size_t>(i)]->resetVisualState();
+        for (int i = 0; i < actionCount(); ++i) {
+            m_progress[i] = 0.0;
+            m_buttons[i]->resetVisualState();
             applyIconProgress(i, 0.0);
         }
         applyDefaultStackOrder();
+        const int staggerStep = (actionCount() > 1)
+            ? std::min(26, kMaxTotalStaggerMs / (actionCount() - 1))
+            : 0;
         startRevealForIndex(0);
-        for (int i = 1; i < ActionCount; ++i) {
-            m_staggerTimers[static_cast<std::size_t>(i)]->start(kStaggerStepMs * i);
+        for (int i = 1; i < actionCount(); ++i) {
+            m_staggerTimers[i]->start(staggerStep * i);
         }
     } else {
-        for (int i = 0; i < ActionCount; ++i) {
+        for (int i = 0; i < actionCount(); ++i) {
             startRevealForIndex(i);
         }
     }
@@ -950,22 +1085,21 @@ void QuickActionMenu::showMenu(const QRect& petGlobalGeometry,
 
 void QuickActionMenu::startRevealForIndex(int index)
 {
-    if (m_state != State::Opening || index < 0 || index >= ActionCount) {
+    if (m_state != State::Opening || index < 0 || index >= actionCount()) {
         return;
     }
-    const auto idx = static_cast<std::size_t>(index);
-    const qreal startProg = m_progress[idx];
+    const qreal startProg = m_progress[index];
     const int fullMs = kRevealBaseMs + index * 6;
     {
-        QSignalBlocker blocker(m_pathAnims[idx]);
-        m_pathAnims[idx]->stop();
-        m_pathAnims[idx]->setDuration(std::max(120, qRound(fullMs * (1.0 - startProg))));
-        m_pathAnims[idx]->setEasingCurve(QEasingCurve::OutCubic);
-        m_pathAnims[idx]->setStartValue(startProg);
-        m_pathAnims[idx]->setEndValue(1.0);
-        m_pathAnims[idx]->setCurrentTime(0);
+        QSignalBlocker blocker(m_pathAnims[index]);
+        m_pathAnims[index]->stop();
+        m_pathAnims[index]->setDuration(std::max(120, qRound(fullMs * (1.0 - startProg))));
+        m_pathAnims[index]->setEasingCurve(QEasingCurve::OutCubic);
+        m_pathAnims[index]->setStartValue(startProg);
+        m_pathAnims[index]->setEndValue(1.0);
+        m_pathAnims[index]->setCurrentTime(0);
     }
-    m_pathAnims[idx]->start();
+    m_pathAnims[index]->start();
 }
 
 void QuickActionMenu::hideMenu()
@@ -980,31 +1114,28 @@ void QuickActionMenu::hideMenu()
         return;
     }
 
-    // Smoothly resolve any active hover pull-out before retracing arcs.
     m_pressedIndex = -1;
     setHoveredIndex(-1);
 
-    if (isReducedMotionActive()) {
+    if (isReducedMotionActive() || actionCount() == 0) {
         finishDismissal();
         return;
     }
 
     m_state = State::Closing;
 
-    // Retrace all six circular arcs in reverse (current progress -> 0.0).
-    for (int i = 0; i < ActionCount; ++i) {
-        const auto idx = static_cast<std::size_t>(i);
-        const qreal startProg = m_progress[idx];
+    for (int i = 0; i < actionCount(); ++i) {
+        const qreal startProg = m_progress[i];
         {
-            QSignalBlocker blocker(m_pathAnims[idx]);
-            m_pathAnims[idx]->stop();
-            m_pathAnims[idx]->setDuration(std::max(90, qRound(kDismissMs * std::max<qreal>(0.25, startProg))));
-            m_pathAnims[idx]->setEasingCurve(QEasingCurve::InCubic);
-            m_pathAnims[idx]->setStartValue(startProg);
-            m_pathAnims[idx]->setEndValue(0.0);
-            m_pathAnims[idx]->setCurrentTime(0);
+            QSignalBlocker blocker(m_pathAnims[i]);
+            m_pathAnims[i]->stop();
+            m_pathAnims[i]->setDuration(std::max(90, qRound(kDismissMs * std::max<qreal>(0.25, startProg))));
+            m_pathAnims[i]->setEasingCurve(QEasingCurve::InCubic);
+            m_pathAnims[i]->setStartValue(startProg);
+            m_pathAnims[i]->setEndValue(0.0);
+            m_pathAnims[i]->setCurrentTime(0);
         }
-        m_pathAnims[idx]->start();
+        m_pathAnims[i]->start();
     }
 }
 
@@ -1026,14 +1157,13 @@ void QuickActionMenu::finishDismissal()
     m_pressedIndex = -1;
     unsetCursor();
 
-    for (int i = 0; i < ActionCount; ++i) {
-        const auto idx = static_cast<std::size_t>(i);
-        m_pathAnims[idx]->stop();
-        m_progress[idx] = 0.0;
-        if (m_buttons[idx]) {
-            m_buttons[idx]->resetVisualState();
-            m_buttons[idx]->setMenuOpacity(0.0);
-            m_buttons[idx]->hide();
+    for (int i = 0; i < actionCount(); ++i) {
+        m_pathAnims[i]->stop();
+        m_progress[i] = 0.0;
+        if (m_buttons[i]) {
+            m_buttons[i]->resetVisualState();
+            m_buttons[i]->setMenuOpacity(0.0);
+            m_buttons[i]->hide();
         }
     }
 
@@ -1055,17 +1185,16 @@ void QuickActionMenu::resetAutoHideTimer()
 
 void QuickActionMenu::checkAnimationCompletion()
 {
-    for (int i = 0; i < ActionCount; ++i) {
-        const auto idx = static_cast<std::size_t>(i);
-        if (m_pathAnims[idx]->state() == QAbstractAnimation::Running
-            || m_staggerTimers[idx]->isActive()) {
+    for (int i = 0; i < actionCount(); ++i) {
+        if (m_pathAnims[i]->state() == QAbstractAnimation::Running
+            || m_staggerTimers[i]->isActive()) {
             return;
         }
     }
 
     if (m_state == State::Opening) {
-        for (int i = 0; i < ActionCount; ++i) {
-            m_progress[static_cast<std::size_t>(i)] = 1.0;
+        for (int i = 0; i < actionCount(); ++i) {
+            m_progress[i] = 1.0;
         }
         m_state = State::Open;
         emit revealed();
@@ -1091,29 +1220,32 @@ void QuickActionMenu::onButtonHoveredChanged(bool hovered)
 
 void QuickActionMenu::triggerAction(int index)
 {
+    if (index < 0 || index >= actionCount()) {
+        return;
+    }
     m_autoHideTimer.stop();
-    switch (index) {
-    case SpotifyIndex:
-        emit spotifyRequested();
-        emit externalAppRequested(ExternalAppLauncher::AppId::Spotify);
+    const QuickActionItem item = m_shortcuts[index];
+    emit shortcutTriggered(item);
+
+    switch (item.type) {
+    case QuickActionType::BuiltInApp: {
+        ExternalAppLauncher::AppId appId = ExternalAppLauncher::AppId::Spotify;
+        if (ExternalAppLauncher::tryParseBuiltInAppId(item.applicationReference, appId)) {
+            if (appId == ExternalAppLauncher::AppId::Spotify) {
+                emit spotifyRequested();
+            }
+            emit externalAppRequested(appId);
+        }
         break;
-    case DiscordIndex:
-        emit externalAppRequested(ExternalAppLauncher::AppId::Discord);
+    }
+    case QuickActionType::CustomApp:
         break;
-    case LeagueIndex:
-        emit externalAppRequested(ExternalAppLauncher::AppId::LeagueOfLegends);
-        break;
-    case CursorIndex:
-        emit externalAppRequested(ExternalAppLauncher::AppId::Cursor);
-        break;
-    case SettingsIndex:
+    case QuickActionType::Settings:
         emit settingsRequested();
         break;
-    case ExitIndex:
+    case QuickActionType::Exit:
         emit exitRequested();
         break;
-    default:
-        return;
     }
     hideMenu();
 }
@@ -1123,10 +1255,8 @@ bool QuickActionMenu::event(QEvent* event)
     if (event->type() == QEvent::ToolTip) {
         const auto* helpEvent = static_cast<QHelpEvent*>(event);
         const int idx = hitTestButton(helpEvent->pos());
-        if (idx >= 0 && m_buttons[static_cast<std::size_t>(idx)]) {
-            QToolTip::showText(helpEvent->globalPos(),
-                               m_buttons[static_cast<std::size_t>(idx)]->toolTip(),
-                               this);
+        if (idx >= 0 && idx < actionCount() && m_buttons[idx]) {
+            QToolTip::showText(helpEvent->globalPos(), m_buttons[idx]->toolTip(), this);
         } else {
             QToolTip::hideText();
             event->ignore();
@@ -1149,8 +1279,8 @@ void QuickActionMenu::mousePressEvent(QMouseEvent* event)
         const int hit = hitTestButton(event->position().toPoint());
         setHoveredIndex(hit);
         m_pressedIndex = hit;
-        if (m_pressedIndex >= 0 && m_buttons[static_cast<std::size_t>(m_pressedIndex)]) {
-            m_buttons[static_cast<std::size_t>(m_pressedIndex)]->setPressedVisual(true);
+        if (m_pressedIndex >= 0 && m_pressedIndex < actionCount() && m_buttons[m_pressedIndex]) {
+            m_buttons[m_pressedIndex]->setPressedVisual(true);
             event->accept();
             return;
         }
@@ -1163,8 +1293,8 @@ void QuickActionMenu::mouseReleaseEvent(QMouseEvent* event)
     if (event->button() == Qt::LeftButton && m_pressedIndex >= 0) {
         const int pressed = m_pressedIndex;
         m_pressedIndex = -1;
-        if (m_buttons[static_cast<std::size_t>(pressed)]) {
-            m_buttons[static_cast<std::size_t>(pressed)]->setPressedVisual(false);
+        if (pressed < actionCount() && m_buttons[pressed]) {
+            m_buttons[pressed]->setPressedVisual(false);
         }
         const int hit = hitTestButton(event->position().toPoint());
         if (hit == pressed) {

@@ -71,6 +71,27 @@ AnimatedQuickActionButton::AnimatedQuickActionButton(PixelIcon iconKind,
     setScalePercent(SettingsDefaults::kQuickActionIconScalePercent);
 }
 
+AnimatedQuickActionButton::AnimatedQuickActionButton(const QIcon& customIcon,
+                                                     qreal hoverRotationDegrees,
+                                                     QWidget* parent)
+    : AnimatedQuickActionButton(PixelIcon::Cursor,
+                                PixelTheme::kPrimaryText,
+                                QColor(Qt::white),
+                                hoverRotationDegrees,
+                                parent)
+{
+    setCustomIcon(customIcon);
+}
+
+void AnimatedQuickActionButton::setCustomIcon(const QIcon& customIcon)
+{
+    m_customIcon = customIcon;
+    m_useCustomIcon = !customIcon.isNull();
+    m_cachedPixmapIconSize = 0;
+    rebuildIconPixmaps();
+    update();
+}
+
 void AnimatedQuickActionButton::setScalePercent(int percent)
 {
     const int clamped = clampScalePercent(percent);
@@ -102,6 +123,11 @@ QRectF AnimatedQuickActionButton::restingVisualRectLocal() const
 void AnimatedQuickActionButton::rebuildIconPixmaps()
 {
     m_cachedPixmapIconSize = m_iconSize;
+    if (m_useCustomIcon && !m_customIcon.isNull()) {
+        m_restPixmap = m_customIcon.pixmap(QSize(m_iconSize, m_iconSize), 3.0);
+        m_hoverPixmap = m_restPixmap;
+        return;
+    }
     const QIcon restIcon = PixelTheme::icon(m_iconKind, m_iconColor, m_iconSize);
     const QIcon hoverIcon = PixelTheme::icon(m_iconKind, m_hoverIconColor, m_iconSize);
     // Request 3x DPR pixmaps so 1.32x hover enlargement + rotation stays crisp at any scale.

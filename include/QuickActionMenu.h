@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ExternalAppLauncher.h"
+#include "QuickActionItem.h"
 #include "SettingsDefaults.h"
 
 #include <QElapsedTimer>
@@ -10,8 +11,8 @@
 #include <QRectF>
 #include <QTimer>
 #include <QUrl>
+#include <QVector>
 #include <QWidget>
-#include <array>
 
 class AnimatedQuickActionButton;
 class QEvent;
@@ -58,19 +59,17 @@ private:
 };
 
 /**
- * Floating translucent overlay hosting Chiikawa's sprite-aware six-icon
- * overlapping animated app stack:
- *   Spotify -> Discord -> League of Legends -> Cursor -> Settings -> Exit
+ * Floating translucent overlay hosting Chiikawa's data-driven, sprite-aware
+ * circular quick-action menu (1..10 enabled shortcuts).
  *
- * - Positioned farther right of Chiikawa's visible sprite silhouette (mirrored
- *   left near the right screen edge) with ~40–45% vertical overlap along a
- *   gentle curve.
- * - Icons emerge along circular arcs from the lower side of Chiikawa while
- *   fading in synchronously, and retrace those exact arcs in reverse on dismissal.
+ * - Dynamically builds buttons and circular arc paths from QuickActionItem
+ *   configuration (built-in apps, user-added desktop apps, Settings, Exit).
+ * - Adapts arc curvature, radii, and spacing cleanly to any shortcut count
+ *   (up to kMaxVisibleRadialShortcuts = 10) and any icon scale (80%–150%).
  * - Centralized hit-testing drives the two-phase pull-out hover animation and
  *   dynamic Z-order elevation without overlap-induced enter/leave flicker.
- * - Smoothly interpolates layout changes over 180 ms when Chiikawa switches
- *   animations while the menu is visible or mid-animation.
+ * - Emits activeStateChanged(bool) so PetWindow suspends autonomous movement
+ *   and automatic sprite switching for the full open/closing lifecycle.
  */
 class QuickActionMenu : public QWidget {
     Q_OBJECT
@@ -83,16 +82,6 @@ public:
         Closing
     };
 
-    enum ActionIndex : int {
-        SpotifyIndex = 0,
-        DiscordIndex = 1,
-        LeagueIndex = 2,
-        CursorIndex = 3,
-        SettingsIndex = 4,
-        ExitIndex = 5,
-        ActionCount = 6
-    };
-
     struct ArcPath {
         QPointF center;
         qreal radiusX = 0.0;
@@ -103,34 +92,34 @@ public:
 
     struct Layout {
         QRect overlayRect;
-        std::array<ArcPath, ActionCount> arcs{};
+        QVector<ArcPath> arcs;
         bool mirroredLeft = false;
 
-        [[nodiscard]] const ArcPath& arcAt(int index) const
-        {
-            return arcs[static_cast<std::size_t>(index)];
-        }
-        [[nodiscard]] ArcPath& arcAt(int index)
-        {
-            return arcs[static_cast<std::size_t>(index)];
-        }
+        [[nodiscard]] int count() const { return static_cast<int>(arcs.size()); }
+        [[nodiscard]] const ArcPath& arcAt(int index) const { return arcs[index]; }
+        [[nodiscard]] ArcPath& arcAt(int index) { return arcs[index]; }
     };
 
     static constexpr int kRevealBaseMs = 380;
-    static constexpr int kStaggerStepMs = 26;
+    static constexpr int kMaxTotalStaggerMs = 150;
     static constexpr int kDismissMs = 340;
     static constexpr int kRetargetMs = 180;
     static constexpr qreal kRetargetThresholdPx = 3.0;
     static constexpr int kDefaultAutoHideMs = 5000;
     static constexpr int kDefaultLeaveHideMs = 2500;
     static constexpr qreal kTargetOverlapRatio = 0.15; // ~15% layered-card overlap
-    static constexpr qreal kArcHalfSpanDeg = 60.0;     // 120° C-shaped circular arc
+    static constexpr qreal kBaseStepDeg = 24.0;        // 120° C-shaped arc at 6 icons
+    static constexpr qreal kMaxArcHalfSpanDeg = 81.0;  // up to 162° arc at 10 icons
     static constexpr qreal kSpriteEdgeGapPx = 18.0;    // minimum clear gap from sprite silhouette
 
     explicit QuickActionMenu(QWidget* parent = nullptr);
     ~QuickActionMenu() override;
 
     void setAnchorWidget(QWidget* petWidget);
+
+    void setShortcuts(const QVector<QuickActionItem>& items);
+    [[nodiscard]] const QVector<QuickActionItem>& visibleShortcuts() const { return m_shortcuts; }
+    [[nodiscard]] int actionCount() const { return static_cast<int>(m_buttons.size()); }
 
     void setIconScalePercent(int percent);
     [[nodiscard]] int iconScalePercent() const { return m_iconScalePercent; }
@@ -147,25 +136,22 @@ public:
     [[nodiscard]] bool isAnyButtonHovered() const;
     [[nodiscard]] int hoveredIndex() const { return m_hoveredIndex; }
     [[nodiscard]] AnimatedQuickActionButton* buttonAt(int index) const;
-    [[nodiscard]] AnimatedQuickActionButton* spotifyButton() const { return m_buttons[SpotifyIndex]; }
-    [[nodiscard]] AnimatedQuickActionButton* discordButton() const { return m_buttons[DiscordIndex]; }
-    [[nodiscard]] AnimatedQuickActionButton* leagueButton() const { return m_buttons[LeagueIndex]; }
-    [[nodiscard]] AnimatedQuickActionButton* cursorButton() const { return m_buttons[CursorIndex]; }
-    [[nodiscard]] AnimatedQuickActionButton* settingsButton() const { return m_buttons[SettingsIndex]; }
-    [[nodiscard]] AnimatedQuickActionButton* exitButton() const { return m_buttons[ExitIndex]; }
+    [[nodiscard]] AnimatedQuickActionButton* findButtonById(const QString& id) const;
+    [[nodiscard]] int indexOfId(const QString& id) const;
+    [[nodiscard]] AnimatedQuickActionButton* spotifyButton() const { return findButtonById(QStringLiteral("builtin:spotify")); }
+    [[nodiscard]] AnimatedQuickActionButton* discordButton() const { return findButtonById(QStringLiteral("builtin:discord")); }
+    [[nodiscard]] AnimatedQuickActionButton* leagueButton() const { return findButtonById(QStringLiteral("builtin:league")); }
+    [[nodiscard]] AnimatedQuickActionButton* cursorButton() const { return findButtonById(QStringLiteral("builtin:cursor")); }
+    [[nodiscard]] AnimatedQuickActionButton* settingsButton() const { return findButtonById(QStringLiteral("builtin:settings")); }
+    [[nodiscard]] AnimatedQuickActionButton* exitButton() const { return findButtonById(QStringLiteral("builtin:exit")); }
     [[nodiscard]] const Layout& currentLayout() const { return m_layout; }
-    [[nodiscard]] qreal progressAt(int index) const { return m_progress[static_cast<std::size_t>(index)]; }
+    [[nodiscard]] qreal progressAt(int index) const;
     [[nodiscard]] bool isAutoHideActive() const { return m_autoHideTimer.isActive(); }
     [[nodiscard]] bool isRetargeting() const;
     [[nodiscard]] qint64 elapsedSinceOpenedMs() const { return m_openedClock.isValid() ? m_openedClock.elapsed() : 1000; }
 
-    /** Resting 32×32 visual rect of icon `index` in overlay-local coordinates. */
     [[nodiscard]] QRectF restingVisualRect(int index) const;
-
-    /** Hit-tests an overlay-local point against the overlapping stack (favors active pulled-out card, then front-to-back). */
     [[nodiscard]] int hitTestButton(const QPoint& localPos) const;
-
-    /** Programmatically updates hover selection (also called from mouseMoveEvent). */
     void setHoveredIndex(int index);
 
     void setAutoHideDurationMs(int ms) { m_autoHideMs = ms; }
@@ -186,14 +172,17 @@ public:
     [[nodiscard]] static Layout computeLayout(const QRect& petGlobalGeometry,
                                               const QRect& visibleSpriteLocalRect,
                                               const QRect& screenBounds,
-                                              int iconScalePercent = SettingsDefaults::kQuickActionIconScalePercent);
+                                              int iconScalePercent = SettingsDefaults::kQuickActionIconScalePercent,
+                                              int visibleCount = 6);
 
     [[nodiscard]] static Layout computeLayout(const QRect& petGlobalGeometry,
                                               const QRect& screenBounds,
-                                              int iconScalePercent = SettingsDefaults::kQuickActionIconScalePercent);
+                                              int iconScalePercent = SettingsDefaults::kQuickActionIconScalePercent,
+                                              int visibleCount = 6);
 
 signals:
     void activeStateChanged(bool active);
+    void shortcutTriggered(const QuickActionItem& item);
     void externalAppRequested(ExternalAppLauncher::AppId app);
     void spotifyRequested();
     void settingsRequested();
@@ -214,6 +203,7 @@ private slots:
     void checkAnimationCompletion();
 
 private:
+    void rebuildActionWidgets();
     void triggerAction(int index);
     void setActiveFlag(bool active);
     void applyDefaultStackOrder();
@@ -229,10 +219,11 @@ private:
     [[nodiscard]] bool isGlobalPointInsidePetOrButtons(const QPoint& globalPos) const;
 
     QPointer<QWidget> m_anchorWidget;
-    std::array<AnimatedQuickActionButton*, ActionCount> m_buttons{};
-    std::array<QVariantAnimation*, ActionCount> m_pathAnims{};
-    std::array<QTimer*, ActionCount> m_staggerTimers{};
-    std::array<qreal, ActionCount> m_progress{};
+    QVector<QuickActionItem> m_shortcuts;
+    QVector<AnimatedQuickActionButton*> m_buttons;
+    QVector<QVariantAnimation*> m_pathAnims;
+    QVector<QTimer*> m_staggerTimers;
+    QVector<qreal> m_progress;
 
     QVariantAnimation* m_retargetAnim = nullptr;
     QTimer m_autoHideTimer;
