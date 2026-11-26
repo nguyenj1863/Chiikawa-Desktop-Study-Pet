@@ -10,6 +10,7 @@
 #include "quickactions/AnimatedQuickActionButton.h"
 #include "pet/AnimationManager.h"
 #include "app/AppSettings.h"
+#include "app/WindowCoordinator.h"
 #include "ui/CollapsibleSection.h"
 #include "quickactions/ExternalAppLauncher.h"
 #include "quickactions/InstalledAppDiscovery.h"
@@ -867,8 +868,17 @@ private slots:
         QCOMPARE(addDlg.windowModality(), Qt::NonModal);
         QVERIFY(QApplication::activeModalWidget() == nullptr);
 
-        // Initial placement sits beside Settings rather than on top of it
-        QVERIFY(!addDlg.frameGeometry().intersects(mockSettings.frameGeometry()));
+        // Initial placement sits beside Settings when the screen has room on either side
+        // (small virtual screens, e.g. the 800x600 offscreen platform, fall back to clamping)
+        const QRect settingsRect = mockSettings.frameGeometry();
+        const QRect avail = WindowCoordinator::availableGeometryFor(settingsRect.center());
+        const bool roomRight = settingsRect.right() + 1 + WindowCoordinator::kGap + addDlg.width() <= avail.right() + 1;
+        const bool roomLeft = settingsRect.left() - WindowCoordinator::kGap - addDlg.width() >= avail.left();
+        if (roomRight || roomLeft) {
+            QVERIFY(!addDlg.frameGeometry().intersects(settingsRect));
+        } else {
+            QVERIFY(avail.contains(addDlg.frameGeometry().topLeft()));
+        }
 
         // Detected apps loaded asynchronously and searchable
         QVERIFY(addDlg.detectedAppsList() != nullptr);
