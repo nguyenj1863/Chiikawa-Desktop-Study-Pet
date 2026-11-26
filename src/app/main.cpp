@@ -5,7 +5,7 @@
 #include <QIcon>
 
 #ifndef CHIIKAWA_APP_VERSION
-#  define CHIIKAWA_APP_VERSION "1.1.0"
+#  define CHIIKAWA_APP_VERSION "1.2.0"
 #endif
 
 int main(int argc, char* argv[])

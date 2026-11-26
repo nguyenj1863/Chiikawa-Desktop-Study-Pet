@@ -7,7 +7,7 @@ if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 project(ChiikawaStudyPet
-    VERSION 1.1.0
+    VERSION 1.2.0
     DESCRIPTION "Chiikawa Desktop Study Pet"
     LANGUAGES CXX
 )
