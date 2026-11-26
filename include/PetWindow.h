@@ -45,6 +45,7 @@ public:
     [[nodiscard]] AppSettings* appSettings() const { return m_settings.get(); }
     [[nodiscard]] AlarmScheduler* alarmScheduler() const { return m_alarmScheduler.get(); }
     [[nodiscard]] MovementController* movementController() const { return m_movement.get(); }
+    [[nodiscard]] AnimationManager* animationManager() const { return m_animations.get(); }
     [[nodiscard]] OnboardingWindow* onboardingWindow() const { return m_onboardingWindow.get(); }
     [[nodiscard]] QuickActionMenu* quickActionMenu() const { return m_quickActionMenu.get(); }
     [[nodiscard]] SpotifyNoticePopup* spotifyNotice() const { return m_spotifyNotice.get(); }
@@ -98,6 +99,7 @@ private slots:
     void hideQuickActions();
     void onSettingsQuickAction();
     void onSpotifyQuickAction();
+    void onExitQuickAction();
     void updateHoverBubble();
     void onOnboardingFinished(bool wasReplay);
 
@@ -109,6 +111,7 @@ private:
     [[nodiscard]] bool isSavedPositionSafe(const QPoint& pos) const;
     void updateHitMask();
     void showQuickActions();
+    [[nodiscard]] QRect currentVisibleSpriteBounds() const;
     void showCompletionToast();
     void playCompletionFeedback();
 
@@ -141,6 +144,7 @@ private:
     bool m_completionHandled = false;
     bool m_desktopLayerInitialized = false;
     bool m_appliedDesktopOnlyMode = false;
+    bool m_exitPending = false;
     QRect m_interactiveHitRect;
     QTimer m_singleClickTimer;
 };

@@ -44,6 +44,20 @@ QRect screenBoundsForPet(const QRect& petRect)
     return WindowCoordinator::availableGeometryFor(petRect.center());
 }
 
+QuickActionMenu::ArcPath lerpArc(const QuickActionMenu::ArcPath& a,
+                                 const QuickActionMenu::ArcPath& b,
+                                 qreal alpha)
+{
+    const qreal t = std::clamp(alpha, 0.0, 1.0);
+    return QuickActionMenu::ArcPath{
+        a.center + (b.center - a.center) * t,
+        a.radiusX + (b.radiusX - a.radiusX) * t,
+        a.radiusY + (b.radiusY - a.radiusY) * t,
+        a.startAngle + (b.startAngle - a.startAngle) * t,
+        a.endAngle + (b.endAngle - a.endAngle) * t
+    };
+}
+
 #ifdef Q_OS_WIN
 QPointer<QuickActionMenu> g_activeWinMenu;
 
@@ -213,56 +227,80 @@ QuickActionMenu::QuickActionMenu(QWidget* parent)
     setFocusPolicy(Qt::NoFocus);
     setWindowFlag(Qt::WindowDoesNotAcceptFocus, true);
 
-    m_settingsBtn = new AnimatedQuickActionButton(
-        PixelIcon::Gear,
-        PixelTheme::kPrimaryText,
-        QColor(Qt::white),
-        6.0,
-        this);
-    m_settingsBtn->setObjectName(QStringLiteral("quickActionSettings"));
-    m_settingsBtn->setToolTip(QStringLiteral("Settings"));
-    m_settingsBtn->setAccessibleName(QStringLiteral("Open settings"));
-
-    m_spotifyBtn = new AnimatedQuickActionButton(
+    // 1. Spotify (top)
+    m_buttons[SpotifyIndex] = new AnimatedQuickActionButton(
         PixelIcon::Spotify,
         kSpotifyGreen,
         kSpotifyGreenHover,
         -6.0,
         this);
-    m_spotifyBtn->setObjectName(QStringLiteral("quickActionSpotify"));
-    m_spotifyBtn->setToolTip(QStringLiteral("Open Spotify"));
-    m_spotifyBtn->setAccessibleName(QStringLiteral("Open Spotify"));
+    m_buttons[SpotifyIndex]->setObjectName(QStringLiteral("quickActionSpotify"));
+    m_buttons[SpotifyIndex]->setToolTip(QStringLiteral("Open Spotify"));
+    m_buttons[SpotifyIndex]->setAccessibleName(QStringLiteral("Open Spotify"));
 
-    connect(m_settingsBtn, &AnimatedQuickActionButton::hoveredChanged,
-            this, &QuickActionMenu::onButtonHoveredChanged);
-    connect(m_spotifyBtn, &AnimatedQuickActionButton::hoveredChanged,
-            this, &QuickActionMenu::onButtonHoveredChanged);
-    connect(m_settingsBtn, &QAbstractButton::clicked,
-            this, &QuickActionMenu::onSettingsClicked);
-    connect(m_spotifyBtn, &QAbstractButton::clicked,
+    // 2. Settings (middle)
+    m_buttons[SettingsIndex] = new AnimatedQuickActionButton(
+        PixelIcon::Gear,
+        PixelTheme::kPrimaryText,
+        QColor(Qt::white),
+        6.0,
+        this);
+    m_buttons[SettingsIndex]->setObjectName(QStringLiteral("quickActionSettings"));
+    m_buttons[SettingsIndex]->setToolTip(QStringLiteral("Settings"));
+    m_buttons[SettingsIndex]->setAccessibleName(QStringLiteral("Open settings"));
+
+    // 3. Exit (bottom)
+    m_buttons[ExitIndex] = new AnimatedQuickActionButton(
+        PixelIcon::Exit,
+        PixelTheme::kPrimaryText,
+        PixelTheme::kDangerText,
+        -5.0,
+        this);
+    m_buttons[ExitIndex]->setObjectName(QStringLiteral("quickActionExit"));
+    m_buttons[ExitIndex]->setToolTip(QStringLiteral("Exit Chiikawa"));
+    m_buttons[ExitIndex]->setAccessibleName(QStringLiteral("Exit application"));
+
+    connect(m_buttons[SpotifyIndex], &QAbstractButton::clicked,
             this, &QuickActionMenu::onSpotifyClicked);
+    connect(m_buttons[SettingsIndex], &QAbstractButton::clicked,
+            this, &QuickActionMenu::onSettingsClicked);
+    connect(m_buttons[ExitIndex], &QAbstractButton::clicked,
+            this, &QuickActionMenu::onExitClicked);
 
-    m_settingsPathAnim = new QVariantAnimation(this);
-    connect(m_settingsPathAnim, &QVariantAnimation::valueChanged,
+    for (int i = 0; i < ActionCount; ++i) {
+        connect(m_buttons[i], &AnimatedQuickActionButton::hoveredChanged,
+                this, &QuickActionMenu::onButtonHoveredChanged);
+
+        m_pathAnims[i] = new QVariantAnimation(this);
+        connect(m_pathAnims[i], &QVariantAnimation::valueChanged,
+                this, [this, i](const QVariant& value) {
+                    m_progress[i] = value.toReal();
+                    applyIconProgress(i, m_progress[i]);
+                });
+        connect(m_pathAnims[i], &QVariantAnimation::finished,
+                this, &QuickActionMenu::checkAnimationCompletion);
+
+        m_staggerTimers[i] = new QTimer(this);
+        m_staggerTimers[i]->setSingleShot(true);
+        connect(m_staggerTimers[i], &QTimer::timeout,
+                this, [this, i]() { startRevealForIndex(i); });
+    }
+
+    m_retargetAnim = new QVariantAnimation(this);
+    m_retargetAnim->setDuration(kRetargetMs);
+    m_retargetAnim->setEasingCurve(QEasingCurve::OutCubic);
+    connect(m_retargetAnim, &QVariantAnimation::valueChanged,
             this, [this](const QVariant& value) {
-                m_settingsProgress = value.toReal();
-                applyIconProgress(m_settingsBtn, m_layout.settingsArc, m_settingsProgress);
+                applyRetargetBlend(value.toReal());
             });
-    connect(m_settingsPathAnim, &QVariantAnimation::finished,
-            this, &QuickActionMenu::checkAnimationCompletion);
-
-    m_spotifyPathAnim = new QVariantAnimation(this);
-    connect(m_spotifyPathAnim, &QVariantAnimation::valueChanged,
-            this, [this](const QVariant& value) {
-                m_spotifyProgress = value.toReal();
-                applyIconProgress(m_spotifyBtn, m_layout.spotifyArc, m_spotifyProgress);
+    connect(m_retargetAnim, &QVariantAnimation::finished,
+            this, [this]() {
+                if (m_state != State::Closed) {
+                    m_layout = m_retargetTo;
+                    setGeometry(m_layout.overlayRect);
+                    applyAllIconProgress();
+                }
             });
-    connect(m_spotifyPathAnim, &QVariantAnimation::finished,
-            this, &QuickActionMenu::checkAnimationCompletion);
-
-    m_spotifyStaggerTimer.setSingleShot(true);
-    connect(&m_spotifyStaggerTimer, &QTimer::timeout,
-            this, &QuickActionMenu::startSpotifyReveal);
 
     m_autoHideTimer.setSingleShot(true);
     connect(&m_autoHideTimer, &QTimer::timeout,
@@ -275,13 +313,23 @@ QuickActionMenu::QuickActionMenu(QWidget* parent)
 QuickActionMenu::~QuickActionMenu()
 {
     m_autoHideTimer.stop();
-    m_spotifyStaggerTimer.stop();
+    for (auto* t : m_staggerTimers) {
+        if (t) t->stop();
+    }
+    if (m_retargetAnim) {
+        m_retargetAnim->stop();
+    }
     removeOutsideDismissObservers();
 }
 
 void QuickActionMenu::setAnchorWidget(QWidget* petWidget)
 {
     m_anchorWidget = petWidget;
+}
+
+bool QuickActionMenu::isRetargeting() const
+{
+    return m_retargetAnim && m_retargetAnim->state() == QAbstractAnimation::Running;
 }
 
 QPointF QuickActionMenu::pointOnArc(const QPointF& center,
@@ -304,128 +352,142 @@ QPointF QuickActionMenu::evaluateArc(const ArcPath& arc, qreal t)
 qreal QuickActionMenu::opacityForProgress(qreal t)
 {
     const qreal x = std::clamp(t, 0.0, 1.0);
-    // Smooth synchronized opacity: 0% -> 0%, 25% -> ~28%, 50% -> ~57%, 75% -> ~83%, 100% -> 100%.
+    // Synchronized opacity: 0% -> 0%, 25% -> ~28%, 50% -> ~57%, 75% -> ~83%, 100% -> 100%.
     return std::clamp(x * (1.0 + 0.55 * x - 0.55 * x * x), 0.0, 1.0);
 }
 
 QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeometry,
                                                        const QRect& screenBounds)
 {
+    return computeLayout(petGlobalGeometry, QRect{}, screenBounds);
+}
+
+QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeometry,
+                                                       const QRect& visibleSpriteLocalRect,
+                                                       const QRect& screenBounds)
+{
     Layout layout;
 
     const int petW = std::max(40, petGlobalGeometry.width());
     const int petH = std::max(40, petGlobalGeometry.height());
-    const qreal petLeft = petGlobalGeometry.left();
-    const qreal petTop = petGlobalGeometry.top();
-    const qreal petRight = petLeft + petW;
 
-    // Orbit center aligned with Chiikawa's body center.
-    const QPointF orbitCenter(petLeft + petW * 0.50, petTop + petH * 0.52);
-
-    // Preserve the familiar upper-right final arrangement (spaced >= kBtnSize so 48x48 widgets never overlap).
-    QPointF settingsEnd(petRight - 8.0, petTop + 14.0);
-    QPointF spotifyEnd(petRight - 50.0, petTop - 12.0);
-
-    // Mirror horizontally if near the right edge of the active screen.
-    if (screenBounds.isValid() && (settingsEnd.x() + kBtnHalf + 2.0 > screenBounds.right() + 1)) {
-        layout.mirroredLeft = true;
-        settingsEnd = QPointF(petLeft + 8.0, petTop + 14.0);
-        spotifyEnd = QPointF(petLeft + 50.0, petTop - 12.0);
-    }
-
-    // Adapt along the side if near the top edge of the active screen so icons never clip.
-    if (screenBounds.isValid() && (spotifyEnd.y() - kBtnHalf - 2.0 < screenBounds.top())) {
-        layout.sideAdapted = true;
-        if (!layout.mirroredLeft) {
-            settingsEnd = QPointF(petRight + 8.0, petTop + 18.0);
-            spotifyEnd = QPointF(petRight + 14.0, petTop + 68.0);
-            if (spotifyEnd.x() + kBtnHalf + 2.0 > screenBounds.right() + 1) {
-                layout.mirroredLeft = true;
-                settingsEnd = QPointF(petLeft - 8.0, petTop + 18.0);
-                spotifyEnd = QPointF(petLeft - 14.0, petTop + 68.0);
-            }
-        } else {
-            settingsEnd = QPointF(petLeft - 8.0, petTop + 18.0);
-            spotifyEnd = QPointF(petLeft - 14.0, petTop + 68.0);
-        }
-    }
-
-    // Clamp final centers safely inside the screen's available geometry.
-    if (screenBounds.isValid()) {
-        const qreal minX = screenBounds.left() + kBtnHalf + 2.0;
-        const qreal maxX = std::max(minX, static_cast<qreal>(screenBounds.right() + 1) - kBtnHalf - 2.0);
-        const qreal minY = screenBounds.top() + kBtnHalf + 2.0;
-        const qreal maxY = std::max(minY, static_cast<qreal>(screenBounds.bottom() + 1) - kBtnHalf - 2.0);
-
-        auto clampPt = [&](QPointF& pt) {
-            pt.setX(std::clamp(pt.x(), minX, maxX));
-            pt.setY(std::clamp(pt.y(), minY, maxY));
-        };
-        clampPt(settingsEnd);
-        clampPt(spotifyEnd);
-    }
-
-    // Build exact circular arcs from the lower sides of Chiikawa around opposite contours
-    // so evaluateArc(arc, 1.0) lands at the exact final icon centers.
-    auto buildArc = [&](const QPointF& endPt, bool sweepLeftSide, qreal startAngleRad) -> ArcPath {
-        const qreal dx = endPt.x() - orbitCenter.x();
-        const qreal dy = endPt.y() - orbitCenter.y();
-        const qreal radius = std::max<qreal>(12.0, std::hypot(dx, dy));
-        qreal endAngle = std::atan2(dy, dx); // in [-pi, pi]
-
-        if (sweepLeftSide) {
-            // Sweep clockwise in screen coordinates: lower-left (~+118 deg) -> 180 deg (left) -> upper-left/top.
-            while (endAngle <= startAngleRad) {
-                endAngle += kTwoPi;
-            }
-        } else {
-            // Sweep counter-clockwise in screen coordinates: lower-right (~+62 deg) -> 0 deg (right) -> upper-right.
-            while (endAngle >= startAngleRad) {
-                endAngle -= kTwoPi;
-            }
-        }
-
-        return ArcPath{orbitCenter, radius, radius, startAngleRad, endAngle};
-    };
-
-    ArcPath globalSettings;
-    ArcPath globalSpotify;
-
-    if (!layout.mirroredLeft && !layout.sideAdapted) {
-        // Default: Settings sweeps around the right side from lower-right (+62 deg),
-        // Spotify sweeps around the left side from lower-left (+118 deg).
-        globalSettings = buildArc(settingsEnd, false, 62.0 * kDegToRad);
-        globalSpotify = buildArc(spotifyEnd, true, 118.0 * kDegToRad);
-    } else if (layout.mirroredLeft && !layout.sideAdapted) {
-        // Near right edge: both sweep up the open left side so neither clips off the right edge.
-        globalSettings = buildArc(settingsEnd, true, 118.0 * kDegToRad);
-        globalSpotify = buildArc(spotifyEnd, true, 102.0 * kDegToRad);
-    } else if (!layout.mirroredLeft && layout.sideAdapted) {
-        // Near top edge (open right): sweep upward around the right side from lower-right.
-        globalSettings = buildArc(settingsEnd, false, 70.0 * kDegToRad);
-        globalSpotify = buildArc(spotifyEnd, false, 88.0 * kDegToRad);
+    // Derive visible sprite rect in global coordinates (fallback to inset pet rect if unavailable).
+    QRect spriteGlobal;
+    if (visibleSpriteLocalRect.isValid() && !visibleSpriteLocalRect.isEmpty()) {
+        spriteGlobal = visibleSpriteLocalRect.translated(petGlobalGeometry.topLeft());
     } else {
-        // Near top-right corner (open left): sweep upward around the left side from lower-left.
-        globalSettings = buildArc(settingsEnd, true, 110.0 * kDegToRad);
-        globalSpotify = buildArc(spotifyEnd, true, 92.0 * kDegToRad);
+        const int insetX = std::max(4, petW / 8);
+        const int insetY = std::max(4, petH / 8);
+        spriteGlobal = petGlobalGeometry.adjusted(insetX, insetY, -insetX, -insetY);
     }
 
-    // Compute a tight bounding box covering the entire sweep of both circular arcs.
-    constexpr int kSamples = 24;
-    qreal minX = settingsEnd.x();
-    qreal maxX = settingsEnd.x();
-    qreal minY = settingsEnd.y();
-    qreal maxY = settingsEnd.y();
+    // Orbit center tracks the actual visible character's center.
+    QPointF orbitCenter(spriteGlobal.left() + spriteGlobal.width() * 0.50,
+                        spriteGlobal.top() + spriteGlobal.height() * 0.50);
+
+    const qreal spriteHalfW = std::max<qreal>(16.0, spriteGlobal.width() * 0.50);
+    const qreal spriteHalfH = std::max<qreal>(16.0, spriteGlobal.height() * 0.50);
+
+    // Compact radial distance hugging the visible silhouette (16px button visual half + ~11px gap).
+    constexpr qreal kSilhouetteClearance = 27.0;
+    const qreal radiusX = std::max<qreal>(56.0, spriteHalfW + kSilhouetteClearance);
+    const qreal radiusY = std::max<qreal>(54.0, spriteHalfH + kSilhouetteClearance - 2.0);
+
+    // Guarantee >= 50.5 px center-to-center chord separation so 48x48 buttons at 1.22x hover never overlap.
+    const qreal minRadius = std::min(radiusX, radiusY);
+    constexpr qreal kTargetChord = 50.5;
+    const qreal sinHalf = std::min<qreal>(0.90, kTargetChord / (2.0 * minRadius));
+    const qreal stepAngle = std::clamp(2.0 * std::asin(sinHalf), 28.0 * kDegToRad, 56.0 * kDegToRad);
+
+    // Check if there is enough room on the right side for the radial arc; otherwise mirror left.
+    if (screenBounds.isValid()
+        && (orbitCenter.x() + radiusX + kBtnHalf + 2.0 > screenBounds.right() + 1)) {
+        const qreal spaceRight = (screenBounds.right() + 1) - orbitCenter.x();
+        const qreal spaceLeft = orbitCenter.x() - screenBounds.left();
+        if (spaceLeft > spaceRight) {
+            layout.mirroredLeft = true;
+        }
+    }
+
+    // Target angles (order is strictly Spotify top -> Settings middle -> Exit bottom).
+    // Positioned slightly lower overall so Spotify sits near the former Settings gear spot.
+    std::array<qreal, ActionCount> endAngles{};
+    std::array<qreal, ActionCount> startAngles{};
+
+    if (!layout.mirroredLeft) {
+        constexpr qreal kMidAngle = -4.0 * kDegToRad;
+        endAngles[SpotifyIndex] = kMidAngle - stepAngle;  // Top (~-46 deg)
+        endAngles[SettingsIndex] = kMidAngle;             // Middle (-4 deg)
+        endAngles[ExitIndex] = kMidAngle + stepAngle;     // Bottom (~+38 deg)
+
+        // All three sweep upward counter-clockwise from the lower-right of Chiikawa.
+        startAngles[SpotifyIndex] = 72.0 * kDegToRad;
+        startAngles[SettingsIndex] = 80.0 * kDegToRad;
+        startAngles[ExitIndex] = 88.0 * kDegToRad;
+    } else {
+        constexpr qreal kMidAngle = (180.0 + 4.0) * kDegToRad;
+        endAngles[SpotifyIndex] = kMidAngle + stepAngle;  // Top (~+226 deg / -134 deg)
+        endAngles[SettingsIndex] = kMidAngle;             // Middle (+184 deg)
+        endAngles[ExitIndex] = kMidAngle - stepAngle;     // Bottom (~+142 deg)
+
+        // All three sweep upward clockwise from the lower-left of Chiikawa.
+        startAngles[SpotifyIndex] = 108.0 * kDegToRad;
+        startAngles[SettingsIndex] = 100.0 * kDegToRad;
+        startAngles[ExitIndex] = 92.0 * kDegToRad;
+    }
+
+    // Vertically clamp the orbit center only if needed so all 3 final icons stay inside screenBounds
+    // without moving the pet window or altering icon order/spacing.
+    if (screenBounds.isValid()) {
+        qreal minEndY = orbitCenter.y();
+        qreal maxEndY = orbitCenter.y();
+        for (int i = 0; i < ActionCount; ++i) {
+            const qreal y = pointOnArc(orbitCenter, radiusX, radiusY, endAngles[i]).y();
+            minEndY = std::min(minEndY, y);
+            maxEndY = std::max(maxEndY, y);
+        }
+        const qreal allowedTop = screenBounds.top() + kBtnHalf + 2.0;
+        const qreal allowedBottom = (screenBounds.bottom() + 1) - kBtnHalf - 2.0;
+        if (minEndY < allowedTop) {
+            orbitCenter.ry() += (allowedTop - minEndY);
+        } else if (maxEndY > allowedBottom) {
+            orbitCenter.ry() -= (maxEndY - allowedBottom);
+        }
+    }
+
+    std::array<ArcPath, ActionCount> globalArcs{};
+    for (int i = 0; i < ActionCount; ++i) {
+        qreal startA = startAngles[i];
+        qreal endA = endAngles[i];
+        if (!layout.mirroredLeft) {
+            while (endA >= startA) {
+                endA -= kTwoPi;
+            }
+        } else {
+            while (endA <= startA) {
+                endA += kTwoPi;
+            }
+        }
+        globalArcs[i] = ArcPath{orbitCenter, radiusX, radiusY, startA, endA};
+    }
+
+    // Compute a tight bounding box covering the entire sweep of all three circular arcs.
+    constexpr int kSamples = 20;
+    const QPointF firstPt = evaluateArc(globalArcs[0], 1.0);
+    qreal minX = firstPt.x();
+    qreal maxX = firstPt.x();
+    qreal minY = firstPt.y();
+    qreal maxY = firstPt.y();
     auto expand = [&](const QPointF& pt) {
         minX = std::min(minX, pt.x());
         maxX = std::max(maxX, pt.x());
         minY = std::min(minY, pt.y());
         maxY = std::max(maxY, pt.y());
     };
-    for (int i = 0; i <= kSamples; ++i) {
-        const qreal t = static_cast<qreal>(i) / static_cast<qreal>(kSamples);
-        expand(evaluateArc(globalSettings, t));
-        expand(evaluateArc(globalSpotify, t));
+    for (int a = 0; a < ActionCount; ++a) {
+        for (int s = 0; s <= kSamples; ++s) {
+            expand(evaluateArc(globalArcs[a], static_cast<qreal>(s) / static_cast<qreal>(kSamples)));
+        }
     }
 
     const int pad = kBtnHalf + 4;
@@ -436,10 +498,11 @@ QuickActionMenu::Layout QuickActionMenu::computeLayout(const QRect& petGlobalGeo
     layout.overlayRect = QRect(left, top, std::max(kBtnSize, right - left), std::max(kBtnSize, bottom - top));
 
     const QPointF offset(layout.overlayRect.topLeft());
-    layout.settingsArc = globalSettings;
-    layout.settingsArc.center -= offset;
-    layout.spotifyArc = globalSpotify;
-    layout.spotifyArc.center -= offset;
+    for (int i = 0; i < ActionCount; ++i) {
+        ArcPath localArc = globalArcs[i];
+        localArc.center -= offset;
+        layout.arcAt(i) = localArc;
+    }
 
     return layout;
 }
@@ -469,61 +532,160 @@ bool QuickActionMenu::isReducedMotionActive() const
 void QuickActionMenu::syncReducedMotion()
 {
     const bool reduced = isReducedMotionActive();
-    if (m_settingsBtn) {
-        m_settingsBtn->setReducedMotion(reduced);
-    }
-    if (m_spotifyBtn) {
-        m_spotifyBtn->setReducedMotion(reduced);
+    for (auto* btn : m_buttons) {
+        if (btn) {
+            btn->setReducedMotion(reduced);
+        }
     }
 }
 
 bool QuickActionMenu::isAnyButtonHovered() const
 {
-    return (m_settingsBtn && m_settingsBtn->isHovered())
-        || (m_spotifyBtn && m_spotifyBtn->isHovered());
+    for (const auto* btn : m_buttons) {
+        if (btn && btn->isHovered()) {
+            return true;
+        }
+    }
+    return false;
 }
 
-void QuickActionMenu::applyIconProgress(AnimatedQuickActionButton* button,
-                                        const ArcPath& arc,
-                                        qreal t) const
+void QuickActionMenu::applyIconProgress(int index, qreal t) const
 {
-    if (!button) {
+    if (index < 0 || index >= ActionCount || !m_buttons[index]) {
         return;
     }
-    const QPointF center = evaluateArc(arc, t);
-    button->move(qRound(center.x()) - kBtnHalf, qRound(center.y()) - kBtnHalf);
-    button->setMenuOpacity(opacityForProgress(t));
+    const QPointF center = evaluateArc(m_layout.arcAt(index), t);
+    m_buttons[index]->move(qRound(center.x()) - kBtnHalf, qRound(center.y()) - kBtnHalf);
+    m_buttons[index]->setMenuOpacity(opacityForProgress(t));
 }
 
-void QuickActionMenu::updateAnchor(const QRect& petGlobalGeometry)
+void QuickActionMenu::applyAllIconProgress() const
+{
+    for (int i = 0; i < ActionCount; ++i) {
+        applyIconProgress(i, m_progress[i]);
+    }
+}
+
+void QuickActionMenu::applyRetargetBlend(qreal alpha)
+{
+    const QRect unionRect = m_retargetFrom.overlayRect.united(m_retargetTo.overlayRect);
+    if (geometry() != unionRect) {
+        setGeometry(unionRect);
+    }
+
+    Layout blended;
+    blended.overlayRect = unionRect;
+    blended.mirroredLeft = m_retargetTo.mirroredLeft;
+
+    const QPointF fromOffset(m_retargetFrom.overlayRect.topLeft());
+    const QPointF toOffset(m_retargetTo.overlayRect.topLeft());
+    const QPointF unionOffset(unionRect.topLeft());
+
+    for (int i = 0; i < ActionCount; ++i) {
+        ArcPath gFrom = m_retargetFrom.arcAt(i);
+        gFrom.center += fromOffset;
+        ArcPath gTo = m_retargetTo.arcAt(i);
+        gTo.center += toOffset;
+
+        ArcPath gMid = lerpArc(gFrom, gTo, alpha);
+        gMid.center -= unionOffset;
+        blended.arcAt(i) = gMid;
+    }
+
+    m_layout = blended;
+    applyAllIconProgress();
+}
+
+void QuickActionMenu::updateAnchor(const QRect& petGlobalGeometry,
+                                   const QRect& visibleSpriteLocalRect)
 {
     m_lastPetRect = petGlobalGeometry;
+    if (visibleSpriteLocalRect.isValid() && !visibleSpriteLocalRect.isEmpty()) {
+        m_lastSpriteLocalRect = visibleSpriteLocalRect;
+    }
     if (m_state == State::Closed) {
         return;
     }
 
-    const Layout next = computeLayout(petGlobalGeometry, screenBoundsForPet(petGlobalGeometry));
+    const Layout next = computeLayout(petGlobalGeometry, m_lastSpriteLocalRect, screenBoundsForPet(petGlobalGeometry));
+    if (isRetargeting()) {
+        // Keep the retarget animation moving smoothly with the dragged pet.
+        const QPoint delta = next.overlayRect.topLeft() - m_retargetTo.overlayRect.topLeft();
+        m_retargetFrom.overlayRect.translate(delta);
+        m_retargetTo = next;
+        applyRetargetBlend(m_retargetAnim->currentValue().toReal());
+        return;
+    }
+
     const bool geometryChanged = (next.overlayRect.size() != size())
-                              || (next.mirroredLeft != m_layout.mirroredLeft)
-                              || (next.sideAdapted != m_layout.sideAdapted);
+                              || (next.mirroredLeft != m_layout.mirroredLeft);
     m_layout = next;
     if (geometryChanged) {
         setGeometry(m_layout.overlayRect);
-        applyIconProgress(m_settingsBtn, m_layout.settingsArc, m_settingsProgress);
-        applyIconProgress(m_spotifyBtn, m_layout.spotifyArc, m_spotifyProgress);
+        applyAllIconProgress();
     } else if (pos() != m_layout.overlayRect.topLeft()) {
-        // Pure translation: moving the overlay shifts both icons smoothly with Chiikawa
+        // Pure translation: moving the overlay shifts all three icons smoothly with Chiikawa
         // without interrupting or overwriting any running circular arc animation.
         move(m_layout.overlayRect.topLeft());
     }
 }
 
-void QuickActionMenu::toggleMenu(const QRect& petGlobalGeometry)
+void QuickActionMenu::updateSpriteBounds(const QRect& petGlobalGeometry,
+                                         const QRect& visibleSpriteLocalRect)
+{
+    m_lastPetRect = petGlobalGeometry;
+    m_lastSpriteLocalRect = visibleSpriteLocalRect;
+    if (m_state == State::Closed) {
+        return;
+    }
+
+    const Layout next = computeLayout(petGlobalGeometry, visibleSpriteLocalRect, screenBoundsForPet(petGlobalGeometry));
+
+    // Compare new global target centers against current target centers to prevent jitter.
+    const Layout& refLayout = isRetargeting() ? m_retargetTo : m_layout;
+    const QPointF refOffset(refLayout.overlayRect.topLeft());
+    const QPointF nextOffset(next.overlayRect.topLeft());
+    qreal maxDelta = 0.0;
+    for (int i = 0; i < ActionCount; ++i) {
+        const QPointF a = refOffset + evaluateArc(refLayout.arcAt(i), 1.0);
+        const QPointF b = nextOffset + evaluateArc(next.arcAt(i), 1.0);
+        maxDelta = std::max(maxDelta, std::hypot(a.x() - b.x(), a.y() - b.y()));
+    }
+    if (maxDelta < kRetargetThresholdPx && next.mirroredLeft == refLayout.mirroredLeft) {
+        return;
+    }
+
+    if (isReducedMotionActive()) {
+        m_retargetAnim->stop();
+        m_layout = next;
+        setGeometry(m_layout.overlayRect);
+        applyAllIconProgress();
+        return;
+    }
+
+    // Smoothly interpolate from current displayed layout to target layout without
+    // restarting or resetting ongoing opening/closing progress t.
+    m_retargetFrom = m_layout;
+    m_retargetTo = next;
+    {
+        QSignalBlocker blocker(m_retargetAnim);
+        m_retargetAnim->stop();
+        m_retargetAnim->setDuration(kRetargetMs);
+        m_retargetAnim->setEasingCurve(QEasingCurve::OutCubic);
+        m_retargetAnim->setStartValue(0.0);
+        m_retargetAnim->setEndValue(1.0);
+        m_retargetAnim->setCurrentTime(0);
+    }
+    m_retargetAnim->start();
+}
+
+void QuickActionMenu::toggleMenu(const QRect& petGlobalGeometry,
+                                 const QRect& visibleSpriteLocalRect)
 {
     switch (m_state) {
     case State::Closed:
     case State::Closing:
-        showMenu(petGlobalGeometry);
+        showMenu(petGlobalGeometry, visibleSpriteLocalRect);
         break;
     case State::Opening:
     case State::Open:
@@ -532,21 +694,28 @@ void QuickActionMenu::toggleMenu(const QRect& petGlobalGeometry)
     }
 }
 
-void QuickActionMenu::showMenu(const QRect& petGlobalGeometry)
+void QuickActionMenu::showMenu(const QRect& petGlobalGeometry,
+                               const QRect& visibleSpriteLocalRect)
 {
     m_lastPetRect = petGlobalGeometry;
+    if (visibleSpriteLocalRect.isValid() && !visibleSpriteLocalRect.isEmpty()) {
+        m_lastSpriteLocalRect = visibleSpriteLocalRect;
+    }
     syncReducedMotion();
 
     m_autoHideTimer.stop();
-    m_spotifyStaggerTimer.stop();
+    for (auto* t : m_staggerTimers) {
+        t->stop();
+    }
+    m_retargetAnim->stop();
 
-    m_layout = computeLayout(petGlobalGeometry, screenBoundsForPet(petGlobalGeometry));
+    m_layout = computeLayout(petGlobalGeometry, m_lastSpriteLocalRect, screenBoundsForPet(petGlobalGeometry));
     setGeometry(m_layout.overlayRect);
 
-    m_settingsBtn->setAttribute(Qt::WA_TransparentForMouseEvents, false);
-    m_spotifyBtn->setAttribute(Qt::WA_TransparentForMouseEvents, false);
-    m_settingsBtn->show();
-    m_spotifyBtn->show();
+    for (auto* btn : m_buttons) {
+        btn->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+        btn->show();
+    }
 
     if (!isVisible()) {
         show();
@@ -560,8 +729,10 @@ void QuickActionMenu::showMenu(const QRect& petGlobalGeometry)
 
     // If already fully open, keep icons steady and reset the auto-hide timer.
     if (m_state == State::Open) {
-        applyIconProgress(m_settingsBtn, m_layout.settingsArc, 1.0);
-        applyIconProgress(m_spotifyBtn, m_layout.spotifyArc, 1.0);
+        for (int i = 0; i < ActionCount; ++i) {
+            m_progress[i] = 1.0;
+        }
+        applyAllIconProgress();
         if (!isAnyButtonHovered()) {
             m_autoHideTimer.start(m_autoHideMs);
         }
@@ -569,12 +740,11 @@ void QuickActionMenu::showMenu(const QRect& petGlobalGeometry)
     }
 
     if (isReducedMotionActive()) {
-        m_settingsPathAnim->stop();
-        m_spotifyPathAnim->stop();
-        m_settingsProgress = 1.0;
-        m_spotifyProgress = 1.0;
-        applyIconProgress(m_settingsBtn, m_layout.settingsArc, 1.0);
-        applyIconProgress(m_spotifyBtn, m_layout.spotifyArc, 1.0);
+        for (int i = 0; i < ActionCount; ++i) {
+            m_pathAnims[i]->stop();
+            m_progress[i] = 1.0;
+        }
+        applyAllIconProgress();
         m_state = State::Open;
         if (!isAnyButtonHovered()) {
             m_autoHideTimer.start(m_autoHideMs);
@@ -587,31 +757,18 @@ void QuickActionMenu::showMenu(const QRect& petGlobalGeometry)
     m_state = State::Opening;
 
     if (freshReveal) {
-        m_settingsProgress = 0.0;
-        m_spotifyProgress = 0.0;
-        m_settingsBtn->resetVisualState();
-        m_spotifyBtn->resetVisualState();
-        applyIconProgress(m_settingsBtn, m_layout.settingsArc, 0.0);
-        applyIconProgress(m_spotifyBtn, m_layout.spotifyArc, 0.0);
-    }
-
-    const qreal settingsStart = m_settingsProgress;
-    {
-        QSignalBlocker blocker(m_settingsPathAnim);
-        m_settingsPathAnim->stop();
-        m_settingsPathAnim->setDuration(std::max(120, qRound(kSettingsRevealMs * (1.0 - settingsStart))));
-        m_settingsPathAnim->setEasingCurve(QEasingCurve::OutCubic);
-        m_settingsPathAnim->setStartValue(settingsStart);
-        m_settingsPathAnim->setEndValue(1.0);
-        m_settingsPathAnim->setCurrentTime(0);
-    }
-    m_settingsPathAnim->start();
-
-    if (freshReveal) {
-        m_spotifyPathAnim->stop();
-        m_spotifyStaggerTimer.start(kSpotifyStaggerMs);
+        for (int i = 0; i < ActionCount; ++i) {
+            m_progress[i] = 0.0;
+            m_buttons[i]->resetVisualState();
+            applyIconProgress(i, 0.0);
+        }
+        startRevealForIndex(SpotifyIndex);
+        m_staggerTimers[SettingsIndex]->start(kStaggerStepMs);
+        m_staggerTimers[ExitIndex]->start(kStaggerStepMs * 2);
     } else {
-        startSpotifyReveal();
+        for (int i = 0; i < ActionCount; ++i) {
+            startRevealForIndex(i);
+        }
     }
 
     if (!isAnyButtonHovered()) {
@@ -619,28 +776,31 @@ void QuickActionMenu::showMenu(const QRect& petGlobalGeometry)
     }
 }
 
-void QuickActionMenu::startSpotifyReveal()
+void QuickActionMenu::startRevealForIndex(int index)
 {
-    if (m_state != State::Opening) {
+    if (m_state != State::Opening || index < 0 || index >= ActionCount) {
         return;
     }
-    const qreal spotifyStart = m_spotifyProgress;
+    const qreal startProg = m_progress[index];
+    const int fullMs = kRevealBaseMs + index * 10;
     {
-        QSignalBlocker blocker(m_spotifyPathAnim);
-        m_spotifyPathAnim->stop();
-        m_spotifyPathAnim->setDuration(std::max(120, qRound(kSpotifyRevealMs * (1.0 - spotifyStart))));
-        m_spotifyPathAnim->setEasingCurve(QEasingCurve::OutCubic);
-        m_spotifyPathAnim->setStartValue(spotifyStart);
-        m_spotifyPathAnim->setEndValue(1.0);
-        m_spotifyPathAnim->setCurrentTime(0);
+        QSignalBlocker blocker(m_pathAnims[index]);
+        m_pathAnims[index]->stop();
+        m_pathAnims[index]->setDuration(std::max(120, qRound(fullMs * (1.0 - startProg))));
+        m_pathAnims[index]->setEasingCurve(QEasingCurve::OutCubic);
+        m_pathAnims[index]->setStartValue(startProg);
+        m_pathAnims[index]->setEndValue(1.0);
+        m_pathAnims[index]->setCurrentTime(0);
     }
-    m_spotifyPathAnim->start();
+    m_pathAnims[index]->start();
 }
 
 void QuickActionMenu::hideMenu()
 {
     m_autoHideTimer.stop();
-    m_spotifyStaggerTimer.stop();
+    for (auto* t : m_staggerTimers) {
+        t->stop();
+    }
     removeOutsideDismissObservers();
 
     if (m_state == State::Closed || m_state == State::Closing) {
@@ -654,59 +814,45 @@ void QuickActionMenu::hideMenu()
 
     m_state = State::Closing;
 
-    // Retrace the exact same circular arcs in reverse (current progress -> 0.0).
-    const qreal settingsStart = m_settingsProgress;
-    {
-        QSignalBlocker blocker(m_settingsPathAnim);
-        m_settingsPathAnim->stop();
-        m_settingsPathAnim->setDuration(std::max(90, qRound(kDismissMs * std::max<qreal>(0.25, settingsStart))));
-        m_settingsPathAnim->setEasingCurve(QEasingCurve::InCubic);
-        m_settingsPathAnim->setStartValue(settingsStart);
-        m_settingsPathAnim->setEndValue(0.0);
-        m_settingsPathAnim->setCurrentTime(0);
+    // Retrace all three circular arcs in reverse (current progress -> 0.0).
+    for (int i = 0; i < ActionCount; ++i) {
+        const qreal startProg = m_progress[i];
+        {
+            QSignalBlocker blocker(m_pathAnims[i]);
+            m_pathAnims[i]->stop();
+            m_pathAnims[i]->setDuration(std::max(90, qRound(kDismissMs * std::max<qreal>(0.25, startProg))));
+            m_pathAnims[i]->setEasingCurve(QEasingCurve::InCubic);
+            m_pathAnims[i]->setStartValue(startProg);
+            m_pathAnims[i]->setEndValue(0.0);
+            m_pathAnims[i]->setCurrentTime(0);
+        }
+        m_pathAnims[i]->start();
     }
-    m_settingsPathAnim->start();
-
-    const qreal spotifyStart = m_spotifyProgress;
-    {
-        QSignalBlocker blocker(m_spotifyPathAnim);
-        m_spotifyPathAnim->stop();
-        m_spotifyPathAnim->setDuration(std::max(90, qRound(kDismissMs * std::max<qreal>(0.25, spotifyStart))));
-        m_spotifyPathAnim->setEasingCurve(QEasingCurve::InCubic);
-        m_spotifyPathAnim->setStartValue(spotifyStart);
-        m_spotifyPathAnim->setEndValue(0.0);
-        m_spotifyPathAnim->setCurrentTime(0);
-    }
-    m_spotifyPathAnim->start();
 }
 
 void QuickActionMenu::hideImmediately()
 {
     m_autoHideTimer.stop();
-    m_spotifyStaggerTimer.stop();
+    for (auto* t : m_staggerTimers) {
+        t->stop();
+    }
+    m_retargetAnim->stop();
     removeOutsideDismissObservers();
     finishDismissal();
 }
 
 void QuickActionMenu::finishDismissal()
 {
-    m_settingsPathAnim->stop();
-    m_spotifyPathAnim->stop();
-
-    m_settingsProgress = 0.0;
-    m_spotifyProgress = 0.0;
-
-    if (m_settingsBtn) {
-        m_settingsBtn->resetVisualState();
-        m_settingsBtn->setMenuOpacity(0.0);
-        m_settingsBtn->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        m_settingsBtn->hide();
-    }
-    if (m_spotifyBtn) {
-        m_spotifyBtn->resetVisualState();
-        m_spotifyBtn->setMenuOpacity(0.0);
-        m_spotifyBtn->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        m_spotifyBtn->hide();
+    m_retargetAnim->stop();
+    for (int i = 0; i < ActionCount; ++i) {
+        m_pathAnims[i]->stop();
+        m_progress[i] = 0.0;
+        if (m_buttons[i]) {
+            m_buttons[i]->resetVisualState();
+            m_buttons[i]->setMenuOpacity(0.0);
+            m_buttons[i]->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+            m_buttons[i]->hide();
+        }
     }
 
     const bool wasActive = (m_state != State::Closed);
@@ -726,16 +872,17 @@ void QuickActionMenu::resetAutoHideTimer()
 
 void QuickActionMenu::checkAnimationCompletion()
 {
-    const bool anyRunning = (m_settingsPathAnim->state() == QAbstractAnimation::Running)
-                         || (m_spotifyPathAnim->state() == QAbstractAnimation::Running)
-                         || m_spotifyStaggerTimer.isActive();
-    if (anyRunning) {
-        return;
+    for (int i = 0; i < ActionCount; ++i) {
+        if (m_pathAnims[i]->state() == QAbstractAnimation::Running
+            || m_staggerTimers[i]->isActive()) {
+            return;
+        }
     }
 
     if (m_state == State::Opening) {
-        m_settingsProgress = 1.0;
-        m_spotifyProgress = 1.0;
+        for (int i = 0; i < ActionCount; ++i) {
+            m_progress[i] = 1.0;
+        }
         m_state = State::Open;
         emit revealed();
     } else if (m_state == State::Closing) {
@@ -748,8 +895,7 @@ void QuickActionMenu::onButtonHoveredChanged(bool hovered)
     if (hovered) {
         m_autoHideTimer.stop();
         if (m_state == State::Closing && m_lastPetRect.isValid()) {
-            // Smoothly restore the menu if the user re-enters an icon while closing.
-            showMenu(m_lastPetRect);
+            showMenu(m_lastPetRect, m_lastSpriteLocalRect);
         }
         return;
     }
@@ -759,6 +905,13 @@ void QuickActionMenu::onButtonHoveredChanged(bool hovered)
     }
 }
 
+void QuickActionMenu::onSpotifyClicked()
+{
+    m_autoHideTimer.stop();
+    emit spotifyRequested();
+    hideMenu();
+}
+
 void QuickActionMenu::onSettingsClicked()
 {
     m_autoHideTimer.stop();
@@ -766,10 +919,10 @@ void QuickActionMenu::onSettingsClicked()
     hideMenu();
 }
 
-void QuickActionMenu::onSpotifyClicked()
+void QuickActionMenu::onExitClicked()
 {
     m_autoHideTimer.stop();
-    emit spotifyRequested();
+    emit exitRequested();
     hideMenu();
 }
 
@@ -787,7 +940,6 @@ void QuickActionMenu::installOutsideDismissObservers()
 #ifdef Q_OS_WIN
     if (!m_nativeObserverToken) {
         g_activeWinMenu = this;
-        // Out-of-context foreground observer (non-invasive, no input hook or click interception).
         HWINEVENTHOOK hook = SetWinEventHook(
             EVENT_SYSTEM_FOREGROUND,
             EVENT_SYSTEM_FOREGROUND,
@@ -845,16 +997,12 @@ bool QuickActionMenu::isGlobalPointInsidePetOrButtons(const QPoint& globalPos) c
     if (petRect.isValid() && petRect.contains(globalPos)) {
         return true;
     }
-    if (m_settingsBtn && m_settingsBtn->isVisible()) {
-        const QRect btnGlobal(m_settingsBtn->mapToGlobal(QPoint(0, 0)), m_settingsBtn->size());
-        if (btnGlobal.contains(globalPos)) {
-            return true;
-        }
-    }
-    if (m_spotifyBtn && m_spotifyBtn->isVisible()) {
-        const QRect btnGlobal(m_spotifyBtn->mapToGlobal(QPoint(0, 0)), m_spotifyBtn->size());
-        if (btnGlobal.contains(globalPos)) {
-            return true;
+    for (const auto* btn : m_buttons) {
+        if (btn && btn->isVisible()) {
+            const QRect btnGlobal(btn->mapToGlobal(QPoint(0, 0)), btn->size());
+            if (btnGlobal.contains(globalPos)) {
+                return true;
+            }
         }
     }
     return false;
@@ -877,7 +1025,6 @@ bool QuickActionMenu::eventFilter(QObject* watched, QEvent* event)
         if (!isGlobalPointInsidePetOrButtons(globalPos)) {
             hideMenu();
         }
-        // Never consume or block the user's outside click.
         return false;
     }
 

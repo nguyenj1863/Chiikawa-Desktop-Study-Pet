@@ -90,6 +90,14 @@ PetWindow::PetWindow(QWidget* parent)
             this, &PetWindow::onSettingsQuickAction);
     connect(m_quickActionMenu.get(), &QuickActionMenu::spotifyRequested,
             this, &PetWindow::onSpotifyQuickAction);
+    connect(m_quickActionMenu.get(), &QuickActionMenu::exitRequested,
+            this, &PetWindow::onExitQuickAction);
+    connect(m_animations.get(), &AnimationManager::animationChanged,
+            this, [this](AnimationId) {
+                if (m_quickActionMenu) {
+                    m_quickActionMenu->updateSpriteBounds(frameGeometry(), currentVisibleSpriteBounds());
+                }
+            });
     connect(m_spotifyNotice.get(), &SpotifyNoticePopup::buttonActivated, this, [this]() {
         if (m_uiSound) {
             m_uiSound->playClick();
@@ -393,7 +401,7 @@ void PetWindow::applySettings()
     }
 
     if (m_quickActionMenu) {
-        m_quickActionMenu->updateAnchor(frameGeometry());
+        m_quickActionMenu->updateAnchor(frameGeometry(), currentVisibleSpriteBounds());
     }
     if (!sizeChanged) {
         m_movement->constrainToScreen();
@@ -587,7 +595,7 @@ void PetWindow::onPositionMoved(const QPoint& pos)
 {
     m_settings->setLastPosition(pos);
     if (m_quickActionMenu) {
-        m_quickActionMenu->updateAnchor(frameGeometry());
+        m_quickActionMenu->updateAnchor(frameGeometry(), currentVisibleSpriteBounds());
     }
     if (m_hovering && m_timer->isActive()) {
         updateHoverBubble();
@@ -655,7 +663,7 @@ void PetWindow::mouseDoubleClickEvent(QMouseEvent* event)
     if (event->button() == Qt::LeftButton) {
         m_singleClickTimer.stop();
         if (m_quickActionMenu) {
-            m_quickActionMenu->toggleMenu(frameGeometry());
+            m_quickActionMenu->toggleMenu(frameGeometry(), currentVisibleSpriteBounds());
         }
         event->accept();
         return;
@@ -663,12 +671,20 @@ void PetWindow::mouseDoubleClickEvent(QMouseEvent* event)
     QWidget::mouseDoubleClickEvent(event);
 }
 
+QRect PetWindow::currentVisibleSpriteBounds() const
+{
+    if (m_animations) {
+        return m_animations->currentVisibleBounds(size());
+    }
+    return rect();
+}
+
 void PetWindow::showQuickActions()
 {
     if (!m_quickActionMenu) {
         return;
     }
-    m_quickActionMenu->showMenu(frameGeometry());
+    m_quickActionMenu->showMenu(frameGeometry(), currentVisibleSpriteBounds());
 }
 
 void PetWindow::hideQuickActions()
@@ -709,6 +725,19 @@ void PetWindow::onSpotifyQuickAction()
             QStringLiteral("Spotify couldn't be started right now. You can try the web player instead."),
             true);
     }
+}
+
+void PetWindow::onExitQuickAction()
+{
+    if (m_exitPending) {
+        return;
+    }
+    m_exitPending = true;
+    if (m_uiSound) {
+        m_uiSound->playClick();
+    }
+    // Brief bounded visual feedback before running the shared clean Qt shutdown path.
+    QTimer::singleShot(120, this, &PetWindow::exitApplication);
 }
 
 void PetWindow::enterEvent(QEnterEvent* event)
@@ -930,7 +959,7 @@ void PetWindow::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
     if (m_quickActionMenu) {
-        m_quickActionMenu->updateAnchor(frameGeometry());
+        m_quickActionMenu->updateAnchor(frameGeometry(), currentVisibleSpriteBounds());
     }
     updateHitMask();
 }
@@ -939,7 +968,7 @@ void PetWindow::moveEvent(QMoveEvent* event)
 {
     QWidget::moveEvent(event);
     if (m_quickActionMenu) {
-        m_quickActionMenu->updateAnchor(frameGeometry());
+        m_quickActionMenu->updateAnchor(frameGeometry(), currentVisibleSpriteBounds());
     }
 }
 

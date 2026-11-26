@@ -6,6 +6,7 @@
 #include <QRect>
 #include <QTimer>
 #include <QWidget>
+#include <array>
 
 class AnimatedQuickActionButton;
 class QEvent;
@@ -48,17 +49,15 @@ private:
 };
 
 /**
- * Floating translucent overlay hosting the circular-arc animated quick-action menu
- * (Settings + Spotify) toggled by double-clicking Chiikawa.
+ * Floating translucent overlay hosting the sprite-aware three-icon radial
+ * quick-action menu (Spotify -> Settings -> Exit) toggled by double-clicking Chiikawa.
  *
- * - Icons emerge from the lower sides of Chiikawa and sweep upward along
- *   complementary circular arcs while fading in synchronously.
- * - Closing retraces the exact same circular arcs in reverse (t: 1 -> 0).
- * - Double-clicking toggles Closed <-> Open and reverses cleanly mid-animation.
- * - Outside clicks (in-app and supported OS focus/click events) dismiss smoothly
- *   without consuming or blocking the user's click.
- * - Hover scale/rotation animations live on AnimatedQuickActionButton and run
- *   independently from the menu's arc position and opacity timeline.
+ * - Positions icons along an elliptical arc derived from the active sprite's
+ *   visible silhouette rather than raw outer window dimensions.
+ * - Icons sweep upward along circular arcs from the lower side of Chiikawa while
+ *   fading in synchronously, and retrace those exact arcs in reverse on dismissal.
+ * - Smoothly interpolates layout changes over 180 ms when Chiikawa switches
+ *   animations while the menu is visible or mid-animation.
  */
 class QuickActionMenu : public QWidget {
     Q_OBJECT
@@ -71,6 +70,13 @@ public:
         Closing
     };
 
+    enum ActionIndex : int {
+        SpotifyIndex = 0,
+        SettingsIndex = 1,
+        ExitIndex = 2,
+        ActionCount = 3
+    };
+
     struct ArcPath {
         QPointF center;
         qreal radiusX = 0.0;
@@ -81,16 +87,30 @@ public:
 
     struct Layout {
         QRect overlayRect;
-        ArcPath settingsArc; // In overlay-local coordinates (button centers)
-        ArcPath spotifyArc;  // In overlay-local coordinates (button centers)
+        ArcPath spotifyArc;  // Top icon, overlay-local coordinates
+        ArcPath settingsArc; // Middle icon, overlay-local coordinates
+        ArcPath exitArc;     // Bottom icon, overlay-local coordinates
         bool mirroredLeft = false;
-        bool sideAdapted = false;
+
+        [[nodiscard]] const ArcPath& arcAt(int index) const
+        {
+            if (index == SpotifyIndex) return spotifyArc;
+            if (index == SettingsIndex) return settingsArc;
+            return exitArc;
+        }
+        [[nodiscard]] ArcPath& arcAt(int index)
+        {
+            if (index == SpotifyIndex) return spotifyArc;
+            if (index == SettingsIndex) return settingsArc;
+            return exitArc;
+        }
     };
 
-    static constexpr int kSettingsRevealMs = 440;
-    static constexpr int kSpotifyRevealMs = 450;
-    static constexpr int kSpotifyStaggerMs = 40;
+    static constexpr int kRevealBaseMs = 440;
+    static constexpr int kStaggerStepMs = 40;
     static constexpr int kDismissMs = 340;
+    static constexpr int kRetargetMs = 180;
+    static constexpr qreal kRetargetThresholdPx = 3.0;
     static constexpr int kDefaultAutoHideMs = 5000;
     static constexpr int kDefaultLeaveHideMs = 2500;
 
@@ -99,21 +119,25 @@ public:
 
     void setAnchorWidget(QWidget* petWidget);
 
-    void showMenu(const QRect& petGlobalGeometry);
-    void toggleMenu(const QRect& petGlobalGeometry);
+    void showMenu(const QRect& petGlobalGeometry, const QRect& visibleSpriteLocalRect = {});
+    void toggleMenu(const QRect& petGlobalGeometry, const QRect& visibleSpriteLocalRect = {});
     void hideMenu();
     void hideImmediately();
-    void updateAnchor(const QRect& petGlobalGeometry);
+    void updateAnchor(const QRect& petGlobalGeometry, const QRect& visibleSpriteLocalRect = {});
+    void updateSpriteBounds(const QRect& petGlobalGeometry, const QRect& visibleSpriteLocalRect);
     void resetAutoHideTimer();
 
     [[nodiscard]] State state() const { return m_state; }
     [[nodiscard]] bool isAnyButtonHovered() const;
-    [[nodiscard]] AnimatedQuickActionButton* settingsButton() const { return m_settingsBtn; }
-    [[nodiscard]] AnimatedQuickActionButton* spotifyButton() const { return m_spotifyBtn; }
+    [[nodiscard]] AnimatedQuickActionButton* spotifyButton() const { return m_buttons[SpotifyIndex]; }
+    [[nodiscard]] AnimatedQuickActionButton* settingsButton() const { return m_buttons[SettingsIndex]; }
+    [[nodiscard]] AnimatedQuickActionButton* exitButton() const { return m_buttons[ExitIndex]; }
     [[nodiscard]] const Layout& currentLayout() const { return m_layout; }
-    [[nodiscard]] qreal settingsProgress() const { return m_settingsProgress; }
-    [[nodiscard]] qreal spotifyProgress() const { return m_spotifyProgress; }
+    [[nodiscard]] qreal spotifyProgress() const { return m_progress[SpotifyIndex]; }
+    [[nodiscard]] qreal settingsProgress() const { return m_progress[SettingsIndex]; }
+    [[nodiscard]] qreal exitProgress() const { return m_progress[ExitIndex]; }
     [[nodiscard]] bool isAutoHideActive() const { return m_autoHideTimer.isActive(); }
+    [[nodiscard]] bool isRetargeting() const;
     [[nodiscard]] qint64 elapsedSinceOpenedMs() const { return m_openedClock.isValid() ? m_openedClock.elapsed() : 1000; }
 
     void setAutoHideDurationMs(int ms) { m_autoHideMs = ms; }
@@ -132,11 +156,16 @@ public:
     [[nodiscard]] static qreal opacityForProgress(qreal t);
 
     [[nodiscard]] static Layout computeLayout(const QRect& petGlobalGeometry,
+                                              const QRect& visibleSpriteLocalRect,
+                                              const QRect& screenBounds);
+
+    [[nodiscard]] static Layout computeLayout(const QRect& petGlobalGeometry,
                                               const QRect& screenBounds);
 
 signals:
-    void settingsRequested();
     void spotifyRequested();
+    void settingsRequested();
+    void exitRequested();
     void revealed();
     void dismissed();
 
@@ -145,15 +174,16 @@ protected:
 
 private slots:
     void onButtonHoveredChanged(bool hovered);
-    void onSettingsClicked();
     void onSpotifyClicked();
-    void startSpotifyReveal();
+    void onSettingsClicked();
+    void onExitClicked();
     void checkAnimationCompletion();
 
 private:
-    void applyIconProgress(AnimatedQuickActionButton* button,
-                           const ArcPath& arc,
-                           qreal t) const;
+    void startRevealForIndex(int index);
+    void applyIconProgress(int index, qreal t) const;
+    void applyAllIconProgress() const;
+    void applyRetargetBlend(qreal alpha);
     void finishDismissal();
     void syncReducedMotion();
     void installOutsideDismissObservers();
@@ -161,21 +191,21 @@ private:
     [[nodiscard]] bool isGlobalPointInsidePetOrButtons(const QPoint& globalPos) const;
 
     QPointer<QWidget> m_anchorWidget;
-    AnimatedQuickActionButton* m_settingsBtn = nullptr;
-    AnimatedQuickActionButton* m_spotifyBtn = nullptr;
+    std::array<AnimatedQuickActionButton*, ActionCount> m_buttons{};
+    std::array<QVariantAnimation*, ActionCount> m_pathAnims{};
+    std::array<QTimer*, ActionCount> m_staggerTimers{};
+    std::array<qreal, ActionCount> m_progress{0.0, 0.0, 0.0};
 
-    QVariantAnimation* m_settingsPathAnim = nullptr;
-    QVariantAnimation* m_spotifyPathAnim = nullptr;
-
-    QTimer m_spotifyStaggerTimer;
+    QVariantAnimation* m_retargetAnim = nullptr;
     QTimer m_autoHideTimer;
     QElapsedTimer m_openedClock;
 
     QRect m_lastPetRect;
+    QRect m_lastSpriteLocalRect;
     Layout m_layout;
+    Layout m_retargetFrom;
+    Layout m_retargetTo;
     State m_state = State::Closed;
-    qreal m_settingsProgress = 0.0;
-    qreal m_spotifyProgress = 0.0;
     int m_autoHideMs = kDefaultAutoHideMs;
     int m_leaveHideMs = kDefaultLeaveHideMs;
     int m_reducedMotionOverride = -1;
