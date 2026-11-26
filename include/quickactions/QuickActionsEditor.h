@@ -18,13 +18,15 @@ class QMouseEvent;
 class QPushButton;
 
 /**
- * Reusable, draggable, overlap-aware dark translucent dialog for adding or
+ * Reusable, draggable, non-modal dark translucent window for adding or
  * editing a quick-action shortcut.
  *
+ * - Floats independently of Settings: dragging either window never moves the
+ *   other, and Settings stays interactive while the dialog is open.
  * - Draggable by its header bar (and non-interactive areas), clamped to the
  *   active monitor's available geometry across multi-monitor setups.
- * - Locally darkens its translucent glass backdrop wherever it overlaps the
- *   anchor Settings window so controls remain crisp and readable while dragging.
+ * - Paints a per-pixel translucent glass surface, so overlapping Settings
+ *   simply composites into a darker intersection.
  * - Includes an asynchronous, cached, searchable Installed Applications picker
  *   with a "Browse for application…" fallback.
  */
@@ -33,16 +35,13 @@ class QuickActionDialog : public QDialog {
 
 public:
     explicit QuickActionDialog(const QuickActionItem* existing = nullptr,
-                               QWidget* anchorWindow = nullptr,
                                QWidget* parent = nullptr);
 
     [[nodiscard]] QuickActionItem resultItem() const;
+    [[nodiscard]] bool isEditing() const { return m_isEdit; }
 
-    /** Positions the dialog beside anchorWindow without unnecessarily covering it. */
-    void placeNearAnchor(QWidget* anchorWindow);
-
-    /** Returns the dialog-local rectangle currently overlapping the anchor window. */
-    [[nodiscard]] QRect overlapRectLocal() const;
+    /** Initial placement beside anchorGlobalRect (e.g. Settings), without anchoring to it. */
+    void placeBeside(const QRect& anchorGlobalRect);
 
     /** Programmatic accessors for automated UI tests. */
     [[nodiscard]] QWidget* headerWidget() const { return m_headerWidget; }
@@ -51,13 +50,14 @@ public:
     [[nodiscard]] QLineEdit* nameEdit() const { return m_nameEdit; }
     [[nodiscard]] QLineEdit* pathEdit() const { return m_pathEdit; }
     void selectDetectedAppRow(int row);
+    void submit() { onAcceptClicked(); }
 
 protected:
+    void showEvent(QShowEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
-    void moveEvent(QMoveEvent* event) override;
 
 private slots:
     void onSearchTextChanged(const QString& text);
@@ -74,7 +74,6 @@ private:
     void refreshIconPreview();
     [[nodiscard]] bool isInteractiveChildAt(const QPoint& pos) const;
 
-    QPointer<QWidget> m_overlapAnchor;
     QuickActionItem m_item;
     bool m_isEdit = false;
     QString m_pendingIconSource;
@@ -123,6 +122,14 @@ public:
     void updateShortcut(const QuickActionItem& item);
     void removeShortcut(const QString& id);
 
+    /** Opens the non-modal Add/Edit window, or raises the one already open. */
+    void openAddDialog();
+    void openEditDialog(const QString& id);
+    [[nodiscard]] QuickActionDialog* activeDialog() const { return m_activeDialog; }
+
+    /** Cancels any open Add/Edit window without applying its pending changes. */
+    void closeActiveDialog();
+
 signals:
     void shortcutsChanged(const QVector<QuickActionItem>& items);
     void userInteracted();
@@ -136,7 +143,7 @@ private:
     void rebuildList();
     void updateCountLabel();
     void showRowMenu(const QString& id, QWidget* anchor);
-    void editShortcut(const QString& id);
+    void openDialog(const QuickActionItem* existing);
     void changeShortcutIcon(const QString& id);
     void resetShortcutIcon(const QString& id);
     [[nodiscard]] int indexOfId(const QString& id) const;
@@ -147,5 +154,6 @@ private:
     QListWidget* m_list = nullptr;
     QPushButton* m_addBtn = nullptr;
     QPushButton* m_restoreBtn = nullptr;
+    QPointer<QuickActionDialog> m_activeDialog;
     bool m_rebuilding = false;
 };

@@ -41,6 +41,7 @@ public:
     void showNear(const QRect& petGlobalGeometry);
     void prepareToShow(const QScreen* screen = nullptr);
     void setAlwaysOnTop(bool enabled);
+    [[nodiscard]] QuickActionsEditor* quickActionsEditor() const { return m_quickActionsEditor; }
     void syncFromSettings();
     void syncFromTimer();
     void syncFromAlarm();
@@ -179,6 +180,7 @@ private:
 
     bool m_use24Hour = false;
     bool m_syncingUi = false;
+    bool m_recreatingWindow = false;
     bool m_dragging = false;
     QPoint m_dragOffset;
 };

@@ -3,6 +3,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QSignalSpy>
 #include <QSlider>
 
@@ -700,7 +701,7 @@ private slots:
         InstalledAppDiscovery::setTestProvider({});
     }
 
-    void testQuickActionDialogDragOverlapSearchAndEdit()
+    void testQuickActionDialogFloatsIndependentlyWithNaturalTranslucency()
     {
         QTemporaryDir tempDir;
         QVERIFY(tempDir.isValid());
@@ -724,13 +725,20 @@ private slots:
         mockSettings.setGeometry(120, 120, 342, 420);
         mockSettings.show();
         QTest::qWait(20);
+        const QPoint settingsPos = mockSettings.pos();
 
         QuickActionDialog addDlg(nullptr, &mockSettings);
+        addDlg.placeBeside(mockSettings.frameGeometry());
         addDlg.show();
         QTest::qWait(20);
 
-        // Initial placement beside Settings should not overlap it
-        QVERIFY(addDlg.overlapRectLocal().isEmpty());
+        // Floating, non-modal window: Settings stays interactive while it is open
+        QVERIFY(!addDlg.isModal());
+        QCOMPARE(addDlg.windowModality(), Qt::NonModal);
+        QVERIFY(QApplication::activeModalWidget() == nullptr);
+
+        // Initial placement sits beside Settings rather than on top of it
+        QVERIFY(!addDlg.frameGeometry().intersects(mockSettings.frameGeometry()));
 
         // Detected apps loaded asynchronously and searchable
         QVERIFY(addDlg.detectedAppsList() != nullptr);
@@ -743,7 +751,16 @@ private slots:
         QCOMPARE(addDlg.nameEdit()->text(), QStringLiteral("Fake Studio"));
         QCOMPARE(addDlg.pathEdit()->text(), fakeAppPath);
 
-        // Dragging via header moves the dialog over Settings and computes overlap rect
+        // Per-pixel translucent glass with transparent rounded corners and opaque window opacity
+        QVERIFY(addDlg.testAttribute(Qt::WA_TranslucentBackground));
+        QCOMPARE(addDlg.windowOpacity(), 1.0);
+        const QImage beforeOverlap = addDlg.grab().toImage();
+        QCOMPARE(beforeOverlap.pixelColor(0, 0).alpha(), 0);
+        const int glassAlpha = beforeOverlap.pixelColor(beforeOverlap.width() / 2, 9).alpha();
+        QVERIFY2(glassAlpha > 0 && glassAlpha < 255,
+                 qPrintable(QStringLiteral("Expected translucent dialog glass, got alpha %1").arg(glassAlpha)));
+
+        // Dragging via header moves only the dialog, even across Settings
         const QPoint startPos = addDlg.pos();
         const QPoint headerLocal = addDlg.headerWidget()->geometry().center();
         const QPoint pressGlobal = addDlg.mapToGlobal(headerLocal);
@@ -762,7 +779,11 @@ private slots:
         QApplication::sendEvent(&addDlg, &release);
 
         QVERIFY(addDlg.pos() != startPos);
-        QVERIFY(!addDlg.overlapRectLocal().isEmpty());
+        QVERIFY(addDlg.frameGeometry().intersects(mockSettings.frameGeometry()));
+        QCOMPARE(mockSettings.pos(), settingsPos);
+
+        // Overlap is left to the compositor: the dialog paints identically over Settings
+        QCOMPARE(addDlg.grab().toImage(), beforeOverlap);
 
         // Edit mode preserves stable id, enabled state, and order; Cancel makes no changes
         QuickActionItem existing;
@@ -780,6 +801,86 @@ private slots:
         QCOMPARE(editDlg.result(), static_cast<int>(QDialog::Rejected));
         QCOMPARE(editDlg.resultItem().id, QStringLiteral("custom:stable-123"));
         QCOMPARE(editDlg.resultItem().enabled, false);
+
+        InstalledAppDiscovery::setTestProvider({});
+    }
+
+    void testEditorDialogsAreNonModalAndClosedWithSettings()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString appPath = tempDir.filePath(QStringLiteral("Notes.exe"));
+        {
+            QFile f(appPath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("stub");
+        }
+        InstalledAppDiscovery::setTestProvider([]() { return QVector<InstalledAppDiscovery::DetectedApp>{}; });
+
+        AppSettings settings;
+        settings.load();
+        SettingsPanel panel(&settings, nullptr, nullptr, nullptr, nullptr);
+        panel.move(200, 160);
+        panel.show();
+        QTest::qWait(20);
+
+        QuickActionsEditor* editor = panel.quickActionsEditor();
+        QVERIFY(editor != nullptr);
+
+        QuickActionItem custom;
+        custom.id = QStringLiteral("custom:notes");
+        custom.type = QuickActionType::CustomApp;
+        custom.displayName = QStringLiteral("Notes");
+        custom.applicationReference = appPath;
+        custom.enabled = true;
+        editor->addShortcut(custom);
+        const QVector<QuickActionItem> before = editor->shortcuts();
+        const int notesIndex = static_cast<int>(before.size()) - 1;
+        QCOMPARE(before[notesIndex].id, QStringLiteral("custom:notes"));
+
+        // Add opens a non-blocking dialog; a second request raises the same one
+        editor->openAddDialog();
+        QPointer<QuickActionDialog> addDlg = editor->activeDialog();
+        QVERIFY(addDlg);
+        QVERIFY(addDlg->isVisible());
+        QVERIFY(!addDlg->isModal());
+        editor->openEditDialog(QStringLiteral("custom:notes"));
+        QCOMPARE(editor->activeDialog(), addDlg.data());
+
+        // Settings can still be dragged while the dialog is open, without moving the dialog
+        const QPoint dialogPos = addDlg->pos();
+        panel.move(panel.pos() + QPoint(40, 20));
+        QCOMPARE(addDlg->pos(), dialogPos);
+
+        // Cancel discards the pending addition
+        editor->closeActiveDialog();
+        QTRY_VERIFY(addDlg.isNull());
+        QCOMPARE(editor->shortcuts(), before);
+
+        // Edit + Save keeps id, enabled state, and position in the list
+        editor->openEditDialog(QStringLiteral("custom:notes"));
+        QPointer<QuickActionDialog> editDlg = editor->activeDialog();
+        QVERIFY(editDlg);
+        QVERIFY(editDlg->isEditing());
+        QCOMPARE(editDlg->nameEdit()->text(), QStringLiteral("Notes"));
+        editDlg->nameEdit()->setText(QStringLiteral("Study Notes"));
+        editDlg->submit();
+        QTRY_VERIFY(editDlg.isNull());
+        const QVector<QuickActionItem> afterEdit = editor->shortcuts();
+        QCOMPARE(afterEdit.size(), before.size());
+        QCOMPARE(afterEdit[notesIndex].id, QStringLiteral("custom:notes"));
+        QCOMPARE(afterEdit[notesIndex].displayName, QStringLiteral("Study Notes"));
+        QCOMPARE(afterEdit[notesIndex].enabled, true);
+        QCOMPARE(settings.quickActions(), afterEdit);
+
+        // Closing Settings closes its transient dialog without applying unsaved edits
+        editor->openEditDialog(QStringLiteral("custom:notes"));
+        QPointer<QuickActionDialog> staleDlg = editor->activeDialog();
+        QVERIFY(staleDlg);
+        staleDlg->nameEdit()->setText(QStringLiteral("Unsaved Rename"));
+        panel.hide();
+        QTRY_VERIFY(staleDlg.isNull());
+        QCOMPARE(editor->shortcuts(), afterEdit);
 
         InstalledAppDiscovery::setTestProvider({});
     }

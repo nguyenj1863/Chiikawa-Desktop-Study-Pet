@@ -39,6 +39,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QScopedValueRollback>
 #include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -1369,6 +1370,7 @@ void SettingsPanel::setAlwaysOnTop(bool enabled)
     if (enabled) {
         flags |= Qt::WindowStaysOnTopHint;
     }
+    const QScopedValueRollback<bool> recreating(m_recreatingWindow, true);
     setWindowFlags(flags);
     setAttribute(Qt::WA_TranslucentBackground);
     if (wasVisible) {
@@ -1683,6 +1685,10 @@ void SettingsPanel::closeEvent(QCloseEvent* event)
 void SettingsPanel::hideEvent(QHideEvent* event)
 {
     QWidget::hideEvent(event);
+    if (!m_recreatingWindow && m_quickActionsEditor) {
+        // Settings-owned Add/Edit windows are transient: discard them with Settings.
+        m_quickActionsEditor->closeActiveDialog();
+    }
 }
 
 void SettingsPanel::paintEvent(QPaintEvent* event)

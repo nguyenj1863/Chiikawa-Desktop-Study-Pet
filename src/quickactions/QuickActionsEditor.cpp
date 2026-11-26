@@ -1,8 +1,12 @@
 #include "quickactions/QuickActionsEditor.h"
 
+#include "app/WindowCoordinator.h"
 #include "quickactions/ExternalAppLauncher.h"
 #include "ui/PixelTheme.h"
-#include "app/WindowCoordinator.h"
+
+#ifdef Q_OS_MACOS
+#  include "platform/MacWindowHelper.h"
+#endif
 
 #include <QAbstractButton>
 #include <QAbstractItemView>
@@ -16,9 +20,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
-#include <QMoveEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPushButton>
 #include <QStandardPaths>
 #include <QVBoxLayout>
@@ -28,15 +30,14 @@
 // QuickActionDialog
 // ============================================================================
 
-QuickActionDialog::QuickActionDialog(const QuickActionItem* existing,
-                                     QWidget* anchorWindow,
-                                     QWidget* parent)
-    : QDialog(parent, Qt::Dialog | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint)
-    , m_overlapAnchor(anchorWindow)
+QuickActionDialog::QuickActionDialog(const QuickActionItem* existing, QWidget* parent)
+    : QDialog(parent, Qt::Dialog | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint
+                      | Qt::WindowStaysOnTopHint)
     , m_isEdit(existing != nullptr)
 {
     setAttribute(Qt::WA_TranslucentBackground);
-    setModal(true);
+    setWindowModality(Qt::NonModal);
+    setWindowTitle(existing ? QStringLiteral("Edit Shortcut") : QStringLiteral("Add Application"));
     setFixedWidth(368);
     setStyleSheet(PixelTheme::styleSheet());
 
@@ -231,46 +232,31 @@ QuickActionDialog::QuickActionDialog(const QuickActionItem* existing,
     adjustSize();
     refreshIconPreview();
 
-    if (m_overlapAnchor) {
-        placeNearAnchor(m_overlapAnchor);
-    }
     if (m_item.type == QuickActionType::CustomApp) {
         loadInstalledApps(false);
     }
 }
 
-void QuickActionDialog::placeNearAnchor(QWidget* anchorWindow)
+void QuickActionDialog::placeBeside(const QRect& anchorGlobalRect)
 {
-    if (!anchorWindow) {
-        return;
-    }
-    m_overlapAnchor = anchorWindow;
-    const QRect anchorRect = anchorWindow->frameGeometry();
-    const QRect avail = WindowCoordinator::availableGeometryFor(anchorRect.center());
-    constexpr int kGap = 12;
+    const QRect avail = WindowCoordinator::availableGeometryFor(anchorGlobalRect.center());
+    const QPoint rightPos(anchorGlobalRect.right() + 1 + WindowCoordinator::kGap, anchorGlobalRect.top() + 18);
+    const QPoint leftPos(anchorGlobalRect.left() - WindowCoordinator::kGap - width(), anchorGlobalRect.top() + 18);
 
-    QPoint desired(anchorRect.right() + kGap, anchorRect.top() + 18);
-    if (desired.x() + width() > avail.right() + 1) {
-        const int leftX = anchorRect.left() - width() - kGap;
-        if (leftX >= avail.left()) {
-            desired.setX(leftX);
-        }
+    QPoint desired = rightPos;
+    if (avail.isValid() && rightPos.x() + width() > avail.right() + 1 && leftPos.x() >= avail.left()) {
+        desired = leftPos;
     }
-    const QPoint placed = WindowCoordinator::clampTopLeft(desired, size(), avail);
-    move(placed);
+    move(WindowCoordinator::clampTopLeft(desired, size(), avail));
 }
 
-QRect QuickActionDialog::overlapRectLocal() const
+void QuickActionDialog::showEvent(QShowEvent* event)
 {
-    if (!m_overlapAnchor || !m_overlapAnchor->isVisible()) {
-        return {};
-    }
-    const QRect globalOverlap = frameGeometry().intersected(m_overlapAnchor->frameGeometry());
-    if (globalOverlap.isEmpty()) {
-        return {};
-    }
-    const QPoint localTopLeft = mapFromGlobal(globalOverlap.topLeft());
-    return QRect(localTopLeft, globalOverlap.size()).intersected(rect());
+    QDialog::showEvent(event);
+#ifdef Q_OS_MACOS
+    // Match the Settings window level so the dialog is never ordered behind it.
+    MacWindowHelper::configureFloatingOverlay(this, true);
+#endif
 }
 
 void QuickActionDialog::paintEvent(QPaintEvent* event)
@@ -278,25 +264,6 @@ void QuickActionDialog::paintEvent(QPaintEvent* event)
     Q_UNUSED(event);
     QPainter p(this);
     PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Primary, PixelTheme::kRadiusCard, 6);
-
-    // Locally deepen glass opacity wherever this dialog overlaps the Settings window
-    // so text and controls remain crisp and readable while dragging across Settings.
-    const QRect overlap = overlapRectLocal();
-    if (!overlap.isEmpty()) {
-        p.save();
-        p.setRenderHint(QPainter::Antialiasing, true);
-        QPainterPath cardClip;
-        cardClip.addRoundedRect(QRectF(rect()).adjusted(1.0, 1.0, -1.0, -1.0),
-                                PixelTheme::kRadiusCard, PixelTheme::kRadiusCard);
-        p.setClipPath(cardClip);
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(PixelTheme::kBackground.red(),
-                          PixelTheme::kBackground.green(),
-                          PixelTheme::kBackground.blue(),
-                          182));
-        p.drawRect(overlap);
-        p.restore();
-    }
 }
 
 bool QuickActionDialog::isInteractiveChildAt(const QPoint& pos) const
@@ -351,15 +318,6 @@ void QuickActionDialog::mouseReleaseEvent(QMouseEvent* event)
         return;
     }
     QDialog::mouseReleaseEvent(event);
-}
-
-void QuickActionDialog::moveEvent(QMoveEvent* event)
-{
-    QDialog::moveEvent(event);
-    // Refresh overlap-aware tint smoothly as the user drags across Settings.
-    if (m_overlapAnchor && m_overlapAnchor->isVisible()) {
-        update();
-    }
 }
 
 void QuickActionDialog::loadInstalledApps(bool forceRefresh)
@@ -878,7 +836,7 @@ void QuickActionsEditor::showRowMenu(const QString& id, QWidget* anchor)
     menu.addSeparator();
 
     QAction* editAct = menu.addAction(item.isBuiltIn() ? QStringLiteral("Customize…") : QStringLiteral("Edit…"));
-    connect(editAct, &QAction::triggered, this, [this, id]() { editShortcut(id); });
+    connect(editAct, &QAction::triggered, this, [this, id]() { openEditDialog(id); });
 
     QAction* iconAct = menu.addAction(QStringLiteral("Change Icon…"));
     connect(iconAct, &QAction::triggered, this, [this, id]() { changeShortcutIcon(id); });
@@ -897,15 +855,51 @@ void QuickActionsEditor::showRowMenu(const QString& id, QWidget* anchor)
     menu.exec(anchor->mapToGlobal(QPoint(0, anchor->height())));
 }
 
-void QuickActionsEditor::editShortcut(const QString& id)
+void QuickActionsEditor::openEditDialog(const QString& id)
 {
     const int idx = indexOfId(id);
     if (idx < 0) {
         return;
     }
-    QuickActionDialog dlg(&m_items[idx], window(), window());
-    if (dlg.exec() == QDialog::Accepted) {
-        updateShortcut(dlg.resultItem());
+    openDialog(&m_items[idx]);
+}
+
+void QuickActionsEditor::openAddDialog()
+{
+    openDialog(nullptr);
+}
+
+void QuickActionsEditor::openDialog(const QuickActionItem* existing)
+{
+    if (m_activeDialog) {
+        // Keep unsaved edits: bring the already-open dialog forward instead of replacing it.
+        m_activeDialog->raise();
+        m_activeDialog->activateWindow();
+        return;
+    }
+
+    auto* dlg = new QuickActionDialog(existing, window());
+    m_activeDialog = dlg;
+    connect(dlg, &QDialog::accepted, this, [this, dlg]() {
+        const QuickActionItem result = dlg->resultItem();
+        if (dlg->isEditing()) {
+            updateShortcut(result);
+        } else {
+            addShortcut(result);
+        }
+    });
+    connect(dlg, &QDialog::finished, dlg, &QObject::deleteLater);
+
+    dlg->placeBeside(window()->frameGeometry());
+    dlg->show();
+    dlg->raise();
+    dlg->activateWindow();
+}
+
+void QuickActionsEditor::closeActiveDialog()
+{
+    if (m_activeDialog) {
+        m_activeDialog->reject();
     }
 }
 
@@ -949,10 +943,7 @@ void QuickActionsEditor::resetShortcutIcon(const QString& id)
 void QuickActionsEditor::onAddApplicationClicked()
 {
     emit userInteracted();
-    QuickActionDialog dlg(nullptr, window(), window());
-    if (dlg.exec() == QDialog::Accepted) {
-        addShortcut(dlg.resultItem());
-    }
+    openAddDialog();
 }
 
 void QuickActionsEditor::onRestoreDefaultsClicked()
