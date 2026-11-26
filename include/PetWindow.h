@@ -24,11 +24,11 @@ class AlarmNotification;
 class OnboardingWindow;
 class UISoundManager;
 class QuickActionMenu;
-class SpotifyNoticePopup;
-class SpotifyLauncher;
+class AppLaunchNoticePopup;
 
 #include "AnimationManager.h"
 #include "DesktopLayerHelper.h"
+#include "ExternalAppLauncher.h"
 
 /**
  * Frameless translucent desktop pet window.
@@ -48,9 +48,9 @@ public:
     [[nodiscard]] AnimationManager* animationManager() const { return m_animations.get(); }
     [[nodiscard]] OnboardingWindow* onboardingWindow() const { return m_onboardingWindow.get(); }
     [[nodiscard]] QuickActionMenu* quickActionMenu() const { return m_quickActionMenu.get(); }
-    [[nodiscard]] SpotifyNoticePopup* spotifyNotice() const { return m_spotifyNotice.get(); }
+    [[nodiscard]] AppLaunchNoticePopup* appNotice() const { return m_appNotice.get(); }
 
-    void setSpotifyLauncher(std::unique_ptr<SpotifyLauncher> launcher);
+    void setExternalAppLauncher(std::unique_ptr<ExternalAppLauncher> launcher);
 
     /** Entry point after construction: shows first-launch onboarding or reveals the pet directly. */
     void startApplication();
@@ -98,7 +98,7 @@ private slots:
     void onPositionMoved(const QPoint& pos);
     void hideQuickActions();
     void onSettingsQuickAction();
-    void onSpotifyQuickAction();
+    void onExternalAppQuickAction(ExternalAppLauncher::AppId app);
     void onExitQuickAction();
     void updateHoverBubble();
     void onOnboardingFinished(bool wasReplay);
@@ -131,8 +131,8 @@ private:
     std::unique_ptr<AlarmNotification> m_alarmNotification;
     std::unique_ptr<OnboardingWindow> m_onboardingWindow;
     std::unique_ptr<QuickActionMenu> m_quickActionMenu;
-    std::unique_ptr<SpotifyNoticePopup> m_spotifyNotice;
-    std::unique_ptr<SpotifyLauncher> m_spotifyLauncher;
+    std::unique_ptr<AppLaunchNoticePopup> m_appNotice;
+    std::unique_ptr<ExternalAppLauncher> m_appLauncher;
     DesktopLayerHelper m_desktopLayer;
 
     QTimer m_snoozeBubbleTimer;

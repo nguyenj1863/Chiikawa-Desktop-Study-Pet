@@ -11,7 +11,7 @@
 #include "PixelTheme.h"
 #include "QuickActionMenu.h"
 #include "SettingsPanel.h"
-#include "SpotifyLauncher.h"
+#include "ExternalAppLauncher.h"
 #include "StudyTimer.h"
 #include "SystemTrayManager.h"
 #include "TimerBubble.h"
@@ -83,13 +83,13 @@ PetWindow::PetWindow(QWidget* parent)
     m_onboardingWindow = std::make_unique<OnboardingWindow>(m_uiSound.get(), nullptr);
     m_quickActionMenu = std::make_unique<QuickActionMenu>(nullptr);
     m_quickActionMenu->setAnchorWidget(this);
-    m_spotifyNotice = std::make_unique<SpotifyNoticePopup>(nullptr);
-    m_spotifyLauncher = std::make_unique<SpotifyLauncher>();
+    m_appNotice = std::make_unique<AppLaunchNoticePopup>(nullptr);
+    m_appLauncher = std::make_unique<ExternalAppLauncher>();
 
     connect(m_quickActionMenu.get(), &QuickActionMenu::settingsRequested,
             this, &PetWindow::onSettingsQuickAction);
-    connect(m_quickActionMenu.get(), &QuickActionMenu::spotifyRequested,
-            this, &PetWindow::onSpotifyQuickAction);
+    connect(m_quickActionMenu.get(), &QuickActionMenu::externalAppRequested,
+            this, &PetWindow::onExternalAppQuickAction);
     connect(m_quickActionMenu.get(), &QuickActionMenu::exitRequested,
             this, &PetWindow::onExitQuickAction);
     connect(m_animations.get(), &AnimationManager::animationChanged,
@@ -98,13 +98,15 @@ PetWindow::PetWindow(QWidget* parent)
                     m_quickActionMenu->updateSpriteBounds(frameGeometry(), currentVisibleSpriteBounds());
                 }
             });
-    connect(m_spotifyNotice.get(), &SpotifyNoticePopup::buttonActivated, this, [this]() {
+    connect(m_appNotice.get(), &AppLaunchNoticePopup::buttonActivated, this, [this]() {
         if (m_uiSound) {
             m_uiSound->playClick();
         }
     });
-    connect(m_spotifyNotice.get(), &SpotifyNoticePopup::webPlayerRequested, this, []() {
-        QDesktopServices::openUrl(SpotifyLauncher::webPlayerUrl());
+    connect(m_appNotice.get(), &AppLaunchNoticePopup::fallbackUrlRequested, this, [](const QUrl& url) {
+        if (url.isValid()) {
+            QDesktopServices::openUrl(url);
+        }
     });
 
     connect(m_onboardingWindow.get(), &OnboardingWindow::onboardingCompleted,
@@ -277,9 +279,9 @@ void PetWindow::setupUi()
     layout->addWidget(m_petLabel);
 }
 
-void PetWindow::setSpotifyLauncher(std::unique_ptr<SpotifyLauncher> launcher)
+void PetWindow::setExternalAppLauncher(std::unique_ptr<ExternalAppLauncher> launcher)
 {
-    m_spotifyLauncher = launcher ? std::move(launcher) : std::make_unique<SpotifyLauncher>();
+    m_appLauncher = launcher ? std::move(launcher) : std::make_unique<ExternalAppLauncher>();
 }
 
 QPoint PetWindow::defaultBottomRight() const
@@ -483,8 +485,8 @@ void PetWindow::hidePet()
     if (m_quickActionMenu) {
         m_quickActionMenu->hideImmediately();
     }
-    if (m_spotifyNotice) {
-        m_spotifyNotice->dismiss();
+    if (m_appNotice) {
+        m_appNotice->dismiss();
     }
     if (m_bubble) {
         m_bubble->hide();
@@ -544,8 +546,8 @@ void PetWindow::exitApplication()
     if (m_quickActionMenu) {
         m_quickActionMenu->hideImmediately();
     }
-    if (m_spotifyNotice) {
-        m_spotifyNotice->dismiss();
+    if (m_appNotice) {
+        m_appNotice->dismiss();
     }
     if (m_soundManager) {
         m_soundManager->stop();
@@ -703,27 +705,24 @@ void PetWindow::onSettingsQuickAction()
     openSettings();
 }
 
-void PetWindow::onSpotifyQuickAction()
+void PetWindow::onExternalAppQuickAction(ExternalAppLauncher::AppId app)
 {
     if (m_uiSound) {
         m_uiSound->playClick();
     }
-    if (!m_spotifyLauncher) {
+    if (!m_appLauncher) {
         return;
     }
-    const SpotifyLauncher::Result result = m_spotifyLauncher->openOrActivate();
-    if (result.status == SpotifyLauncher::Status::NotInstalled && m_spotifyNotice) {
-        m_spotifyNotice->showNear(
+    const ExternalAppLauncher::Result result = m_appLauncher->openOrActivate(app);
+    if ((result.status == ExternalAppLauncher::Status::NotInstalled
+         || result.status == ExternalAppLauncher::Status::LaunchFailed)
+        && m_appNotice) {
+        m_appNotice->showNear(
             frameGeometry(),
-            QStringLiteral("Spotify isn't installed"),
-            QStringLiteral("Install the Spotify desktop app or open the web player."),
-            true);
-    } else if (result.status == SpotifyLauncher::Status::LaunchFailed && m_spotifyNotice) {
-        m_spotifyNotice->showNear(
-            frameGeometry(),
-            QStringLiteral("Couldn't open Spotify"),
-            QStringLiteral("Spotify couldn't be started right now. You can try the web player instead."),
-            true);
+            result.title,
+            result.message,
+            result.fallbackActionLabel,
+            result.fallbackUrl);
     }
 }
 
@@ -1008,8 +1007,8 @@ void PetWindow::hideEvent(QHideEvent* event)
     if (m_quickActionMenu) {
         m_quickActionMenu->hideImmediately();
     }
-    if (m_spotifyNotice) {
-        m_spotifyNotice->dismiss();
+    if (m_appNotice) {
+        m_appNotice->dismiss();
     }
     if (m_movement) {
         m_movement->pause();
