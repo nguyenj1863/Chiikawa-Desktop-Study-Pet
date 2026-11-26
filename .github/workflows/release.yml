@@ -75,6 +75,12 @@ jobs:
           )) {
             if ($entries -notcontains $req) { throw "Missing entry in ZIP: $req" }
           }
+          $cmake = Get-Content CMakeLists.txt -Raw
+          if ($cmake -notmatch "project\s*\(\s*ChiikawaStudyPet[\s\S]*?VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)") { throw "No project VERSION in CMakeLists.txt" }
+          $expected = $Matches[1]
+          $exeVersion = (Get-Item "dist\ChiikawaStudyPet-Windows-x64\ChiikawaStudyPet.exe").VersionInfo.ProductVersion
+          Write-Host "Packaged exe ProductVersion: $exeVersion (expected $expected)"
+          if ($exeVersion -ne $expected) { throw "Packaged exe version $exeVersion does not match $expected" }
 
       - name: Build Windows installer (Inno Setup)
         shell: pwsh
@@ -85,6 +91,16 @@ jobs:
       - name: Test Windows installer (fresh, upgrade, uninstall)
         shell: pwsh
         run: .\scripts\test_installer.ps1
+
+      - name: Test upgrade from the latest published release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $previous = gh release view --repo "${{ github.repository }}" --json tagName -q .tagName
+          Write-Host "Latest published release: $previous"
+          gh release download $previous --repo "${{ github.repository }}" --pattern ChiikawaStudyPet-Setup-x64.exe --dir baseline-installer
+          .\scripts\test_installer.ps1 -BaselineInstallerPath baseline-installer\ChiikawaStudyPet-Setup-x64.exe
 
       - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
@@ -146,6 +162,15 @@ jobs:
           test -d "${MOUNT_DIR}/ChiikawaStudyPet.app"
           test -f "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/MacOS/ChiikawaStudyPet"
           test -f "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/Info.plist"
+          EXPECTED_VERSION="$(sed -nE 's/^[[:space:]]+VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt | head -n1)"
+          PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/Info.plist")"
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/Info.plist")"
+          echo "Bundle version ${PLIST_VERSION} (expected ${EXPECTED_VERSION}), identifier ${BUNDLE_ID}"
+          if [ -z "${EXPECTED_VERSION}" ] || [ "${PLIST_VERSION}" != "${EXPECTED_VERSION}" ]; then
+            hdiutil detach "${MOUNT_DIR}" -quiet || true
+            echo "Error: bundle version does not match CMake project version" >&2
+            exit 1
+          fi
           QT_QPA_PLATFORM=offscreen "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/MacOS/ChiikawaStudyPet" &
           APP_PID=$!
           sleep 3
@@ -212,6 +237,15 @@ jobs:
           test -d "${MOUNT_DIR}/ChiikawaStudyPet.app"
           test -f "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/MacOS/ChiikawaStudyPet"
           test -f "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/Info.plist"
+          EXPECTED_VERSION="$(sed -nE 's/^[[:space:]]+VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt | head -n1)"
+          PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/Info.plist")"
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/Info.plist")"
+          echo "Bundle version ${PLIST_VERSION} (expected ${EXPECTED_VERSION}), identifier ${BUNDLE_ID}"
+          if [ -z "${EXPECTED_VERSION}" ] || [ "${PLIST_VERSION}" != "${EXPECTED_VERSION}" ]; then
+            hdiutil detach "${MOUNT_DIR}" -quiet || true
+            echo "Error: bundle version does not match CMake project version" >&2
+            exit 1
+          fi
           QT_QPA_PLATFORM=offscreen "${MOUNT_DIR}/ChiikawaStudyPet.app/Contents/MacOS/ChiikawaStudyPet" &
           APP_PID=$!
           sleep 3

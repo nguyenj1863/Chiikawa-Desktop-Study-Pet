@@ -4,10 +4,14 @@
       1. Fresh per-user installation (files, Start Menu & Desktop shortcuts, Installed Apps entry, launch)
       2. In-place upgrade installation (version update, no duplicates, settings preserved, shortcuts valid)
       3. Clean uninstallation (files & shortcuts removed, Run startup entry cleaned up, user prefs preserved)
+
+    With -BaselineInstallerPath, step 1 installs that previously published installer instead,
+    and step 2 upgrades it with -InstallerPath (a real previous-release to current upgrade).
 #>
 param(
     [string]$InstallerPath = "",
     [string]$IsccPath = "",
+    [string]$BaselineInstallerPath = "",
     [switch]$SkipUpgradeBuild
 )
 
@@ -19,6 +23,15 @@ if (-not $InstallerPath) {
 if (-not (Test-Path $InstallerPath)) {
     throw "Installer not found: $InstallerPath"
 }
+if ($BaselineInstallerPath -and -not (Test-Path $BaselineInstallerPath)) {
+    throw "Baseline installer not found: $BaselineInstallerPath"
+}
+
+$cmakeContent = Get-Content (Join-Path $Root "CMakeLists.txt") -Raw
+if ($cmakeContent -notmatch "project\s*\(\s*ChiikawaStudyPet[\s\S]*?VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)") {
+    throw "Could not determine project VERSION from CMakeLists.txt"
+}
+$ProjectVersion = $Matches[1]
 
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\Chiikawa"
 $InstalledExe = Join-Path $InstallDir "ChiikawaStudyPet.exe"
@@ -80,7 +93,9 @@ try {
     }
 
     Write-Host "`n=== 1. Fresh Installation Test ==="
-    $p = Start-Process -FilePath $InstallerPath -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS="desktopicon"' -Wait -PassThru
+    $freshInstaller = if ($BaselineInstallerPath) { $BaselineInstallerPath } else { $InstallerPath }
+    Write-Host "Installing: $freshInstaller"
+    $p = Start-Process -FilePath $freshInstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS="desktopicon"' -Wait -PassThru
     Assert-True ($p.ExitCode -eq 0) "Fresh installer exited with code 0 (actual: $($p.ExitCode))"
 
     Assert-True (Test-Path $InstallDir) "Installed under per-user directory: $InstallDir"
@@ -113,6 +128,13 @@ try {
     Assert-True ($uProps.DisplayName -eq "Chiikawa") "DisplayName is 'Chiikawa'"
     Assert-True ($uProps.Publisher -eq "John Nguyen") "Publisher is 'John Nguyen'"
     Assert-True ([bool]$uProps.UninstallString) "UninstallString is populated"
+    if ($BaselineInstallerPath) {
+        Write-Host "  Baseline installed version: $($uProps.DisplayVersion)"
+    } else {
+        Assert-True ($uProps.DisplayVersion -eq $ProjectVersion) "DisplayVersion matches CMake project version $ProjectVersion"
+        $exeVersion = (Get-Item $InstalledExe).VersionInfo.ProductVersion
+        Assert-True ($exeVersion -eq $ProjectVersion) "Installed exe ProductVersion is $ProjectVersion (actual: $exeVersion)"
+    }
 
     $launched = Test-AppLaunches $InstalledExe
     Assert-True $launched "Installed ChiikawaStudyPet.exe launched and remained running cleanly"
@@ -129,7 +151,9 @@ try {
 
     $upgradeInstaller = $InstallerPath
     $expectedUpgradeVersion = $uProps.DisplayVersion
-    if (-not $SkipUpgradeBuild) {
+    if ($BaselineInstallerPath) {
+        $expectedUpgradeVersion = $ProjectVersion
+    } elseif (-not $SkipUpgradeBuild) {
         $upgradeTempDir = Join-Path $env:TEMP ("chiikawa-upgrade-test-" + [guid]::NewGuid().ToString("N"))
         New-Item -ItemType Directory -Force -Path $upgradeTempDir | Out-Null
         $pkgInstallerScript = Join-Path $PSScriptRoot "package_installer.ps1"
@@ -178,6 +202,10 @@ try {
 
     $sentinelAfterUpgrade = (Get-ItemProperty -Path $PrefsKey -Name $SentinelName -ErrorAction SilentlyContinue).$SentinelName
     Assert-True ($sentinelAfterUpgrade -eq $SentinelValue) "User preferences preserved across upgrade"
+    if ($BaselineInstallerPath) {
+        $upgradedExeVersion = (Get-Item $InstalledExe).VersionInfo.ProductVersion
+        Assert-True ($upgradedExeVersion -eq $ProjectVersion) "Upgraded exe ProductVersion is $ProjectVersion (actual: $upgradedExeVersion)"
+    }
 
     $smAfter = Get-ShortcutInfo $StartMenuShortcut
     Assert-True ($smAfter.TargetPath -ieq $InstalledExe) "Start Menu shortcut still targets installed exe after upgrade"
