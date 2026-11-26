@@ -20,6 +20,13 @@
 #include <QSignalSpy>
 #include <QTest>
 
+namespace {
+[[maybe_unused]] const bool kIsolatedSettingsStore = [] {
+    AppSettings::setStorageScope(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPetTests"));
+    return true;
+}();
+} // namespace
+
 class TestOnboarding : public QObject {
     Q_OBJECT
 
@@ -45,14 +52,14 @@ private slots:
 
 void TestOnboarding::init()
 {
-    QSettings s(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPet"));
+    QSettings s(AppSettings::storageOrganization(), AppSettings::storageApplication());
     s.clear();
     s.sync();
 }
 
 void TestOnboarding::cleanup()
 {
-    QSettings s(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPet"));
+    QSettings s(AppSettings::storageOrganization(), AppSettings::storageApplication());
     s.clear();
     s.sync();
 }

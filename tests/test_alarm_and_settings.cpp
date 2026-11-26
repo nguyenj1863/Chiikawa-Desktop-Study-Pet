@@ -28,9 +28,14 @@
 
 namespace {
 
+[[maybe_unused]] const bool kIsolatedSettingsStore = [] {
+    AppSettings::setStorageScope(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPetTests"));
+    return true;
+}();
+
 void clearAllSettings()
 {
-    QSettings settings(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPet"));
+    QSettings settings(AppSettings::storageOrganization(), AppSettings::storageApplication());
     settings.clear();
     settings.sync();
 }
@@ -348,7 +353,7 @@ void TestAlarmAndSettings::snoozeRestartRecovery()
 void TestAlarmAndSettings::legacyDailyAlarmMigrationDoesNotAutoActivate()
 {
     {
-        QSettings raw(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPet"));
+        QSettings raw(AppSettings::storageOrganization(), AppSettings::storageApplication());
         raw.setValue(QStringLiteral("alarm/configured"), true);
         raw.setValue(QStringLiteral("alarm/enabled"), true);
         raw.setValue(QStringLiteral("alarm/time"), QStringLiteral("07:30"));

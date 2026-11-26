@@ -23,6 +23,13 @@
 #include <cmath>
 #include <memory>
 
+namespace {
+[[maybe_unused]] const bool kIsolatedSettingsStore = [] {
+    AppSettings::setStorageScope(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPetTests"));
+    return true;
+}();
+} // namespace
+
 class TestQuickActions : public QObject {
     Q_OBJECT
 
@@ -31,14 +38,23 @@ private slots:
     {
         QCoreApplication::setOrganizationName(QStringLiteral("ChiikawaStudyPetTest"));
         QCoreApplication::setApplicationName(QStringLiteral("TestQuickActions"));
+        clearSettingsStore();
     }
 
     void cleanup()
     {
-        QSettings settings;
+        clearSettingsStore();
+    }
+
+private:
+    static void clearSettingsStore()
+    {
+        QSettings settings(AppSettings::storageOrganization(), AppSettings::storageApplication());
         settings.clear();
         settings.sync();
     }
+
+private slots:
 
     void sixIconsOrderTooltipsAndAccessibleNames()
     {

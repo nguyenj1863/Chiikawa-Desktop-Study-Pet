@@ -23,6 +23,14 @@ public:
 
     AppSettings();
 
+    /**
+     * Redirects persistence to a separate QSettings scope. Tests use this so
+     * they never read, overwrite, or clear the user's real preferences.
+     */
+    static void setStorageScope(const QString& organization, const QString& application);
+    [[nodiscard]] static QString storageOrganization();
+    [[nodiscard]] static QString storageApplication();
+
     void load();
     void save() const;
 

@@ -6,6 +6,13 @@
 #include <QSettings>
 #include <QTest>
 
+namespace {
+[[maybe_unused]] const bool kIsolatedSettingsStore = [] {
+    AppSettings::setStorageScope(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPetTests"));
+    return true;
+}();
+} // namespace
+
 class TestAppSettings : public QObject {
     Q_OBJECT
 
@@ -26,7 +33,7 @@ private:
 
 void TestAppSettings::clearSettings()
 {
-    QSettings settings(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPet"));
+    QSettings settings(AppSettings::storageOrganization(), AppSettings::storageApplication());
     settings.clear();
     settings.sync();
 }
@@ -217,7 +224,7 @@ void TestAppSettings::persistsQuickActionIconScaleAndHandlesInvalidValues()
     }
     {
         // Malformed stored value safely falls back to default
-        QSettings raw(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPet"));
+        QSettings raw(AppSettings::storageOrganization(), AppSettings::storageApplication());
         raw.setValue(QStringLiteral("pet/quickActionIconScale"), QStringLiteral("not-a-number"));
         raw.sync();
 
@@ -266,7 +273,7 @@ void TestAppSettings::persistsCustomQuickActionsAndValidatesMalformedData()
     }
     {
         // Malformed JSON safely falls back to defaults
-        QSettings raw(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPet"));
+        QSettings raw(AppSettings::storageOrganization(), AppSettings::storageApplication());
         raw.setValue(QStringLiteral("pet/quickActionsJson"), QByteArray("{bad json"));
         raw.sync();
 

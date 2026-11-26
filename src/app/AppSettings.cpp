@@ -6,8 +6,17 @@
 #include <cmath>
 
 namespace {
-constexpr auto kOrg = "ChiikawaStudyPet";
-constexpr auto kApp = "DesktopPet";
+QString& storageOrgRef()
+{
+    static QString org = QStringLiteral("ChiikawaStudyPet");
+    return org;
+}
+
+QString& storageAppRef()
+{
+    static QString app = QStringLiteral("DesktopPet");
+    return app;
+}
 
 QString sanitizeSoundId(const QString& id)
 {
@@ -25,9 +34,25 @@ AppSettings::AppSettings()
     load();
 }
 
+void AppSettings::setStorageScope(const QString& organization, const QString& application)
+{
+    storageOrgRef() = organization;
+    storageAppRef() = application;
+}
+
+QString AppSettings::storageOrganization()
+{
+    return storageOrgRef();
+}
+
+QString AppSettings::storageApplication()
+{
+    return storageAppRef();
+}
+
 void AppSettings::load()
 {
-    QSettings settings(kOrg, kApp);
+    QSettings settings(storageOrgRef(), storageAppRef());
 
     m_petSize = settings.value(QStringLiteral("pet/size"), SettingsDefaults::kPetSize).toInt();
     {
@@ -109,7 +134,7 @@ void AppSettings::load()
 
 void AppSettings::save() const
 {
-    QSettings settings(kOrg, kApp);
+    QSettings settings(storageOrgRef(), storageAppRef());
 
     settings.setValue(QStringLiteral("pet/size"), m_petSize);
     settings.setValue(QStringLiteral("pet/quickActionIconScale"), m_quickActionIconScale);
