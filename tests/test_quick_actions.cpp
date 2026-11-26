@@ -31,6 +31,24 @@ void sendLeave(QWidget* w)
     QApplication::sendEvent(w, &evt);
 }
 
+class ClickProbeWidget : public QWidget {
+public:
+    explicit ClickProbeWidget(QWidget* parent = nullptr)
+        : QWidget(parent)
+    {
+        setFixedSize(80, 80);
+    }
+
+    int pressCount = 0;
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        ++pressCount;
+        event->accept();
+    }
+};
+
 } // namespace
 
 class TestQuickActions : public QObject {
@@ -40,16 +58,19 @@ private slots:
     void init();
     void cleanup();
 
-    void bezierCurveIsCurvedAndMatchesEndpoints();
+    void circularArcGeometryStartsAtBottomAndSweepsAroundOppositeSides();
+    void synchronizedOpacityProgression();
     void layoutPositionsScreenEdgesAndPetSizes();
-    void revealAndDismissCurvedAnimationsAndStateReset();
-    void hoverScaleTwistAndStableHitbox();
+    void revealAndReverseDismissRetraceExactArcAndResetState();
+    void doubleClickTogglesAndReversesMidFlight();
+    void outsideClickDismissesWithoutBlockingAndSingleClickPreservesMenu();
+    void hoverEnlargesTo122WithTwistAndStableUnclippedHitbox();
     void hoverCoexistsWithRevealDismissAndAutoHide();
-    void reducedMotionDisablesScaleTwistAndCurvedTravel();
+    void reducedMotionDisablesScaleTwistAndArcTravel();
     void dragAnchorUpdatePreservesActiveAnimation();
     void spotifyIconAndTranslucentButtonRendering();
     void spotifyLauncherStates();
-    void petWindowDoubleClickAndSpotifyFallbackNotice();
+    void petWindowDoubleClickToggleAndSpotifyFallbackNotice();
 };
 
 void TestQuickActions::init()
@@ -66,72 +87,108 @@ void TestQuickActions::cleanup()
     s.sync();
 }
 
-void TestQuickActions::bezierCurveIsCurvedAndMatchesEndpoints()
+void TestQuickActions::circularArcGeometryStartsAtBottomAndSweepsAroundOppositeSides()
 {
-    const QPointF p0(20.0, 60.0);
-    const QPointF p1(30.0, 28.0);
-    const QPointF p2(65.0, 18.0);
-    const QPointF p3(80.0, 32.0);
+    const QRect screen(0, 0, 1920, 1080);
+    const QRect petRect(600, 500, 120, 120);
+    const QuickActionMenu::Layout layout = QuickActionMenu::computeLayout(petRect, screen);
 
-    const QPointF start = QuickActionMenu::cubicBezier(p0, p1, p2, p3, 0.0);
-    const QPointF end = QuickActionMenu::cubicBezier(p0, p1, p2, p3, 1.0);
-    const QPointF mid = QuickActionMenu::cubicBezier(p0, p1, p2, p3, 0.5);
-    const QPointF linearMid = (p0 + p3) * 0.5;
+    const QPointF petCenterGlobal(petRect.left() + petRect.width() * 0.50,
+                                  petRect.top() + petRect.height() * 0.52);
+    const QPointF offset(layout.overlayRect.topLeft());
 
-    QVERIFY(std::abs(start.x() - p0.x()) < 1e-6);
-    QVERIFY(std::abs(start.y() - p0.y()) < 1e-6);
-    QVERIFY(std::abs(end.x() - p3.x()) < 1e-6);
-    QVERIFY(std::abs(end.y() - p3.y()) < 1e-6);
+    // Settings: starts near lower-right, sweeps outward around right side, lands at upper-right
+    const QPointF sStart = offset + QuickActionMenu::evaluateArc(layout.settingsArc, 0.0);
+    const QPointF sMid = offset + QuickActionMenu::evaluateArc(layout.settingsArc, 0.5);
+    const QPointF sEnd = offset + QuickActionMenu::evaluateArc(layout.settingsArc, 1.0);
 
-    // Midpoint must arch clearly above the straight line between p0 and p3.
-    QVERIFY(mid.y() < linearMid.y() - 10.0);
+    QVERIFY2(sStart.y() > petCenterGlobal.y() + 20.0, "Settings must start near the bottom of Chiikawa");
+    QVERIFY2(sStart.x() > petCenterGlobal.x(), "Settings must start on the lower-right side");
+    QVERIFY2(sMid.x() > sStart.x() && sMid.x() > sEnd.x(), "Settings arc must sweep outward around the right side");
+    QVERIFY(std::abs(sEnd.x() - (petRect.right() + 1 - 8.0)) < 1.5);
+    QVERIFY(std::abs(sEnd.y() - (petRect.top() + 14.0)) < 1.5);
+
+    // Spotify: starts near lower-left, sweeps outward around left side, lands at upper-adjacent position
+    const QPointF spStart = offset + QuickActionMenu::evaluateArc(layout.spotifyArc, 0.0);
+    const QPointF spMid = offset + QuickActionMenu::evaluateArc(layout.spotifyArc, 0.5);
+    const QPointF spEnd = offset + QuickActionMenu::evaluateArc(layout.spotifyArc, 1.0);
+
+    QVERIFY2(spStart.y() > petCenterGlobal.y() + 20.0, "Spotify must start near the bottom of Chiikawa");
+    QVERIFY2(spStart.x() < petCenterGlobal.x(), "Spotify must start on the lower-left side");
+    QVERIFY2(spMid.x() < petCenterGlobal.x() - 35.0, "Spotify arc must sweep visibly around the left side");
+    QVERIFY(std::abs(spEnd.x() - (petRect.right() + 1 - 50.0)) < 1.5);
+    QVERIFY(std::abs(spEnd.y() - (petRect.top() - 12.0)) < 1.5);
+
+    // Every sample point along both arcs lies at constant radius from the orbit center
+    for (int i = 0; i <= 10; ++i) {
+        const qreal t = i / 10.0;
+        const QPointF pS = QuickActionMenu::evaluateArc(layout.settingsArc, t) - layout.settingsArc.center;
+        const QPointF pSp = QuickActionMenu::evaluateArc(layout.spotifyArc, t) - layout.spotifyArc.center;
+        QVERIFY(std::abs(std::hypot(pS.x(), pS.y()) - layout.settingsArc.radiusX) < 1e-4);
+        QVERIFY(std::abs(std::hypot(pSp.x(), pSp.y()) - layout.spotifyArc.radiusX) < 1e-4);
+    }
+}
+
+void TestQuickActions::synchronizedOpacityProgression()
+{
+    QCOMPARE(QuickActionMenu::opacityForProgress(0.0), 0.0);
+    const qreal op25 = QuickActionMenu::opacityForProgress(0.25);
+    const qreal op50 = QuickActionMenu::opacityForProgress(0.50);
+    const qreal op75 = QuickActionMenu::opacityForProgress(0.75);
+    QVERIFY(op25 >= 0.20 && op25 <= 0.32);
+    QVERIFY(op50 >= 0.50 && op50 <= 0.65);
+    QVERIFY(op75 >= 0.80 && op75 <= 0.95);
+    QCOMPARE(QuickActionMenu::opacityForProgress(1.0), 1.0);
 }
 
 void TestQuickActions::layoutPositionsScreenEdgesAndPetSizes()
 {
     const QRect screen(0, 0, 1920, 1080);
 
-    // Default center-screen placement: upper-right arc, no mirroring, non-overlapping buttons
     const QRect normalPet(600, 500, 120, 120);
     const QuickActionMenu::Layout normal = QuickActionMenu::computeLayout(normalPet, screen);
     QVERIFY(!normal.mirroredLeft);
     QVERIFY(!normal.sideAdapted);
     QVERIFY(normal.overlayRect.isValid());
 
-    const QPointF sEnd = normal.settingsCurve.p3;
-    const QPointF spEnd = normal.spotifyCurve.p3;
+    const QPointF sEnd = QuickActionMenu::evaluateArc(normal.settingsArc, 1.0);
+    const QPointF spEnd = QuickActionMenu::evaluateArc(normal.spotifyArc, 1.0);
     const qreal centerDist = std::hypot(sEnd.x() - spEnd.x(), sEnd.y() - spEnd.y());
     QVERIFY2(centerDist >= AnimatedQuickActionButton::kWidgetSize,
-             "Buttons must not overlap at resting positions");
+             "48x48 buttons must not overlap at resting positions");
 
     // Near right edge: mirrors horizontally to upper-left
     const QRect rightEdgePet(1800, 500, 120, 120);
     const QuickActionMenu::Layout mirrored = QuickActionMenu::computeLayout(rightEdgePet, screen);
     QVERIFY(mirrored.mirroredLeft);
-    const QPointF mirroredSettingsGlobal = QPointF(mirrored.overlayRect.topLeft()) + mirrored.settingsCurve.p3;
-    const QPointF mirroredSpotifyGlobal = QPointF(mirrored.overlayRect.topLeft()) + mirrored.spotifyCurve.p3;
-    QVERIFY(screen.contains(mirroredSettingsGlobal.toPoint()));
-    QVERIFY(screen.contains(mirroredSpotifyGlobal.toPoint()));
+    const QPointF mSettingsGlobal = QPointF(mirrored.overlayRect.topLeft())
+                                  + QuickActionMenu::evaluateArc(mirrored.settingsArc, 1.0);
+    const QPointF mSpotifyGlobal = QPointF(mirrored.overlayRect.topLeft())
+                                 + QuickActionMenu::evaluateArc(mirrored.spotifyArc, 1.0);
+    QVERIFY(screen.contains(mSettingsGlobal.toPoint()));
+    QVERIFY(screen.contains(mSpotifyGlobal.toPoint()));
 
     // Near top edge: adapts along the side so icons never clip above screen top
     const QRect topEdgePet(600, 2, 120, 120);
     const QuickActionMenu::Layout topAdapted = QuickActionMenu::computeLayout(topEdgePet, screen);
     QVERIFY(topAdapted.sideAdapted);
-    const QPointF topSpotifyGlobal = QPointF(topAdapted.overlayRect.topLeft()) + topAdapted.spotifyCurve.p3;
+    const QPointF topSpotifyGlobal = QPointF(topAdapted.overlayRect.topLeft())
+                                   + QuickActionMenu::evaluateArc(topAdapted.spotifyArc, 1.0);
     QVERIFY(topSpotifyGlobal.y() - AnimatedQuickActionButton::kWidgetSize / 2 >= screen.top());
 
-    // Works cleanly for both small (60px) and large (220px) pet sizes
+    // Works cleanly for small (60px), default (120px), and large (220px) pet sizes
     for (int sz : {60, 120, 220}) {
         const QuickActionMenu::Layout l = QuickActionMenu::computeLayout(QRect(400, 400, sz, sz), screen);
-        const qreal d = std::hypot(l.settingsCurve.p3.x() - l.spotifyCurve.p3.x(),
-                                   l.settingsCurve.p3.y() - l.spotifyCurve.p3.y());
-        QVERIFY(d >= AnimatedQuickActionButton::kWidgetSize);
+        const QPointF a = QuickActionMenu::evaluateArc(l.settingsArc, 1.0);
+        const QPointF b = QuickActionMenu::evaluateArc(l.spotifyArc, 1.0);
+        QVERIFY(std::hypot(a.x() - b.x(), a.y() - b.y()) >= AnimatedQuickActionButton::kWidgetSize);
     }
 }
 
-void TestQuickActions::revealAndDismissCurvedAnimationsAndStateReset()
+void TestQuickActions::revealAndReverseDismissRetraceExactArcAndResetState()
 {
     QuickActionMenu menu;
+    menu.setNativeOutsideObserverEnabled(false);
     menu.setReducedMotionOverride(0);
     menu.setAutoHideDurationMs(5000);
 
@@ -140,15 +197,21 @@ void TestQuickActions::revealAndDismissCurvedAnimationsAndStateReset()
     QSignalSpy dismissedSpy(&menu, &QuickActionMenu::dismissed);
 
     menu.showMenu(petRect);
-    QCOMPARE(menu.state(), QuickActionMenu::State::Revealing);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Opening);
     QVERIFY(menu.isVisible());
 
-    // Early in reveal: Settings has started moving while Spotify is staggered behind
-    QTest::qWait(35);
+    // Early in reveal: Settings moves slightly ahead of Spotify (40 ms stagger)
+    QTest::qWait(30);
     QVERIFY(menu.settingsProgress() >= menu.spotifyProgress());
 
-    // Wait for reveal to finish
-    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Visible, 1200);
+    // Mid-reveal: opacity is synchronized with progress
+    QTest::qWait(140);
+    const qreal midProg = menu.settingsProgress();
+    QVERIFY(midProg > 0.1 && midProg < 1.0);
+    QVERIFY(std::abs(menu.settingsButton()->menuOpacity()
+                     - QuickActionMenu::opacityForProgress(midProg)) < 0.05);
+
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1500);
     QCOMPARE(revealedSpy.count(), 1);
     QVERIFY(std::abs(menu.settingsProgress() - 1.0) < 1e-3);
     QVERIFY(std::abs(menu.spotifyProgress() - 1.0) < 1e-3);
@@ -157,16 +220,25 @@ void TestQuickActions::revealAndDismissCurvedAnimationsAndStateReset()
 
     // Apply hover before dismissing to verify dismissal resets hover state completely
     sendEnter(menu.spotifyButton());
-    QTest::qWait(100);
-    QVERIFY(menu.spotifyButton()->hoverScale() > 1.01);
+    QTest::qWait(120);
+    QVERIFY(menu.spotifyButton()->hoverScale() > 1.05);
 
+    // Close retraces the exact same ArcPath in reverse (t: 1 -> 0)
+    const QuickActionMenu::ArcPath openSettingsArc = menu.currentLayout().settingsArc;
     menu.hideMenu();
-    QCOMPARE(menu.state(), QuickActionMenu::State::Dismissing);
-    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Hidden, 1000);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Closing);
+    QTest::qWait(120);
+    const qreal closeT = menu.settingsProgress();
+    const QPointF expectedCenter = QuickActionMenu::evaluateArc(openSettingsArc, closeT);
+    const QPointF actualCenter = QRectF(menu.settingsButton()->geometry()).center();
+    QVERIFY(std::hypot(expectedCenter.x() - actualCenter.x(),
+                       expectedCenter.y() - actualCenter.y()) <= 2.0);
+
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Closed, 1200);
     QCOMPARE(dismissedSpy.count(), 1);
     QVERIFY(!menu.isVisible());
 
-    // Both buttons must be cleanly reset to resting scale=1.00, rotation=0.0, opacity=0.0
+    // Both buttons cleanly reset to resting scale=1.00, rotation=0.0, opacity=0.0
     QVERIFY(std::abs(menu.settingsButton()->hoverScale() - 1.0) < 1e-4);
     QVERIFY(std::abs(menu.settingsButton()->hoverRotation()) < 1e-4);
     QVERIFY(std::abs(menu.settingsButton()->menuOpacity()) < 1e-4);
@@ -175,12 +247,102 @@ void TestQuickActions::revealAndDismissCurvedAnimationsAndStateReset()
     QVERIFY(std::abs(menu.spotifyButton()->menuOpacity()) < 1e-4);
 }
 
-void TestQuickActions::hoverScaleTwistAndStableHitbox()
+void TestQuickActions::doubleClickTogglesAndReversesMidFlight()
 {
     QuickActionMenu menu;
+    menu.setNativeOutsideObserverEnabled(false);
+    menu.setReducedMotionOverride(0);
+    const QRect petRect(400, 400, 120, 120);
+
+    // Closed -> Opening -> Open
+    menu.toggleMenu(petRect);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Opening);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1500);
+
+    // Open -> Closing -> Closed
+    menu.toggleMenu(petRect);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Closing);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Closed, 1200);
+
+    // Opening -> interrupted mid-flight -> smoothly reverses to Closing without snapping
+    menu.toggleMenu(petRect);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Opening);
+    QTest::qWait(140);
+    const qreal progressBeforeReverse = menu.settingsProgress();
+    QVERIFY(progressBeforeReverse > 0.15 && progressBeforeReverse < 0.98);
+    menu.toggleMenu(petRect);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Closing);
+    QVERIFY(std::abs(menu.settingsProgress() - progressBeforeReverse) < 0.08);
+
+    // Closing -> interrupted mid-flight -> smoothly reverses back to Opening -> Open
+    QTest::qWait(80);
+    const qreal progressBeforeReopen = menu.settingsProgress();
+    menu.toggleMenu(petRect);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Opening);
+    QVERIFY(std::abs(menu.settingsProgress() - progressBeforeReopen) < 0.08);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1500);
+}
+
+void TestQuickActions::outsideClickDismissesWithoutBlockingAndSingleClickPreservesMenu()
+{
+    ClickProbeWidget petProxy;
+    petProxy.move(400, 400);
+    petProxy.show();
+
+    ClickProbeWidget outsideWindow;
+    outsideWindow.move(50, 50);
+    outsideWindow.show();
+    QApplication::processEvents();
+
+    QuickActionMenu menu;
+    menu.setNativeOutsideObserverEnabled(false);
+    menu.setReducedMotionOverride(0);
+    menu.setAnchorWidget(&petProxy);
+    menu.showMenu(petProxy.frameGeometry());
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1500);
+
+    // Single-click inside Chiikawa's bounds must NOT dismiss the menu
+    const QPoint petClickLocal = petProxy.rect().center();
+    QMouseEvent petClick(QEvent::MouseButtonPress, petClickLocal, petClickLocal,
+                         petProxy.mapToGlobal(petClickLocal),
+                         Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&petProxy, &petClick);
+    QCOMPARE(petProxy.pressCount, 1);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Open);
+
+    // Click on another Study Pet-owned window outside pet & buttons dismisses smoothly
+    // AND does NOT block or consume the click.
+    const QPoint outLocal = outsideWindow.rect().center();
+    QMouseEvent outClick(QEvent::MouseButtonPress, outLocal, outLocal,
+                         outsideWindow.mapToGlobal(outLocal),
+                         Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&outsideWindow, &outClick);
+    QCOMPARE(outsideWindow.pressCount, 1); // Click was NOT blocked
+    QCOMPARE(menu.state(), QuickActionMenu::State::Closing);
+
+    // Another outside click while already Closing does not restart or break dismissal
+    const qreal closingProg = menu.settingsProgress();
+    QApplication::sendEvent(&outsideWindow, &outClick);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Closing);
+    QVERIFY(menu.settingsProgress() <= closingProg + 0.05);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Closed, 1200);
+
+    // ApplicationDeactivate (switching to another app / desktop) also triggers reverse close
+    menu.showMenu(petProxy.frameGeometry());
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1500);
+    QEvent deactivateEvt(QEvent::ApplicationDeactivate);
+    QApplication::sendEvent(qApp, &deactivateEvt);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Closing);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Closed, 1200);
+}
+
+void TestQuickActions::hoverEnlargesTo122WithTwistAndStableUnclippedHitbox()
+{
+    QuickActionMenu menu;
+    menu.setNativeOutsideObserverEnabled(false);
     menu.setReducedMotionOverride(0);
     menu.showMenu(QRect(400, 400, 120, 120));
-    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Visible, 1200);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1500);
 
     AnimatedQuickActionButton* settings = menu.settingsButton();
     AnimatedQuickActionButton* spotify = menu.spotifyButton();
@@ -188,13 +350,22 @@ void TestQuickActions::hoverScaleTwistAndStableHitbox()
     const QRect settingsGeoBefore = settings->geometry();
     const QRect spotifyGeoBefore = spotify->geometry();
 
-    // Hover Settings: grows (~1.11) and tilts positively (+6 deg)
+    // Hover Settings: grows to ~1.22 and tilts positively (+6 deg)
     sendEnter(settings);
-    QTRY_VERIFY_WITH_TIMEOUT(settings->hoverScale() > 1.09 && settings->hoverRotation() > 5.0, 600);
+    QTRY_VERIFY_WITH_TIMEOUT(settings->hoverScale() >= 1.20 && settings->hoverRotation() > 5.0, 700);
     QCOMPARE(settings->geometry(), settingsGeoBefore); // Hitbox stays completely stable
     QCOMPARE(spotify->geometry(), spotifyGeoBefore);   // Neighboring icon does not shift
 
-    // Press feedback scales gently toward 1.04 and still triggers click immediately
+    // Enlarged rotated button must not clip at the 48x48 widget edges
+    QImage enlarged(settings->size(), QImage::Format_ARGB32_Premultiplied);
+    enlarged.fill(Qt::transparent);
+    settings->render(&enlarged);
+    QCOMPARE(qAlpha(enlarged.pixel(0, enlarged.height() / 2)), 0);
+    QCOMPARE(qAlpha(enlarged.pixel(enlarged.width() - 1, enlarged.height() / 2)), 0);
+    QCOMPARE(qAlpha(enlarged.pixel(enlarged.width() / 2, 0)), 0);
+    QCOMPARE(qAlpha(enlarged.pixel(enlarged.width() / 2, enlarged.height() - 1)), 0);
+
+    // Press feedback scales gently down from 1.22 and triggers click immediately
     QSignalSpy settingsClicked(settings, &QAbstractButton::clicked);
     QMouseEvent pressEvt(QEvent::MouseButtonPress, settings->rect().center(),
                          settings->rect().center(), settings->mapToGlobal(settings->rect().center()),
@@ -210,11 +381,10 @@ void TestQuickActions::hoverScaleTwistAndStableHitbox()
     QApplication::sendEvent(settings, &releaseEvt);
     QCOMPARE(settingsClicked.count(), 1);
 
-    // Re-show for rapid hover switching and leave tests
+    // Re-open for rapid hover switching and Spotify -6 deg twist check
     menu.showMenu(QRect(400, 400, 120, 120));
-    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Visible, 1200);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1500);
 
-    // Rapid hover/leave cycles must not accumulate rotation and must settle precisely at 1.00 / 0.0
     for (int i = 0; i < 4; ++i) {
         sendEnter(spotify);
         QTest::qWait(40);
@@ -224,16 +394,15 @@ void TestQuickActions::hoverScaleTwistAndStableHitbox()
         sendLeave(settings);
     }
 
-    // Hover Spotify to verify opposite tilt direction (-6 deg)
     sendEnter(spotify);
-    QTRY_VERIFY_WITH_TIMEOUT(spotify->hoverScale() > 1.09 && spotify->hoverRotation() < -5.0, 600);
+    QTRY_VERIFY_WITH_TIMEOUT(spotify->hoverScale() >= 1.20 && spotify->hoverRotation() < -5.0, 700);
     QCOMPARE(spotify->geometry(), spotifyGeoBefore);
 
-    // Leave Spotify: must return precisely to scale 1.00 and rotation 0.0
+    // Leave Spotify: returns cleanly to scale 1.00 and rotation 0.0
     sendLeave(spotify);
     QTRY_VERIFY_WITH_TIMEOUT(
         std::abs(spotify->hoverScale() - 1.0) < 1e-3 && std::abs(spotify->hoverRotation()) < 1e-2,
-        600);
+        700);
     QVERIFY(std::abs(settings->hoverScale() - 1.0) < 1e-3);
     QVERIFY(std::abs(settings->hoverRotation()) < 1e-2);
 }
@@ -241,62 +410,56 @@ void TestQuickActions::hoverScaleTwistAndStableHitbox()
 void TestQuickActions::hoverCoexistsWithRevealDismissAndAutoHide()
 {
     QuickActionMenu menu;
+    menu.setNativeOutsideObserverEnabled(false);
     menu.setReducedMotionOverride(0);
-    menu.setAutoHideDurationMs(180);
-    menu.setLeaveHideDelayMs(160);
+    menu.setAutoHideDurationMs(200);
+    menu.setLeaveHideDelayMs(180);
 
     const QRect petRect(400, 400, 120, 120);
     menu.showMenu(petRect);
-    QCOMPARE(menu.state(), QuickActionMenu::State::Revealing);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Opening);
 
-    // Hovering during reveal must not interrupt reveal and must pause auto-hide
+    // Hovering during reveal must not interrupt opening and must pause auto-hide
     sendEnter(menu.settingsButton());
     QVERIFY(!menu.isAutoHideActive());
-    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Visible, 1200);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1500);
 
-    // Waiting longer than auto-hide duration while hovered must keep menu visible
+    // Waiting longer than auto-hide duration while hovered keeps menu open
     QTest::qWait(260);
-    QCOMPARE(menu.state(), QuickActionMenu::State::Visible);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Open);
     QVERIFY(menu.isVisible());
 
-    // Moving quickly from Settings to Spotify must not dismiss
+    // Moving quickly from Settings to Spotify does not dismiss
     sendLeave(menu.settingsButton());
     QTest::qWait(40);
     sendEnter(menu.spotifyButton());
     QVERIFY(!menu.isAutoHideActive());
     QTest::qWait(240);
-    QCOMPARE(menu.state(), QuickActionMenu::State::Visible);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Open);
 
-    // Leaving Spotify restarts timer and begins dismissal
+    // Leaving Spotify restarts timer and begins reverse arc closing
     sendLeave(menu.spotifyButton());
     QVERIFY(menu.isAutoHideActive());
-    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Dismissing, 600);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Closing, 600);
 
-    // Re-entering while dismissing smoothly restores menu
+    // Re-entering while closing smoothly restores menu to Open
     sendEnter(menu.spotifyButton());
-    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Visible, 1000);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1200);
     QVERIFY(menu.spotifyButton()->isHovered());
-
-    // Repeated showMenu() calls while visible do not flicker or reset progress to 0
-    sendLeave(menu.spotifyButton());
-    menu.showMenu(petRect);
-    menu.showMenu(petRect);
-    QCOMPARE(menu.state(), QuickActionMenu::State::Visible);
-    QVERIFY(menu.settingsProgress() > 0.99);
-    QVERIFY(menu.spotifyProgress() > 0.99);
 }
 
-void TestQuickActions::reducedMotionDisablesScaleTwistAndCurvedTravel()
+void TestQuickActions::reducedMotionDisablesScaleTwistAndArcTravel()
 {
     QuickActionMenu menu;
+    menu.setNativeOutsideObserverEnabled(false);
     menu.setReducedMotionOverride(1);
 
     menu.showMenu(QRect(400, 400, 120, 120));
-    QCOMPARE(menu.state(), QuickActionMenu::State::Visible);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Open);
     QCOMPARE(menu.settingsProgress(), 1.0);
     QCOMPARE(menu.spotifyProgress(), 1.0);
 
-    // Hovering preserves highlight (hoverProgress == 1) while disabling scale & rotation
+    // Hovering preserves highlight while disabling scale & rotation
     sendEnter(menu.settingsButton());
     QCOMPARE(menu.settingsButton()->hoverScale(), 1.0);
     QCOMPARE(menu.settingsButton()->hoverRotation(), 0.0);
@@ -305,29 +468,30 @@ void TestQuickActions::reducedMotionDisablesScaleTwistAndCurvedTravel()
     sendLeave(menu.settingsButton());
     QCOMPARE(menu.settingsButton()->hoverProgress(), 0.0);
 
-    menu.hideMenu();
-    QCOMPARE(menu.state(), QuickActionMenu::State::Hidden);
+    menu.toggleMenu(QRect(400, 400, 120, 120));
+    QCOMPARE(menu.state(), QuickActionMenu::State::Closed);
     QVERIFY(!menu.isVisible());
 }
 
 void TestQuickActions::dragAnchorUpdatePreservesActiveAnimation()
 {
     QuickActionMenu menu;
+    menu.setNativeOutsideObserverEnabled(false);
     menu.setReducedMotionOverride(0);
 
     const QRect startPet(400, 400, 120, 120);
     menu.showMenu(startPet);
-    QCOMPARE(menu.state(), QuickActionMenu::State::Revealing);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Opening);
     const QPoint overlayStart = menu.pos();
 
-    // Drag Chiikawa mid-animation: overlay translates by the same delta without cancelling reveal
+    // Drag Chiikawa mid-animation: overlay translates smoothly without cancelling arc reveal
     QTest::qWait(50);
     const QPoint delta(75, -40);
     menu.updateAnchor(startPet.translated(delta));
     QCOMPARE(menu.pos(), overlayStart + delta);
-    QCOMPARE(menu.state(), QuickActionMenu::State::Revealing);
+    QCOMPARE(menu.state(), QuickActionMenu::State::Opening);
 
-    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Visible, 1200);
+    QTRY_COMPARE_WITH_TIMEOUT(menu.state(), QuickActionMenu::State::Open, 1500);
 }
 
 void TestQuickActions::spotifyIconAndTranslucentButtonRendering()
@@ -337,7 +501,6 @@ void TestQuickActions::spotifyIconAndTranslucentButtonRendering()
     const QPixmap pm = spotifyIcon.pixmap(QSize(18, 18), 2.0);
     QVERIFY(!pm.isNull());
     const QImage img = pm.toImage().convertToFormat(QImage::Format_ARGB32);
-    // Corners must stay transparent; circular body must have green pixels
     QCOMPARE(qAlpha(img.pixel(0, 0)), 0);
     bool hasGreen = false;
     for (int y = 0; y < img.height() && !hasGreen; ++y) {
@@ -351,22 +514,19 @@ void TestQuickActions::spotifyIconAndTranslucentButtonRendering()
     }
     QVERIFY(hasGreen);
 
-    // Button background must remain translucent (alpha < 255)
     AnimatedQuickActionButton btn(PixelIcon::Spotify, QColor(0x1D, 0xB9, 0x54),
                                   QColor(0x24, 0xD8, 0x64), -6.0);
     btn.setMenuOpacity(1.0);
     QImage rendered(btn.size(), QImage::Format_ARGB32_Premultiplied);
     rendered.fill(Qt::transparent);
     btn.render(&rendered);
-    // Outer padding corner is transparent; glass surface near button corner is translucent
     QCOMPARE(qAlpha(rendered.pixel(0, 0)), 0);
-    const int glassAlpha = qAlpha(rendered.pixel(10, 10));
+    const int glassAlpha = qAlpha(rendered.pixel(14, 14));
     QVERIFY(glassAlpha > 80 && glassAlpha < 240);
 }
 
 void TestQuickActions::spotifyLauncherStates()
 {
-    // 1. Running Spotify -> activates existing window without launching duplicate
     {
         int launchCalls = 0;
         SpotifyLauncher launcher({
@@ -379,7 +539,6 @@ void TestQuickActions::spotifyLauncherStates()
         QCOMPARE(launchCalls, 0);
     }
 
-    // 2. Installed but closed -> launches app
     {
         int launchCalls = 0;
         SpotifyLauncher launcher({
@@ -392,7 +551,6 @@ void TestQuickActions::spotifyLauncherStates()
         QCOMPARE(launchCalls, 1);
     }
 
-    // 3. Not installed -> reports NotInstalled without launching
     {
         int launchCalls = 0;
         SpotifyLauncher launcher({
@@ -405,7 +563,6 @@ void TestQuickActions::spotifyLauncherStates()
         QCOMPARE(launchCalls, 0);
     }
 
-    // 4. Installed, launch fails -> reports LaunchFailed
     {
         SpotifyLauncher launcher({
             []() { return false; },
@@ -417,7 +574,7 @@ void TestQuickActions::spotifyLauncherStates()
     }
 }
 
-void TestQuickActions::petWindowDoubleClickAndSpotifyFallbackNotice()
+void TestQuickActions::petWindowDoubleClickToggleAndSpotifyFallbackNotice()
 {
     PetWindow pet;
     pet.showPet();
@@ -427,26 +584,33 @@ void TestQuickActions::petWindowDoubleClickAndSpotifyFallbackNotice()
     QVERIFY(pet.spotifyNotice() != nullptr);
     pet.quickActionMenu()->setReducedMotionOverride(1);
 
-    // Inject mock launcher reporting NotInstalled so no real Spotify app is launched
     pet.setSpotifyLauncher(std::make_unique<SpotifyLauncher>(SpotifyLauncher::Backend{
         []() { return false; },
         []() { return false; },
         []() { return false; }
     }));
 
-    // Double-clicking Chiikawa reveals the quick-action menu
-    QMouseEvent dbl(QEvent::MouseButtonDblClick, pet.rect().center(),
-                    pet.rect().center(), pet.mapToGlobal(pet.rect().center()),
-                    Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(&pet, &dbl);
-    QApplication::processEvents();
+    auto sendDoubleClick = [&pet]() {
+        QMouseEvent dbl(QEvent::MouseButtonDblClick, pet.rect().center(),
+                        pet.rect().center(), pet.mapToGlobal(pet.rect().center()),
+                        Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(&pet, &dbl);
+        QApplication::processEvents();
+    };
 
+    // First double-click opens the quick-action menu
+    sendDoubleClick();
     QVERIFY(pet.quickActionMenu()->isVisible());
-    QCOMPARE(pet.quickActionMenu()->state(), QuickActionMenu::State::Visible);
-    QCOMPARE(pet.quickActionMenu()->spotifyButton()->toolTip(), QStringLiteral("Open Spotify"));
-    QCOMPARE(pet.quickActionMenu()->spotifyButton()->accessibleName(), QStringLiteral("Open Spotify"));
+    QCOMPARE(pet.quickActionMenu()->state(), QuickActionMenu::State::Open);
 
-    // Clicking Spotify when not installed shows the unobtrusive notice popup and dismisses menu
+    // Second double-click closes it (toggle!)
+    sendDoubleClick();
+    QVERIFY(!pet.quickActionMenu()->isVisible());
+    QCOMPARE(pet.quickActionMenu()->state(), QuickActionMenu::State::Closed);
+
+    // Third double-click opens again, then clicking Spotify shows fallback notice
+    sendDoubleClick();
+    QVERIFY(pet.quickActionMenu()->isVisible());
     pet.quickActionMenu()->spotifyButton()->click();
     QApplication::processEvents();
     QVERIFY(pet.spotifyNotice()->isVisible());
