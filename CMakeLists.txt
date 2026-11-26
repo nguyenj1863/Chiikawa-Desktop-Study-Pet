@@ -40,6 +40,7 @@ set(CHIICAWA_SOURCES
     src/PixelTheme.cpp
     src/AnimatedQuickActionButton.cpp
     src/QuickActionMenu.cpp
+    src/ExternalAppLauncher.cpp
     src/SpotifyLauncher.cpp
     src/CollapsibleSection.cpp
     src/AlarmSoundManager.cpp
@@ -69,6 +70,7 @@ set(CHIICAWA_HEADERS
     include/PixelTheme.h
     include/AnimatedQuickActionButton.h
     include/QuickActionMenu.h
+    include/ExternalAppLauncher.h
     include/SpotifyLauncher.h
     include/CollapsibleSection.h
     include/AlarmSoundManager.h
@@ -115,6 +117,7 @@ elseif(APPLE)
     target_sources(ChiikawaStudyPet PRIVATE
         src/MacWindowHelper.mm
         include/MacWindowHelper.h
+        src/ExternalAppLauncher_mac.mm
         src/SpotifyLauncher_mac.mm
     )
     target_link_libraries(ChiikawaStudyPet PRIVATE "-framework AppKit")
@@ -225,6 +228,8 @@ chiikawa_add_test(test_onboarding
     include/AnimatedQuickActionButton.h
     src/QuickActionMenu.cpp
     include/QuickActionMenu.h
+    src/ExternalAppLauncher.cpp
+    include/ExternalAppLauncher.h
     src/SpotifyLauncher.cpp
     include/SpotifyLauncher.h
     src/CollapsibleSection.cpp
@@ -261,6 +266,7 @@ elseif(APPLE)
     target_sources(test_onboarding PRIVATE
         src/MacWindowHelper.mm
         include/MacWindowHelper.h
+        src/ExternalAppLauncher_mac.mm
         src/SpotifyLauncher_mac.mm
     )
     target_link_libraries(test_onboarding PRIVATE "-framework AppKit")
@@ -287,6 +293,8 @@ chiikawa_add_test(test_quick_actions
     include/AnimatedQuickActionButton.h
     src/QuickActionMenu.cpp
     include/QuickActionMenu.h
+    src/ExternalAppLauncher.cpp
+    include/ExternalAppLauncher.h
     src/SpotifyLauncher.cpp
     include/SpotifyLauncher.h
     src/CollapsibleSection.cpp
@@ -323,6 +331,7 @@ elseif(APPLE)
     target_sources(test_quick_actions PRIVATE
         src/MacWindowHelper.mm
         include/MacWindowHelper.h
+        src/ExternalAppLauncher_mac.mm
         src/SpotifyLauncher_mac.mm
     )
     target_link_libraries(test_quick_actions PRIVATE "-framework AppKit")
