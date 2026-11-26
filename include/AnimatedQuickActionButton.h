@@ -30,16 +30,16 @@ class AnimatedQuickActionButton : public QAbstractButton {
     Q_PROPERTY(qreal menuOpacity READ menuOpacity WRITE setMenuOpacity)
 
 public:
-    static constexpr int kWidgetSize = 42;
+    static constexpr int kWidgetSize = 48;
     static constexpr int kVisualSize = 32;
     static constexpr int kIconSize = 18;
 
     static constexpr qreal kRestScale = 1.00;
-    static constexpr qreal kHoverScale = 1.11;
-    static constexpr qreal kPressScale = 1.04;
+    static constexpr qreal kHoverScale = 1.22;
+    static constexpr qreal kPressScale = 1.12;
 
-    static constexpr int kHoverInMs = 180;
-    static constexpr int kHoverOutMs = 165;
+    static constexpr int kHoverInMs = 200;
+    static constexpr int kHoverOutMs = 180;
     static constexpr int kPressInMs = 85;
     static constexpr int kPressOutMs = 105;
 

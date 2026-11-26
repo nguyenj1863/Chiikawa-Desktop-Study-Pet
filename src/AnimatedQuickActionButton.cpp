@@ -39,9 +39,9 @@ void AnimatedQuickActionButton::rebuildIconPixmaps()
 {
     const QIcon restIcon = PixelTheme::icon(m_iconKind, m_iconColor, kIconSize);
     const QIcon hoverIcon = PixelTheme::icon(m_iconKind, m_hoverIconColor, kIconSize);
-    // Request 2x pixmaps so rotated/scaled painting stays razor-sharp on standard & HiDPI screens.
-    m_restPixmap = restIcon.pixmap(QSize(kIconSize, kIconSize), 2.0);
-    m_hoverPixmap = hoverIcon.pixmap(QSize(kIconSize, kIconSize), 2.0);
+    // Request high-resolution pixmaps so 1.22x hover enlargement + rotation stays crisp.
+    m_restPixmap = restIcon.pixmap(QSize(kIconSize, kIconSize), 3.0);
+    m_hoverPixmap = hoverIcon.pixmap(QSize(kIconSize, kIconSize), 3.0);
 }
 
 void AnimatedQuickActionButton::setHoverScale(qreal scale)
@@ -156,7 +156,7 @@ void AnimatedQuickActionButton::animateToState(bool hovered, bool pressed)
     QEasingCurve motionCurve(QEasingCurve::OutCubic);
     if (hovered && !pressed) {
         motionCurve.setType(QEasingCurve::OutBack);
-        motionCurve.setOvershoot(0.95);
+        motionCurve.setOvershoot(0.85);
     }
 
     m_scaleAnim->stop();
