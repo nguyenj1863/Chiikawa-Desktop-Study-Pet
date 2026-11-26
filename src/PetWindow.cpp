@@ -82,6 +82,7 @@ PetWindow::PetWindow(QWidget* parent)
     m_alarmNotification = std::make_unique<AlarmNotification>(nullptr);
     m_onboardingWindow = std::make_unique<OnboardingWindow>(m_uiSound.get(), nullptr);
     m_quickActionMenu = std::make_unique<QuickActionMenu>(nullptr);
+    m_quickActionMenu->setAnchorWidget(this);
     m_spotifyNotice = std::make_unique<SpotifyNoticePopup>(nullptr);
     m_spotifyLauncher = std::make_unique<SpotifyLauncher>();
 
@@ -653,7 +654,9 @@ void PetWindow::mouseDoubleClickEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
         m_singleClickTimer.stop();
-        showQuickActions();
+        if (m_quickActionMenu) {
+            m_quickActionMenu->toggleMenu(frameGeometry());
+        }
         event->accept();
         return;
     }

@@ -2,6 +2,7 @@
 
 #include <QGuiApplication>
 #include <QWidget>
+#include <memory>
 
 #ifdef Q_OS_MACOS
 #import <AppKit/AppKit.h>
@@ -59,6 +60,40 @@ bool prefersReducedMotion()
     return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceMotion] == YES;
 #else
     return false;
+#endif
+}
+
+void* installOutsideClickMonitor(std::function<void()> callback)
+{
+#ifdef Q_OS_MACOS
+    if (!callback || QGuiApplication::platformName() != QLatin1String("cocoa")) {
+        return nullptr;
+    }
+    auto sharedCb = std::make_shared<std::function<void()>>(std::move(callback));
+    id monitor = [NSEvent addGlobalMonitorForEventsMatchingMask:
+                     (NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown | NSEventMaskOtherMouseDown)
+                                                        handler:^(NSEvent* /*event*/) {
+        if (*sharedCb) {
+            (*sharedCb)();
+        }
+    }];
+    return (__bridge_retained void*)monitor;
+#else
+    Q_UNUSED(callback);
+    return nullptr;
+#endif
+}
+
+void removeOutsideClickMonitor(void* token)
+{
+#ifdef Q_OS_MACOS
+    if (!token) {
+        return;
+    }
+    id monitor = (__bridge_transfer id)token;
+    [NSEvent removeMonitor:monitor];
+#else
+    Q_UNUSED(token);
 #endif
 }
 

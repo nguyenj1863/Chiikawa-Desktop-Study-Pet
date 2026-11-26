@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 class QWidget;
 
 namespace MacWindowHelper {
@@ -18,5 +20,14 @@ void configureFloatingOverlay(QWidget* widget, bool disableShadow = false);
  * Returns false on non-macOS platforms.
  */
 [[nodiscard]] bool prefersReducedMotion();
+
+/**
+ * Installs a read-only macOS global mouse-down observer (no Accessibility permission
+ * required, never consumes or blocks clicks) to detect clicks on other applications
+ * or the desktop while a transient popup/menu is open.
+ * Returns an opaque token to pass to removeOutsideClickMonitor(), or nullptr if unavailable.
+ */
+[[nodiscard]] void* installOutsideClickMonitor(std::function<void()> callback);
+void removeOutsideClickMonitor(void* token);
 
 } // namespace MacWindowHelper
