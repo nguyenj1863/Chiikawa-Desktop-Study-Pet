@@ -181,10 +181,23 @@ QIcon extractAppIcon(const QString& appPath)
         if (cgRef == nullptr) {
             return {};
         }
-        QImage qImg = QImage::fromCGImage(cgRef);
-        if (qImg.isNull()) {
+        const size_t width = CGImageGetWidth(cgRef);
+        const size_t height = CGImageGetHeight(cgRef);
+        if (width == 0 || height == 0) {
             return {};
         }
+        QImage qImg(static_cast<int>(width), static_cast<int>(height), QImage::Format_ARGB32_Premultiplied);
+        qImg.fill(Qt::transparent);
+        CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+        CGContextRef ctx = CGBitmapContextCreate(qImg.bits(), width, height, 8,
+                                                 static_cast<size_t>(qImg.bytesPerLine()), colorSpace,
+                                                 kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host);
+        CGColorSpaceRelease(colorSpace);
+        if (ctx == nullptr) {
+            return {};
+        }
+        CGContextDrawImage(ctx, CGRectMake(0, 0, width, height), cgRef);
+        CGContextRelease(ctx);
         return QIcon(QPixmap::fromImage(qImg));
     }
 }
