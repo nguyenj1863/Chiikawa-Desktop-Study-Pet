@@ -1,5 +1,7 @@
 #include "study/StudyDatabase.h"
 
+#include "study/ScheduleStore.h"
+
 #include <QAtomicInteger>
 #include <QDateTime>
 #include <QFile>
@@ -441,6 +443,12 @@ bool StudyDatabase::migrate()
         check.finish();
         if (!consistent) {
             m_lastError = QStringLiteral("The Study Library upgrade found inconsistent data.");
+            return fail();
+        }
+        check.finish();
+        // Seed review schedules from the answers already given (attempts are not otherwise changed).
+        if (!ScheduleStore::replayHistory(db)) {
+            m_lastError = QStringLiteral("Could not build review schedules from earlier answers.");
             return fail();
         }
     }

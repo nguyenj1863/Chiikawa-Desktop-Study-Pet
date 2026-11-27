@@ -37,6 +37,7 @@ Evaluation selfAssessment(SelfRating rating)
     Evaluation e;
     e.kind = AttemptKind::SelfAssessed;
     e.selfRating = rating;
+    e.ratingSource = RatingSource::Chosen;
     switch (rating) {
     case SelfRating::GotIt:
         e.verdict = Verdict::Correct;
@@ -53,6 +54,24 @@ Evaluation selfAssessment(SelfRating rating)
     }
     e.feedback = selfRatingLabel(rating);
     return e;
+}
+
+Rating ratingFor(const Evaluation& evaluation)
+{
+    if (evaluation.rating != Rating::None) {
+        return evaluation.rating;
+    }
+    switch (evaluation.verdict) {
+    case Verdict::Correct:
+        return Rating::Good;
+    case Verdict::Partial:
+        return Rating::Hard;
+    case Verdict::Incorrect:
+        return Rating::Again;
+    case Verdict::NeedsReview:
+        break;   // uncertain grading leaves the schedule alone
+    }
+    return Rating::None;
 }
 
 } // namespace StudyEval

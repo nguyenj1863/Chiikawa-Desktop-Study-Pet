@@ -26,6 +26,21 @@ enum class AttemptKind {
     SelfAssessed = 1
 };
 
+/** The four self-assessment ratings of Anki's study loop. Values are persisted; append only. */
+enum class Rating {
+    None = 0,
+    Again = 1,
+    Hard = 2,
+    Good = 3,
+    Easy = 4
+};
+
+/** Where a stored rating came from. */
+enum class RatingSource {
+    Auto = 0,     // derived from automatic grading
+    Chosen = 1    // picked by the student (after Reveal, or adjusted after a result)
+};
+
 struct OptionResult {
     QString id;
     bool selected = false;
@@ -42,6 +57,8 @@ struct Evaluation {
     QStringList missingPoints;         // written: key points it missed
     AttemptKind kind = AttemptKind::Auto;
     SelfRating selfRating = SelfRating::NeedReview;   // only meaningful when kind == SelfAssessed
+    Rating rating = Rating::None;                     // None: derive it from the verdict (see StudyEval::ratingFor)
+    RatingSource ratingSource = RatingSource::Auto;
 
     [[nodiscard]] bool isCorrect() const { return verdict == Verdict::Correct; }
 };
@@ -53,6 +70,9 @@ namespace StudyEval {
 
 /** Evaluation recorded for a Reveal Answer + self-assessment, kept apart from automatic grading. */
 [[nodiscard]] Evaluation selfAssessment(SelfRating rating);
+
+/** Rating that schedules the next review: the explicit one, else Correct to Good, Partial to Hard, Incorrect to Again. */
+[[nodiscard]] Rating ratingFor(const Evaluation& evaluation);
 
 } // namespace StudyEval
 

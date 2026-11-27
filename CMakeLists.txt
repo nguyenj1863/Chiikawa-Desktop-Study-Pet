@@ -107,6 +107,8 @@ set(CHIIKAWA_STUDY_SOURCES
     src/study/Chunker.cpp
     src/study/DocumentExtractor.cpp
     src/study/ProgressTracker.cpp
+    src/study/ReviewScheduler.cpp
+    src/study/ScheduleStore.cpp
     src/study/QuestionGenerator.cpp
     src/study/QuestionScheduler.cpp
     src/study/QuestionSelector.cpp
@@ -123,6 +125,8 @@ set(CHIIKAWA_STUDY_SOURCES
     include/study/DocumentExtractor.h
     include/study/Evaluation.h
     include/study/ProgressTracker.h
+    include/study/ReviewScheduler.h
+    include/study/ScheduleStore.h
     include/study/Question.h
     include/study/QuestionGenerator.h
     include/study/QuestionProvider.h
@@ -275,6 +279,7 @@ chiikawa_add_test(test_checkins tests/test_checkins.cpp resources/resources.qrc)
 chiikawa_add_test(test_study_extract tests/test_study_extract.cpp tests/StudyTestUtils.h)
 chiikawa_add_test(test_study_pipeline tests/test_study_pipeline.cpp tests/StudyTestUtils.h)
 chiikawa_add_test(test_study_migration tests/test_study_migration.cpp)
+chiikawa_add_test(test_review_scheduler tests/test_review_scheduler.cpp)
 chiikawa_add_test(test_ollama_client tests/test_ollama_client.cpp)
 chiikawa_add_test(test_study_generation tests/test_study_generation.cpp tests/MockLlmClient.h)
 chiikawa_add_test(test_study_answers tests/test_study_answers.cpp tests/MockLlmClient.h)

@@ -1,9 +1,11 @@
 #include "study/ProgressTracker.h"
 
 #include "study/QuestionValidator.h"
+#include "study/ScheduleStore.h"
 #include "study/StudyDatabase.h"
 
 #include <QDateTime>
+#include <QRandomGenerator>
 #include <QSqlQuery>
 #include <cmath>
 
@@ -45,19 +47,20 @@ QString ProgressTracker::topicKey(qint64 documentId, const QString& topic)
     return QString::number(documentId) + QLatin1Char('|') + QuestionValidator::normalizeForMatch(topic);
 }
 
-int ProgressTracker::record(const Question& question, const Evaluation& evaluation)
+int ProgressTracker::record(const Question& question, const Evaluation& evaluation, bool reschedule)
 {
     if (!m_db) {
         return 0;
     }
     const int xp = xpFor(question, evaluation);
+    const Rating rating = StudyEval::ratingFor(evaluation);
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     QSqlDatabase db = m_db->connection();
     db.transaction();
 
     QSqlQuery attempt(db);
-    attempt.prepare(QStringLiteral("INSERT INTO attempts(question_id, document_id, set_id, type, kind, verdict, score, xp, answered_at)"
-                                   " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+    attempt.prepare(QStringLiteral("INSERT INTO attempts(question_id, document_id, set_id, type, kind, verdict, score, xp, answered_at,"
+                                   " rating, rating_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     attempt.addBindValue(question.id);
     attempt.addBindValue(question.documentId);
     attempt.addBindValue(question.setId);
@@ -69,6 +72,8 @@ int ProgressTracker::record(const Question& question, const Evaluation& evaluati
     attempt.addBindValue(evaluation.score);
     attempt.addBindValue(xp);
     attempt.addBindValue(now);
+    attempt.addBindValue(rating == Rating::None ? QVariant(QMetaType::fromType<int>()) : QVariant(static_cast<int>(rating)));
+    attempt.addBindValue(static_cast<int>(evaluation.ratingSource));
     if (!attempt.exec()) {
         db.rollback();
         return 0;
@@ -109,8 +114,12 @@ int ProgressTracker::record(const Question& question, const Evaluation& evaluati
         break;
     }
     QSqlQuery upsert(db);
-    upsert.prepare(QStringLiteral("INSERT OR REPLACE INTO concept_stats(document_id, set_id, concept, seen, correct,"
-                                  " partial, incorrect, last_seen, needs_review) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+    upsert.prepare(QStringLiteral("INSERT INTO concept_stats(document_id, set_id, concept, seen, correct,"
+                                  " partial, incorrect, last_seen, needs_review) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                  " ON CONFLICT(document_id, concept) DO UPDATE SET set_id = excluded.set_id,"
+                                  " seen = excluded.seen, correct = excluded.correct, partial = excluded.partial,"
+                                  " incorrect = excluded.incorrect, last_seen = excluded.last_seen,"
+                                  " needs_review = excluded.needs_review"));
     upsert.addBindValue(question.documentId);
     upsert.addBindValue(question.setId);
     upsert.addBindValue(topic);
@@ -124,8 +133,21 @@ int ProgressTracker::record(const Question& question, const Evaluation& evaluati
         db.rollback();
         return 0;
     }
+    if (reschedule && rating != Rating::None) {
+        const Card next = ReviewScheduler::schedule(ScheduleStore::load(db, question.id), rating,
+                                                    QDateTime::fromMSecsSinceEpoch(now), {}, QRandomGenerator::global());
+        if (!ScheduleStore::save(db, question.id, question.setId, next)) {
+            db.rollback();
+            return 0;
+        }
+    }
     db.commit();
     return xp;
+}
+
+Card ProgressTracker::card(const QString& questionId)
+{
+    return m_db ? ScheduleStore::load(m_db->connection(), questionId) : Card();
 }
 
 StudyProgress ProgressTracker::progress(qint64 setId)
@@ -216,5 +238,6 @@ bool ProgressTracker::reset(qint64 setId)
     }
     const QString where = setId > 0 ? QStringLiteral(" WHERE set_id = %1").arg(setId) : QString();
     QSqlQuery q(m_db->connection());
-    return q.exec(QStringLiteral("DELETE FROM attempts") + where) && q.exec(QStringLiteral("DELETE FROM concept_stats") + where);
+    return q.exec(QStringLiteral("DELETE FROM attempts") + where) && q.exec(QStringLiteral("DELETE FROM concept_stats") + where)
+        && q.exec(QStringLiteral("DELETE FROM card_schedule") + where);
 }

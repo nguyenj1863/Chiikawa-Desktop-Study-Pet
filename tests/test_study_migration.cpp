@@ -1,3 +1,4 @@
+#include "study/ReviewScheduler.h"
 #include "study/Retriever.h"
 #include "study/StudyDatabase.h"
 
@@ -121,6 +122,7 @@ private slots:
     void upgradedLibraryAcceptsNestedSetsAndNewTables();
     void failedUpgradeLeavesTheVersion1FileUsable();
     void freshLibrariesStartAtTheCurrentVersion();
+    void upgradeSeedsReviewSchedulesFromAnswerHistory();
 
 private:
     QTemporaryDir* m_dir = nullptr;
@@ -241,17 +243,17 @@ void TestStudyMigration::upgradedLibraryAcceptsNestedSetsAndNewTables()
     QVERIFY(q.exec(QStringLiteral("DELETE FROM study_sets WHERE id = 2")));
     QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM study_sets")), 2);   // Databases + its Week 1
 
-    // New tables exist and are empty; the rating columns are added to attempts.
-    for (const QString& table : {QStringLiteral("card_schedule"), QStringLiteral("practice_sessions"), QStringLiteral("filtered_sets")}) {
+    // New tables exist; only card_schedule is seeded (from the answer history), the rest start empty.
+    QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM card_schedule")), 1);
+    for (const QString& table : {QStringLiteral("practice_sessions"), QStringLiteral("filtered_sets")}) {
         QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM %1").arg(table)), 0);
     }
     QVERIFY(columns(db, QStringLiteral("attempts")).contains(QStringLiteral("rating")));
     QVERIFY(columns(db, QStringLiteral("attempts")).contains(QStringLiteral("rating_source")));
-    // Existing attempts keep working with no rating yet.
-    QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM attempts WHERE rating IS NULL AND rating_source = 0")), 2);
+    // Existing attempts received an automatic rating from the replay.
+    QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM attempts WHERE rating IS NOT NULL AND rating_source = 0")), 2);
 
     // A schedule row follows its question's lifetime.
-    QVERIFY(q.exec(QStringLiteral("INSERT INTO card_schedule(question_id, set_id) VALUES ('q1', 1)")));
     QVERIFY(q.exec(QStringLiteral("DELETE FROM documents WHERE id = 10")));
     QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM card_schedule")), 0);
 }
@@ -301,6 +303,25 @@ void TestStudyMigration::freshLibrariesStartAtTheCurrentVersion()
     StudyDatabase again;
     QVERIFY(again.open());
     QCOMPARE(again.studySets().size(), 1);
+}
+
+void TestStudyMigration::upgradeSeedsReviewSchedulesFromAnswerHistory()
+{
+    QVERIFY(buildVersion1Library(m_dir->path()));
+    StudyDatabase db;
+    QVERIFY2(db.open(), qPrintable(db.lastError()));
+    // q1 was answered Correct, then self-rated "Need review": Good (graduates), then Again (a lapse).
+    QSqlQuery q(db.connection());
+    QVERIFY(q.exec(QStringLiteral("SELECT state, reps, lapses, ease FROM card_schedule WHERE question_id = 'q1'")));
+    QVERIFY(q.next());
+    QCOMPARE(q.value(0).toInt(), static_cast<int>(CardState::Learning));
+    QCOMPARE(q.value(1).toInt(), 2);
+    QCOMPARE(q.value(2).toInt(), 1);
+    QCOMPARE(q.value(3).toDouble(), 2.3);
+    q.finish();
+    QCOMPARE(scalar(db, QStringLiteral("SELECT rating FROM attempts ORDER BY answered_at LIMIT 1")), static_cast<int>(Rating::Good));
+    QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM attempts WHERE rating IS NULL")), 0);
+    QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM attempts")), 2);   // history is untouched
 }
 
 QTEST_MAIN(TestStudyMigration)

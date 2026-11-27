@@ -2,6 +2,7 @@
 
 #include "study/Evaluation.h"
 #include "study/Question.h"
+#include "study/ReviewScheduler.h"
 
 #include <QList>
 #include <QMap>
@@ -52,7 +53,10 @@ public:
     [[nodiscard]] static int xpFor(const Question& question, const Evaluation& evaluation);
 
     /** Stores the attempt and updates the concept's review state. Returns the XP awarded. */
-    int record(const Question& question, const Evaluation& evaluation);
+    int record(const Question& question, const Evaluation& evaluation, bool reschedule = true);
+
+    /** Spaced-repetition state of a question; a question never answered is a new card. */
+    [[nodiscard]] Card card(const QString& questionId);
 
     /** Progress for a study set; setId 0 aggregates every study set. */
     [[nodiscard]] StudyProgress progress(qint64 setId);
