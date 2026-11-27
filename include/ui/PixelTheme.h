@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QAbstractButton>
 #include <QCheckBox>
 #include <QColor>
 #include <QDialog>
@@ -133,6 +134,23 @@ void paintPixelCard(QPainter& p,
                     int margin = 4);
 
 /**
+ * Draws the shared rounded checkbox indicator (PixelCheckBox, multi-select answer options).
+ */
+void paintCheckIndicator(QPainter& p, const QRectF& box, bool checked, bool hovered, bool down, bool enabled);
+
+/**
+ * Draws the matching round indicator for single-choice answer options and radio choices.
+ */
+void paintRadioIndicator(QPainter& p, const QRectF& box, bool checked, bool hovered, bool down, bool enabled);
+
+/**
+ * Translucent text-input rules (QLineEdit / QPlainTextEdit) using the same tokens as the
+ * shared spin box and combo box inputs. Apply to individual inputs; not part of styleSheet()
+ * so existing default-styled inputs elsewhere are unchanged.
+ */
+[[nodiscard]] QString textInputStyleSheet();
+
+/**
  * Shared smoked-black Liquid Glass QSS for SettingsPanel, OnboardingWindow,
  * AlarmNotification, CompletionToast, and child controls.
  * Preserves all existing typography (font families, sizes, weights, and spacing).
@@ -162,6 +180,59 @@ protected:
 private:
     static constexpr int kBoxSize = 14;
     static constexpr int kSpacing = 7;
+    bool m_hovered = false;
+};
+
+/**
+ * Checkable answer row: a checkbox or radio indicator plus word-wrapped text, styled like
+ * PixelCheckBox. After grading it can show a mark (correct / incorrect / missed) and a short
+ * explanation under the text. Selection uses the translucent blue selected-state wash.
+ */
+class PixelOptionButton : public QAbstractButton {
+    Q_OBJECT
+
+public:
+    enum class Indicator {
+        Check,
+        Radio
+    };
+    enum class Mark {
+        None,
+        Correct,     // a correct option (selected or the right answer)
+        Incorrect,   // selected but wrong
+        Missed       // correct but not selected (multi-select)
+    };
+
+    PixelOptionButton(const QString& text, Indicator indicator, QWidget* parent = nullptr);
+
+    void setMark(Mark mark);
+    [[nodiscard]] Mark mark() const { return m_mark; }
+    void setDetail(const QString& detail);
+    [[nodiscard]] QString detail() const { return m_detail; }
+    [[nodiscard]] Indicator indicator() const { return m_indicator; }
+
+    [[nodiscard]] QSize sizeHint() const override;
+    [[nodiscard]] QSize minimumSizeHint() const override;
+    [[nodiscard]] bool hasHeightForWidth() const override { return true; }
+    [[nodiscard]] int heightForWidth(int width) const override;
+
+protected:
+    void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
+
+private:
+    [[nodiscard]] QRect textRect(int width) const;
+    [[nodiscard]] QFont detailFont() const;
+
+    static constexpr int kBoxSize = 14;
+    static constexpr int kSpacing = 8;
+    static constexpr int kPadX = 7;
+    static constexpr int kPadY = 6;
+    static constexpr int kMarkWidth = 18;
+    Indicator m_indicator;
+    Mark m_mark = Mark::None;
+    QString m_detail;
     bool m_hovered = false;
 };
 

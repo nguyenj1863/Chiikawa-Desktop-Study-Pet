@@ -1,6 +1,7 @@
 #include "ui/PixelTheme.h"
 
 #include <QEnterEvent>
+#include <QFontMetrics>
 #include <QEvent>
 #include <QFontDatabase>
 #include <QHash>
@@ -1134,6 +1135,11 @@ QString styleSheet()
         QPushButton#primary:pressed {
             background: rgba(70, 132, 225, 185);
         }
+        QPushButton#primary:disabled {
+            background: rgba(255, 255, 255, 10);
+            color: #637289;
+            border-color: rgba(255, 255, 255, 8);
+        }
         QPushButton#iconBtn {
             background: rgba(255, 255, 255, 22);
             border: 1px solid rgba(255, 255, 255, 12);
@@ -1199,6 +1205,24 @@ QString styleSheet()
         QPushButton#danger:pressed {
             background: rgba(205, 56, 82, 110);
         }
+        QFrame#studyCard {
+            background: rgba(20, 24, 32, 68);
+            border: 1px solid rgba(255, 255, 255, 10);
+            border-radius: 10px;
+        }
+        QProgressBar {
+            background: rgba(255, 255, 255, 28);
+            border: none;
+            border-radius: 2px;
+            max-height: 5px;
+            min-height: 5px;
+            text-align: center;
+            color: transparent;
+        }
+        QProgressBar::chunk {
+            background: rgba(110, 168, 255, 145);
+            border-radius: 2px;
+        }
         QToolTip {
             background: rgba(10, 12, 16, 210);
             color: #F3F6FC;
@@ -1230,6 +1254,94 @@ QString styleSheet()
             background: none;
         }
     )");
+}
+
+void paintCheckIndicator(QPainter& p, const QRectF& box, bool checked, bool hovered, bool down, bool enabled)
+{
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+    if (checked) {
+        const QColor fill = enabled
+            ? (down ? kPrimaryAccentGlassPressed : (hovered ? kPrimaryAccentGlassHover : kPrimaryAccentGlass))
+            : kDisabled;
+        const QColor border = enabled ? QColor(0x9B, 0xC6, 0xFF, 58) : kBorder;
+        p.setPen(QPen(border, 1.0));
+        p.setBrush(fill);
+        p.drawRoundedRect(box, 4.0, 4.0);
+
+        // Crisp opaque checkmark inside translucent 14x14 rounded box
+        QPen checkPen(enabled ? Qt::white : kMutedText, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        p.setPen(checkPen);
+        p.setBrush(Qt::NoBrush);
+        QPainterPath check;
+        check.moveTo(box.left() + 3.0, box.top() + 6.8);
+        check.lineTo(box.left() + 5.6, box.top() + 9.4);
+        check.lineTo(box.left() + 10.2, box.top() + 4.2);
+        p.drawPath(check);
+    } else {
+        const QColor fill = hovered && enabled ? QColor(0xFF, 0xFF, 0xFF, 24) : QColor(0x00, 0x00, 0x00, 68);
+        const QColor border = hovered && enabled ? QColor(0x8A, 0xB9, 0xFF, 110) : QColor(0xFF, 0xFF, 0xFF, 28);
+        p.setPen(QPen(border, 1.0));
+        p.setBrush(fill);
+        p.drawRoundedRect(box, 4.0, 4.0);
+    }
+    p.restore();
+}
+
+void paintRadioIndicator(QPainter& p, const QRectF& box, bool checked, bool hovered, bool down, bool enabled)
+{
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+    if (checked) {
+        const QColor fill = enabled
+            ? (down ? kPrimaryAccentGlassPressed : (hovered ? kPrimaryAccentGlassHover : kPrimaryAccentGlass))
+            : kDisabled;
+        p.setPen(QPen(enabled ? QColor(0x9B, 0xC6, 0xFF, 58) : kBorder, 1.0));
+        p.setBrush(fill);
+        p.drawEllipse(box);
+        p.setPen(Qt::NoPen);
+        p.setBrush(enabled ? QColor(Qt::white) : kMutedText);
+        p.drawEllipse(box.center(), 3.0, 3.0);
+    } else {
+        const QColor fill = hovered && enabled ? QColor(0xFF, 0xFF, 0xFF, 24) : QColor(0x00, 0x00, 0x00, 68);
+        const QColor border = hovered && enabled ? QColor(0x8A, 0xB9, 0xFF, 110) : QColor(0xFF, 0xFF, 0xFF, 28);
+        p.setPen(QPen(border, 1.0));
+        p.setBrush(fill);
+        p.drawEllipse(box);
+    }
+    p.restore();
+}
+
+QString textInputStyleSheet()
+{
+    // Same tokens as the shared QSpinBox/QTimeEdit/QComboBox inputs in styleSheet().
+    return QStringLiteral(
+        "QLineEdit, QPlainTextEdit {"
+        "  background: rgba(0, 0, 0, 72);"
+        "  border: 1px solid rgba(255, 255, 255, 12);"
+        "  border-radius: 8px;"
+        "  padding: 2px 8px;"
+        "  color: #F3F6FC;"
+        "  font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;"
+        "  font-size: 12px;"
+        "  font-weight: 600;"
+        "  min-height: 22px;"
+        "  selection-background-color: rgba(85, 150, 245, 115);"
+        "  selection-color: #FFFFFF;"
+        "}"
+        "QPlainTextEdit { padding: 4px 6px; }"
+        "QLineEdit:hover, QPlainTextEdit:hover {"
+        "  border-color: rgba(138, 185, 255, 85);"
+        "  background: rgba(255, 255, 255, 18);"
+        "}"
+        "QLineEdit:focus, QPlainTextEdit:focus {"
+        "  border-color: rgba(110, 168, 255, 165);"
+        "  background: rgba(255, 255, 255, 22);"
+        "}"
+        "QLineEdit:disabled, QPlainTextEdit:disabled {"
+        "  color: #8E9AAD;"
+        "  background: rgba(255, 255, 255, 10);"
+        "}");
 }
 
 } // namespace PixelTheme
@@ -1288,36 +1400,7 @@ void PixelCheckBox::paintEvent(QPaintEvent* event)
     const int boxY = (r.height() - kBoxSize) / 2;
     const QRectF box(4.5, boxY + 0.5, kBoxSize - 1.0, kBoxSize - 1.0);
 
-    if (isChecked()) {
-        const QColor fill = isEnabled()
-            ? (isDown() ? PixelTheme::kPrimaryAccentGlassPressed
-                        : (m_hovered ? PixelTheme::kPrimaryAccentGlassHover : PixelTheme::kPrimaryAccentGlass))
-            : PixelTheme::kDisabled;
-        const QColor border = isEnabled() ? QColor(0x9B, 0xC6, 0xFF, 58) : PixelTheme::kBorder;
-        p.setPen(QPen(border, 1.0));
-        p.setBrush(fill);
-        p.drawRoundedRect(box, 4.0, 4.0);
-
-        // Crisp opaque checkmark inside translucent 14x14 rounded box
-        QPen checkPen(isEnabled() ? Qt::white : PixelTheme::kMutedText, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-        p.setPen(checkPen);
-        p.setBrush(Qt::NoBrush);
-        QPainterPath check;
-        check.moveTo(box.left() + 3.0, box.top() + 6.8);
-        check.lineTo(box.left() + 5.6, box.top() + 9.4);
-        check.lineTo(box.left() + 10.2, box.top() + 4.2);
-        p.drawPath(check);
-    } else {
-        const QColor fill = m_hovered && isEnabled()
-            ? QColor(0xFF, 0xFF, 0xFF, 24)
-            : QColor(0x00, 0x00, 0x00, 68);
-        const QColor border = m_hovered && isEnabled()
-            ? QColor(0x8A, 0xB9, 0xFF, 110)
-            : QColor(0xFF, 0xFF, 0xFF, 28);
-        p.setPen(QPen(border, 1.0));
-        p.setBrush(fill);
-        p.drawRoundedRect(box, 4.0, 4.0);
-    }
+    PixelTheme::paintCheckIndicator(p, box, isChecked(), m_hovered, isDown(), isEnabled());
 
     if (hasFocus()) {
         p.setPen(QPen(PixelTheme::kFocusBorder, 1.2));
@@ -1456,4 +1539,175 @@ void PixelConfirmDialog::paintEvent(QPaintEvent* event)
     Q_UNUSED(event);
     QPainter p(this);
     PixelTheme::paintGlassSurface(p, rect(), PixelTheme::GlassLevel::Primary, PixelTheme::kRadiusWindow, 5);
+}
+
+// --- PixelOptionButton ---
+
+PixelOptionButton::PixelOptionButton(const QString& text, Indicator indicator, QWidget* parent)
+    : QAbstractButton(parent)
+    , m_indicator(indicator)
+{
+    setText(text);
+    setCheckable(true);
+    setAutoExclusive(indicator == Indicator::Radio);
+    setCursor(Qt::PointingHandCursor);
+    setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
+    QSizePolicy policy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    policy.setHeightForWidth(true);
+    setSizePolicy(policy);
+    setAccessibleName(text);
+}
+
+void PixelOptionButton::setMark(Mark mark)
+{
+    if (mark == m_mark) {
+        return;
+    }
+    m_mark = mark;
+    updateGeometry();
+    update();
+}
+
+void PixelOptionButton::setDetail(const QString& detail)
+{
+    if (detail == m_detail) {
+        return;
+    }
+    m_detail = detail;
+    updateGeometry();
+    update();
+}
+
+QFont PixelOptionButton::detailFont() const
+{
+    QFont f = font();
+    if (f.pixelSize() > 0) {
+        f.setPixelSize(std::max(9, f.pixelSize() - 1));
+    } else {
+        f.setPointSizeF(std::max(7.0, f.pointSizeF() - 1.0));
+    }
+    return f;
+}
+
+QRect PixelOptionButton::textRect(int width) const
+{
+    const int left = kPadX + kBoxSize + kSpacing;
+    const int right = kPadX + (m_mark != Mark::None ? kMarkWidth : 0);
+    return QRect(left, kPadY, std::max(20, width - left - right), 0);
+}
+
+int PixelOptionButton::heightForWidth(int width) const
+{
+    const QRect area = textRect(width);
+    const QFontMetrics fm(font());
+    int h = fm.boundingRect(QRect(0, 0, area.width(), 10000), Qt::TextWordWrap, text()).height();
+    if (!m_detail.isEmpty()) {
+        const QFontMetrics dm(detailFont());
+        h += 2 + dm.boundingRect(QRect(0, 0, area.width(), 10000), Qt::TextWordWrap, m_detail).height();
+    }
+    return std::max(kBoxSize + 2 * kPadY, h + 2 * kPadY);
+}
+
+QSize PixelOptionButton::sizeHint() const
+{
+    const int w = std::max(160, width() > 0 ? width() : 260);
+    return {w, heightForWidth(w)};
+}
+
+QSize PixelOptionButton::minimumSizeHint() const
+{
+    return {120, kBoxSize + 2 * kPadY};
+}
+
+void PixelOptionButton::enterEvent(QEnterEvent* event)
+{
+    m_hovered = true;
+    update();
+    QAbstractButton::enterEvent(event);
+}
+
+void PixelOptionButton::leaveEvent(QEvent* event)
+{
+    m_hovered = false;
+    update();
+    QAbstractButton::leaveEvent(event);
+}
+
+void PixelOptionButton::paintEvent(QPaintEvent* event)
+{
+    Q_UNUSED(event);
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    const QRect r = rect();
+    const bool interactive = isEnabled() && m_mark == Mark::None;
+
+    // Row wash: selected rows use the translucent blue selected-state token, hover the neutral wash.
+    QColor wash = Qt::transparent;
+    QColor rim = Qt::transparent;
+    if (isChecked()) {
+        wash = PixelTheme::kSecondaryAccent;
+        rim = QColor(0x9B, 0xC6, 0xFF, 40);
+    } else if (m_hovered && interactive) {
+        wash = QColor(0xFF, 0xFF, 0xFF, 16);
+    }
+    if (m_mark == Mark::Incorrect) {
+        wash = PixelTheme::kDangerBg;
+        rim = PixelTheme::kDangerBorder;
+    }
+    if (wash.alpha() > 0 || rim.alpha() > 0) {
+        p.setPen(rim.alpha() > 0 ? QPen(rim, 1.0) : Qt::NoPen);
+        p.setBrush(wash);
+        p.drawRoundedRect(QRectF(r).adjusted(0.5, 0.5, -0.5, -0.5), PixelTheme::kRadiusButton, PixelTheme::kRadiusButton);
+    }
+
+    const QFontMetrics fm(font());
+    const QRectF box(kPadX + 0.5, kPadY + std::max(0, (fm.height() - kBoxSize) / 2) + 0.5, kBoxSize - 1.0, kBoxSize - 1.0);
+    if (m_indicator == Indicator::Radio) {
+        PixelTheme::paintRadioIndicator(p, box, isChecked(), m_hovered && interactive, isDown(), isEnabled() || m_mark != Mark::None);
+    } else {
+        PixelTheme::paintCheckIndicator(p, box, isChecked(), m_hovered && interactive, isDown(), isEnabled() || m_mark != Mark::None);
+    }
+    if (hasFocus() && interactive) {
+        p.setPen(QPen(PixelTheme::kFocusBorder, 1.2));
+        p.setBrush(Qt::NoBrush);
+        if (m_indicator == Indicator::Radio) {
+            p.drawEllipse(box.adjusted(-2.0, -2.0, 2.0, 2.0));
+        } else {
+            p.drawRoundedRect(box.adjusted(-2.0, -2.0, 2.0, 2.0), 5.0, 5.0);
+        }
+    }
+
+    QRect textArea = textRect(r.width());
+    const QRect bounds = fm.boundingRect(QRect(textArea.left(), textArea.top(), textArea.width(), 10000),
+                                         Qt::TextWordWrap, text());
+    p.setFont(font());
+    p.setPen(isEnabled() || m_mark != Mark::None ? PixelTheme::kPrimaryText : PixelTheme::kMutedText);
+    p.drawText(QRect(textArea.left(), textArea.top(), textArea.width(), bounds.height()),
+               Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, text());
+    if (!m_detail.isEmpty()) {
+        p.setFont(detailFont());
+        p.setPen(PixelTheme::kSecondaryText);
+        p.drawText(QRect(textArea.left(), textArea.top() + bounds.height() + 2, textArea.width(), r.height()),
+                   Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, m_detail);
+    }
+
+    // Grading mark on the right: check for correct, cross for a wrong pick, hollow check for a missed one.
+    if (m_mark != Mark::None) {
+        const QPointF c(r.right() - kPadX - kMarkWidth / 2.0 + 2.0, box.center().y());
+        p.setBrush(Qt::NoBrush);
+        if (m_mark == Mark::Incorrect) {
+            p.setPen(QPen(PixelTheme::kDangerText, 1.8, Qt::SolidLine, Qt::RoundCap));
+            p.drawLine(c + QPointF(-4, -4), c + QPointF(4, 4));
+            p.drawLine(c + QPointF(-4, 4), c + QPointF(4, -4));
+        } else {
+            const QColor color = m_mark == Mark::Correct ? PixelTheme::kPrimaryAccentHover : PixelTheme::kMutedText;
+            p.setPen(QPen(color, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            QPainterPath tick;
+            tick.moveTo(c + QPointF(-5, 0));
+            tick.lineTo(c + QPointF(-1.5, 3.5));
+            tick.lineTo(c + QPointF(5, -4));
+            p.drawPath(tick);
+        }
+    }
 }
