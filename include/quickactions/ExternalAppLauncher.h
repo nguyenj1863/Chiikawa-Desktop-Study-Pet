@@ -9,7 +9,7 @@
 /**
  * Reusable cross-platform launcher/activator for external desktop applications
  * accessed from Chiikawa's quick-action menu:
- * Spotify, Discord, League of Legends, and Cursor.
+ * Spotify, Discord, League of Legends, and Visual Studio Code.
  *
  * - Activates an already-running window when supported by the OS.
  * - Launches installed desktop applications without shell string concatenation.
@@ -23,7 +23,7 @@ public:
         Spotify = 0,
         Discord = 1,
         LeagueOfLegends = 2,
-        Cursor = 3,
+        VSCode = 3,
         Count = 4
     };
 
@@ -73,6 +73,12 @@ public:
     [[nodiscard]] static bool tryParseBuiltInAppId(const QString& key, AppId& out);
     [[nodiscard]] static QString detectAppDisplayName(const QString& appReference);
     [[nodiscard]] static QIcon extractAppIcon(const QString& appReference);
+    /**
+     * Executable (Windows) or .app bundle (macOS) of an installed built-in app, or an empty
+     * string when it is not installed or its path is not tracked (only VS Code today). Used to
+     * show the installed application's own icon.
+     */
+    [[nodiscard]] static QString installedAppPath(AppId app);
     [[nodiscard]] static AppMetadata metadata(AppId app);
     [[nodiscard]] static Backend defaultPlatformBackend(AppId app);
     [[nodiscard]] static CustomBackend defaultCustomPlatformBackend();

@@ -67,7 +67,10 @@ void AppSettings::load()
         if (!rawJson.isEmpty()) {
             const QJsonDocument doc = QJsonDocument::fromJson(rawJson);
             if (doc.isArray()) {
-                m_quickActions = QuickActionItem::fromJsonArray(doc.array(), &parsedOk);
+                QJsonArray stored = doc.array();
+                const int storedVersion = settings.value(QStringLiteral("pet/quickActionsVersion"), 1).toInt();
+                QuickActionItem::migrateStoredList(stored, storedVersion);
+                m_quickActions = QuickActionItem::fromJsonArray(stored, &parsedOk);
             }
         }
         if (!parsedOk) {
@@ -152,6 +155,7 @@ void AppSettings::save() const
 
     settings.setValue(QStringLiteral("pet/size"), m_petSize);
     settings.setValue(QStringLiteral("pet/quickActionIconScale"), m_quickActionIconScale);
+    settings.setValue(QStringLiteral("pet/quickActionsVersion"), QuickActionItem::kStoredVersion);
     settings.setValue(QStringLiteral("pet/quickActionsJson"),
                       QJsonDocument(QuickActionItem::toJsonArray(m_quickActions)).toJson(QJsonDocument::Compact));
     settings.setValue(QStringLiteral("pet/movementSpeed"), m_movementSpeed);

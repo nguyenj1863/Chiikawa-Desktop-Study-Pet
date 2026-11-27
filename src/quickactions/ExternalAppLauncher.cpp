@@ -23,6 +23,7 @@ namespace ExternalAppLauncherMac {
 bool activateRunning(ExternalAppLauncher::AppId app);
 bool isInstalled(ExternalAppLauncher::AppId app);
 bool launchInstalled(ExternalAppLauncher::AppId app);
+QString installedPath(ExternalAppLauncher::AppId app);
 bool activateRunningCustom(const QString& appPath);
 bool isInstalledCustom(const QString& appPath);
 bool launchInstalledCustom(const QString& appPath);
@@ -271,36 +272,41 @@ QString winFindLeagueShortcut()
     return {};
 }
 
-// --- Cursor (Windows) ---
-QString winFindCursorExe()
+// --- Visual Studio Code (Windows) ---
+// Launches Code.exe directly; the "code" command on PATH is a .cmd shim and is not used.
+QString winFindVSCodeExe()
 {
     for (HKEY root : {HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE}) {
         const QString regPath = winReadRegistryDefaultString(
-            root, L"Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Cursor.exe");
+            root, L"Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Code.exe");
         if (!regPath.isEmpty() && QFileInfo::exists(regPath)) {
             return regPath;
         }
     }
     const QString localAppData = qEnvironmentVariable("LOCALAPPDATA");
     if (!localAppData.isEmpty()) {
-        const QString p = QDir(localAppData).filePath(QStringLiteral("Programs/cursor/Cursor.exe"));
+        const QString p = QDir(localAppData).filePath(QStringLiteral("Programs/Microsoft VS Code/Code.exe"));
         if (QFileInfo::exists(p)) return p;
     }
-    const QString progFiles = qEnvironmentVariable("ProgramFiles");
-    if (!progFiles.isEmpty()) {
-        const QString p = QDir(progFiles).filePath(QStringLiteral("cursor/Cursor.exe"));
-        if (QFileInfo::exists(p)) return p;
+    for (const char* var : {"ProgramFiles", "ProgramFiles(x86)"}) {
+        const QString progFiles = qEnvironmentVariable(var);
+        if (!progFiles.isEmpty()) {
+            const QString p = QDir(progFiles).filePath(QStringLiteral("Microsoft VS Code/Code.exe"));
+            if (QFileInfo::exists(p)) return p;
+        }
     }
     return {};
 }
 
-QString winFindCursorShortcut()
+QString winFindVSCodeShortcut()
 {
-    const QString appData = qEnvironmentVariable("APPDATA");
-    if (!appData.isEmpty()) {
-        const QString lnk = QDir(appData).filePath(
-            QStringLiteral("Microsoft/Windows/Start Menu/Programs/Cursor/Cursor.lnk"));
-        if (QFileInfo::exists(lnk)) return lnk;
+    for (const char* var : {"APPDATA", "PROGRAMDATA"}) {
+        const QString base = qEnvironmentVariable(var);
+        if (!base.isEmpty()) {
+            const QString lnk = QDir(base).filePath(
+                QStringLiteral("Microsoft/Windows/Start Menu/Programs/Visual Studio Code/Visual Studio Code.lnk"));
+            if (QFileInfo::exists(lnk)) return lnk;
+        }
     }
     return {};
 }
@@ -336,7 +342,7 @@ bool ExternalAppLauncher::tryParseBuiltInAppId(const QString& key, AppId& out)
     if (key == QStringLiteral("spotify")) { out = AppId::Spotify; return true; }
     if (key == QStringLiteral("discord")) { out = AppId::Discord; return true; }
     if (key == QStringLiteral("league"))  { out = AppId::LeagueOfLegends; return true; }
-    if (key == QStringLiteral("cursor"))  { out = AppId::Cursor; return true; }
+    if (key == QStringLiteral("vscode"))  { out = AppId::VSCode; return true; }
     return false;
 }
 
@@ -368,6 +374,20 @@ QIcon ExternalAppLauncher::extractAppIcon(const QString& appReference)
     }
     QFileIconProvider provider;
     return provider.icon(info);
+}
+
+QString ExternalAppLauncher::installedAppPath(AppId app)
+{
+    if (app != AppId::VSCode) {
+        return {};
+    }
+#if defined(Q_OS_WIN)
+    return winFindVSCodeExe();
+#elif defined(Q_OS_MACOS)
+    return ExternalAppLauncherMac::installedPath(app);
+#else
+    return {};
+#endif
 }
 
 ExternalAppLauncher::CustomBackend ExternalAppLauncher::defaultCustomPlatformBackend()
@@ -477,10 +497,10 @@ ExternalAppLauncher::AppMetadata ExternalAppLauncher::metadata(AppId app)
         return {app, QStringLiteral("League of Legends"),
                 QStringLiteral("Visit Website"),
                 QUrl(QStringLiteral("https://www.leagueoflegends.com"))};
-    case AppId::Cursor:
-        return {app, QStringLiteral("Cursor"),
-                QStringLiteral("Visit Website"),
-                QUrl(QStringLiteral("https://cursor.com"))};
+    case AppId::VSCode:
+        return {app, QStringLiteral("Visual Studio Code"),
+                QStringLiteral("Get VS Code"),
+                QUrl(QStringLiteral("https://code.visualstudio.com"))};
     case AppId::Count:
         break;
     }
@@ -554,18 +574,18 @@ ExternalAppLauncher::Backend ExternalAppLauncher::defaultPlatformBackend(AppId a
                 return false;
             }
         };
-    case AppId::Cursor:
+    case AppId::VSCode:
         return {
-            []() { return winActivateByProcessNames({L"cursor.exe"}); },
+            []() { return winActivateByProcessNames({L"code.exe"}); },
             []() {
-                return !winFindCursorExe().isEmpty() || !winFindCursorShortcut().isEmpty();
+                return !winFindVSCodeExe().isEmpty() || !winFindVSCodeShortcut().isEmpty();
             },
             []() {
-                const QString exe = winFindCursorExe();
+                const QString exe = winFindVSCodeExe();
                 if (!exe.isEmpty() && QProcess::startDetached(exe, {})) {
                     return true;
                 }
-                const QString lnk = winFindCursorShortcut();
+                const QString lnk = winFindVSCodeShortcut();
                 return !lnk.isEmpty() && winShellOpen(lnk);
             }
         };

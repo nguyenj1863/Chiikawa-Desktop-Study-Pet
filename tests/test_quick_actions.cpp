@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QFileInfo>
 #include <QMouseEvent>
 #include <QPointer>
 #include <QSignalSpy>
@@ -58,31 +59,45 @@ private:
 
 private slots:
 
-    void sixIconsOrderTooltipsAndAccessibleNames()
+    void defaultIconsOrderTooltipsAndAccessibleNames()
     {
         QuickActionMenu menu;
         menu.setNativeOutsideObserverEnabled(false);
 
-        QCOMPARE(menu.actionCount(), 6);
+        QCOMPARE(menu.actionCount(), 7);
 
         QVERIFY(menu.spotifyButton() != nullptr);
         QVERIFY(menu.discordButton() != nullptr);
         QVERIFY(menu.leagueButton() != nullptr);
-        QVERIFY(menu.cursorButton() != nullptr);
+        QVERIFY(menu.vscodeButton() != nullptr);
+        QVERIFY(menu.studyButton() != nullptr);
         QVERIFY(menu.settingsButton() != nullptr);
         QVERIFY(menu.exitButton() != nullptr);
 
         QCOMPARE(menu.spotifyButton()->toolTip(), QStringLiteral("Open Spotify"));
         QCOMPARE(menu.discordButton()->toolTip(), QStringLiteral("Open Discord"));
         QCOMPARE(menu.leagueButton()->toolTip(), QStringLiteral("Open League of Legends"));
-        QCOMPARE(menu.cursorButton()->toolTip(), QStringLiteral("Open Cursor"));
+        QCOMPARE(menu.vscodeButton()->toolTip(), QStringLiteral("Open Visual Studio Code"));
+        QCOMPARE(menu.studyButton()->toolTip(), QStringLiteral("Open Study"));
         QCOMPARE(menu.settingsButton()->toolTip(), QStringLiteral("Open Settings"));
         QCOMPARE(menu.exitButton()->toolTip(), QStringLiteral("Exit Chiikawa"));
 
         QCOMPARE(menu.spotifyButton()->accessibleName(), QStringLiteral("Open Spotify"));
         QCOMPARE(menu.discordButton()->accessibleName(), QStringLiteral("Open Discord"));
         QCOMPARE(menu.leagueButton()->accessibleName(), QStringLiteral("Open League of Legends"));
-        QCOMPARE(menu.cursorButton()->accessibleName(), QStringLiteral("Open Cursor"));
+        QCOMPARE(menu.vscodeButton()->accessibleName(), QStringLiteral("Open Visual Studio Code"));
+        QCOMPARE(menu.studyButton()->accessibleName(), QStringLiteral("Open Study"));
+
+        // Study sits directly above Settings; VS Code takes the old Cursor slot.
+        const QVector<QuickActionItem> defaults = QuickActionItem::defaultShortcuts();
+        QStringList ids;
+        for (const QuickActionItem& d : defaults) {
+            ids.append(d.id);
+        }
+        QCOMPARE(ids, (QStringList{QStringLiteral("builtin:spotify"), QStringLiteral("builtin:discord"),
+                                   QStringLiteral("builtin:league"), QStringLiteral("builtin:vscode"),
+                                   QStringLiteral("builtin:study"), QStringLiteral("builtin:settings"),
+                                   QStringLiteral("builtin:exit")}));
         QCOMPARE(menu.settingsButton()->accessibleName(), QStringLiteral("Open Settings"));
         QCOMPARE(menu.exitButton()->accessibleName(), QStringLiteral("Exit application"));
     }
@@ -279,9 +294,9 @@ private slots:
             QCOMPARE(menu.progressAt(i), 1.0);
         }
 
-        // Hover Cursor while open, then toggle closed: hover must resolve cleanly while dismissing
+        // Hover VS Code while open, then toggle closed: hover must resolve cleanly while dismissing
         menu.setHoveredIndex(3);
-        QTRY_VERIFY_WITH_TIMEOUT(menu.cursorButton()->hoverOffset().y() < -5.0, 300);
+        QTRY_VERIFY_WITH_TIMEOUT(menu.vscodeButton()->hoverOffset().y() < -5.0, 300);
 
         menu.toggleMenu(petRect, QRect(15, 15, 90, 90));
         QCOMPARE(menu.state(), QuickActionMenu::State::Closing);
@@ -309,13 +324,43 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!menu.isRetargeting(), 600);
     }
 
+    void vsCodeIsABuiltInAppAndCursorIsNot()
+    {
+        ExternalAppLauncher::AppId id = ExternalAppLauncher::AppId::Spotify;
+        QVERIFY(ExternalAppLauncher::tryParseBuiltInAppId(QStringLiteral("vscode"), id));
+        QCOMPARE(id, ExternalAppLauncher::AppId::VSCode);
+        QVERIFY(!ExternalAppLauncher::tryParseBuiltInAppId(QStringLiteral("cursor"), id));
+
+        const ExternalAppLauncher::AppMetadata meta = ExternalAppLauncher::metadata(ExternalAppLauncher::AppId::VSCode);
+        QCOMPARE(meta.displayName, QStringLiteral("Visual Studio Code"));
+        QCOMPARE(meta.fallbackUrl, QUrl(QStringLiteral("https://code.visualstudio.com")));
+
+        // A missing installation is reported with a download link instead of failing silently.
+        ExternalAppLauncher launcher;
+        launcher.setBackend(ExternalAppLauncher::AppId::VSCode, {
+            []() { return false; }, []() { return false; }, []() { return false; }});
+        const ExternalAppLauncher::Result result = launcher.openOrActivate(ExternalAppLauncher::AppId::VSCode);
+        QCOMPARE(result.status, ExternalAppLauncher::Status::NotInstalled);
+        QCOMPARE(result.fallbackUrl, meta.fallbackUrl);
+
+        // Only VS Code resolves an installed path; looking it up never throws or blocks.
+        QVERIFY(ExternalAppLauncher::installedAppPath(ExternalAppLauncher::AppId::Spotify).isEmpty());
+        const QString path = ExternalAppLauncher::installedAppPath(ExternalAppLauncher::AppId::VSCode);
+        QVERIFY(path.isEmpty() || QFileInfo::exists(path));
+
+        // The menu button always has an icon: the installed app's own, or the drawn fallback.
+        QuickActionItem item{QStringLiteral("builtin:vscode"), QStringLiteral("Visual Studio Code"),
+                             QuickActionType::BuiltInApp, QStringLiteral("vscode"), {}, true};
+        QVERIFY(!QuickActionItem::resolveIcon(item, 24).isNull());
+    }
+
     void externalAppLauncherMockedAllFourApps()
     {
         const std::array<ExternalAppLauncher::AppId, 4> apps = {
             ExternalAppLauncher::AppId::Spotify,
             ExternalAppLauncher::AppId::Discord,
             ExternalAppLauncher::AppId::LeagueOfLegends,
-            ExternalAppLauncher::AppId::Cursor
+            ExternalAppLauncher::AppId::VSCode
         };
 
         for (ExternalAppLauncher::AppId app : apps) {
@@ -384,7 +429,7 @@ private slots:
         int spotifyCalls = 0;
         int discordCalls = 0;
         int leagueCalls = 0;
-        int cursorCalls = 0;
+        int vscodeCalls = 0;
 
         launcher->setBackend(ExternalAppLauncher::AppId::Spotify, {
             [&]() { ++spotifyCalls; return true; },
@@ -401,8 +446,8 @@ private slots:
             []() { return false; }, // triggers AppLaunchNoticePopup
             [&]() { ++leagueCalls; return false; }
         });
-        launcher->setBackend(ExternalAppLauncher::AppId::Cursor, {
-            [&]() { ++cursorCalls; return true; },
+        launcher->setBackend(ExternalAppLauncher::AppId::VSCode, {
+            [&]() { ++vscodeCalls; return true; },
             []() { return true; },
             []() { return true; }
         });
@@ -426,8 +471,8 @@ private slots:
         QCOMPARE(discordCalls, 1);
 
         openByDoubleClick();
-        pet.quickActionMenu()->cursorButton()->click();
-        QCOMPARE(cursorCalls, 1);
+        pet.quickActionMenu()->vscodeButton()->click();
+        QCOMPARE(vscodeCalls, 1);
 
         openByDoubleClick();
         pet.quickActionMenu()->leagueButton()->click();
@@ -592,28 +637,29 @@ private slots:
             }
         }
 
-        // Disable Discord & League, reorder Cursor to top, add custom VS Code
+        // Disable Discord & League, reorder the built-in VS Code to the top, add a custom app
         QuickActionMenu menu;
         menu.setNativeOutsideObserverEnabled(false);
         menu.setReducedMotionOverride(1);
         QVector<QuickActionItem> items = QuickActionItem::defaultShortcuts();
         items[1].enabled = false; // Discord
         items[2].enabled = false; // League
-        QuickActionItem cursor = items.takeAt(3);
-        items.prepend(cursor);
-        items.push_back({QStringLiteral("custom:vscode"), QStringLiteral("VS Code"),
+        QuickActionItem vscode = items.takeAt(3);
+        items.prepend(vscode);
+        items.push_back({QStringLiteral("custom:editor"), QStringLiteral("My Editor"),
                          QuickActionType::CustomApp, QStringLiteral("C:/Apps/Code.exe"), {}, true});
 
         menu.setShortcuts(items);
-        QCOMPARE(menu.actionCount(), 5);
-        QCOMPARE(menu.indexOfId(QStringLiteral("builtin:cursor")), 0);
+        QCOMPARE(menu.actionCount(), 6);
+        QCOMPARE(menu.indexOfId(QStringLiteral("builtin:vscode")), 0);
         QCOMPARE(menu.indexOfId(QStringLiteral("builtin:spotify")), 1);
         QCOMPARE(menu.indexOfId(QStringLiteral("builtin:discord")), -1);
-        QCOMPARE(menu.indexOfId(QStringLiteral("custom:vscode")), 4);
+        QCOMPARE(menu.indexOfId(QStringLiteral("builtin:study")), 2);
+        QCOMPARE(menu.indexOfId(QStringLiteral("custom:editor")), 5);
 
         menu.showMenu(petRect, spriteLocal);
         QCOMPARE(menu.state(), QuickActionMenu::State::Open);
-        // Cursor is now visually above Spotify
+        // VS Code is now visually above Spotify
         QVERIFY(menu.restingVisualRect(0).center().y() < menu.restingVisualRect(1).center().y());
     }
 
@@ -621,7 +667,7 @@ private slots:
     {
         QuickActionsEditor editor;
         editor.setShortcuts(QuickActionItem::defaultShortcuts());
-        QCOMPARE(editor.shortcuts().size(), 6);
+        QCOMPARE(editor.shortcuts().size(), 7);
 
         QSignalSpy changedSpy(&editor, &QuickActionsEditor::shortcutsChanged);
 
@@ -630,24 +676,25 @@ private slots:
         QCOMPARE(changedSpy.count(), 1);
         QCOMPARE(editor.shortcuts().at(1).enabled, false);
 
-        editor.moveShortcut(3, 0); // Move Cursor to top
-        QCOMPARE(editor.shortcuts().at(0).id, QStringLiteral("builtin:cursor"));
+        editor.moveShortcut(3, 0); // Move VS Code to top
+        QCOMPARE(editor.shortcuts().at(0).id, QStringLiteral("builtin:vscode"));
 
         QuickActionItem custom{QStringLiteral("custom:obsidian"), QStringLiteral("Obsidian"),
                                QuickActionType::CustomApp, QStringLiteral("C:/Apps/Obsidian.exe"), {}, true};
         editor.addShortcut(custom);
-        QCOMPARE(editor.shortcuts().size(), 7);
+        QCOMPARE(editor.shortcuts().size(), 8);
 
         custom.displayName = QStringLiteral("Obsidian Notes");
         editor.updateShortcut(custom);
         QCOMPARE(editor.shortcuts().last().displayName, QStringLiteral("Obsidian Notes"));
 
         editor.removeShortcut(QStringLiteral("custom:obsidian"));
-        QCOMPARE(editor.shortcuts().size(), 6);
+        QCOMPARE(editor.shortcuts().size(), 7);
 
         // Built-in items cannot be removed (only disabled)
         editor.removeShortcut(QStringLiteral("builtin:settings"));
-        QCOMPARE(editor.shortcuts().size(), 6);
+        editor.removeShortcut(QStringLiteral("builtin:study"));
+        QCOMPARE(editor.shortcuts().size(), 7);
 
         // Mocked custom application launcher (running, launched, missing, failed)
         ExternalAppLauncher launcher;

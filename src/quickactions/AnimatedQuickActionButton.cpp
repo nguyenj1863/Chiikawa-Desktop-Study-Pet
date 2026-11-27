@@ -74,7 +74,7 @@ AnimatedQuickActionButton::AnimatedQuickActionButton(PixelIcon iconKind,
 AnimatedQuickActionButton::AnimatedQuickActionButton(const QIcon& customIcon,
                                                      qreal hoverRotationDegrees,
                                                      QWidget* parent)
-    : AnimatedQuickActionButton(PixelIcon::Cursor,
+    : AnimatedQuickActionButton(PixelIcon::GenericApp,
                                 PixelTheme::kPrimaryText,
                                 QColor(Qt::white),
                                 hoverRotationDegrees,

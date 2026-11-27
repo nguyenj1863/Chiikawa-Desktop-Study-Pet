@@ -4,6 +4,8 @@
 #include "app/AppSettings.h"
 #include "app/SettingsDefaults.h"
 #include "pet/PetWindow.h"
+#include "quickactions/AnimatedQuickActionButton.h"
+#include "quickactions/QuickActionMenu.h"
 #include "study/ProgressTracker.h"
 #include "study/QuestionGenerator.h"
 #include "study/StudyDatabase.h"
@@ -18,6 +20,7 @@
 #include <QDir>
 #include <QFile>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -116,6 +119,7 @@ private slots:
 
     void libraryWindowManagesCoursesFormatsAndDocuments();
     void petStudyFlowWorksWithoutOllama();
+    void studyShortcutOpensTheStudyWindow();
 
 private:
     static void clearSettings();
@@ -435,6 +439,35 @@ void TestStudyUi::libraryWindowManagesCoursesFormatsAndDocuments()
     QVERIFY(window.removeCurrentCourse(true));
     QCOMPARE(window.currentCourse(), 0);
     QCOMPARE(settings.studyCourseId(), 0);
+}
+
+void TestStudyUi::studyShortcutOpensTheStudyWindow()
+{
+    {
+        AppSettings settings;
+        settings.setOnboardingCompleted(true);
+        settings.save();
+    }
+    PetWindow pet;
+    pet.quickActionMenu()->setNativeOutsideObserverEnabled(false);
+    pet.quickActionMenu()->setReducedMotionOverride(1);   // open instantly
+    pet.showPet();
+    QApplication::processEvents();
+    QVERIFY(!pet.studyLibraryWindow());
+
+    QMouseEvent dbl(QEvent::MouseButtonDblClick, QPointF(pet.rect().center()),
+                    QPointF(pet.mapToGlobal(pet.rect().center())), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&pet, &dbl);
+    QCOMPARE(pet.quickActionMenu()->state(), QuickActionMenu::State::Open);
+    QVERIFY(pet.quickActionMenu()->studyButton());
+    // Study sits immediately above Settings in the radial stack.
+    QCOMPARE(pet.quickActionMenu()->indexOfId(QStringLiteral("builtin:study")) + 1,
+             pet.quickActionMenu()->indexOfId(QStringLiteral("builtin:settings")));
+    pet.quickActionMenu()->studyButton()->click();
+    QVERIFY(pet.studyLibraryWindow());
+    QVERIFY(pet.studyLibraryWindow()->isVisible());
+    disconnectOllama(pet.ollamaClient());
+    pet.studyLibraryWindow()->hide();
 }
 
 void TestStudyUi::petStudyFlowWorksWithoutOllama()

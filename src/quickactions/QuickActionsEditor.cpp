@@ -382,7 +382,7 @@ void QuickActionDialog::populateAppsList(const QString& query)
         if (!icon.isNull()) {
             item->setIcon(icon);
         } else {
-            item->setIcon(PixelTheme::icon(PixelIcon::Cursor, PixelTheme::kPrimaryText, 16));
+            item->setIcon(PixelTheme::icon(PixelIcon::GenericApp, PixelTheme::kPrimaryText, 16));
         }
         m_appsList->addItem(item);
     }
@@ -984,7 +984,7 @@ void QuickActionsEditor::onRestoreDefaultsClicked()
         const auto reply = QMessageBox::question(
             window(),
             QStringLiteral("Restore Default Shortcuts"),
-            QStringLiteral("Reset quick actions to the 6 default shortcuts and remove custom shortcuts?"),
+            QStringLiteral("Reset quick actions to the %1 default shortcuts and remove custom shortcuts?").arg(QuickActionItem::defaultShortcuts().size()),
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::No);
         if (reply != QMessageBox::Yes) {

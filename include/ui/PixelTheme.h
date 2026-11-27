@@ -30,7 +30,9 @@ enum class PixelIcon {
     Spotify,
     Discord,
     LeagueOfLegends,
-    Cursor
+    GenericApp,   // fallback mark for applications without a dedicated icon
+    Code,         // generic code-editor mark (fallback for VS Code when it is not installed)
+    Study         // stacked flashcards
 };
 
 namespace PixelTheme {

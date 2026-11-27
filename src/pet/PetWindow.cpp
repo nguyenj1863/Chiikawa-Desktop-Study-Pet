@@ -133,6 +133,12 @@ PetWindow::PetWindow(QWidget* parent)
                         result.fallbackUrl);
                 }
             });
+    connect(m_quickActionMenu.get(), &QuickActionMenu::studyRequested, this, [this]() {
+        if (m_uiSound) {
+            m_uiSound->playClick();
+        }
+        openStudyLibrary();
+    });
     connect(m_quickActionMenu.get(), &QuickActionMenu::settingsRequested,
             this, &PetWindow::onSettingsQuickAction);
     connect(m_quickActionMenu.get(), &QuickActionMenu::externalAppRequested,

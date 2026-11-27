@@ -74,10 +74,20 @@ AnimatedQuickActionButton* createButtonForShortcut(const QuickActionItem& item,
         } else if (item.applicationReference == QStringLiteral("league")) {
             btn = new AnimatedQuickActionButton(
                 PixelIcon::LeagueOfLegends, QColor(0xC8, 0xAA, 0x6E), QColor(0xE3, 0xC7, 0x89), -5.5, parent);
-        } else if (item.applicationReference == QStringLiteral("cursor")) {
-            btn = new AnimatedQuickActionButton(
-                PixelIcon::Cursor, QColor(0xE4, 0xE8, 0xF0), QColor(0xFF, 0xFF, 0xFF), 6.5, parent);
+        } else if (item.applicationReference == QStringLiteral("vscode")) {
+            const QString exe = ExternalAppLauncher::installedAppPath(ExternalAppLauncher::AppId::VSCode);
+            const QIcon native = exe.isEmpty() ? QIcon() : ExternalAppLauncher::extractAppIcon(exe);
+            if (!native.isNull()) {
+                // The installed application's own icon, with the same hover motion as the other apps.
+                btn = new AnimatedQuickActionButton(native, 6.5, parent);
+            } else {
+                btn = new AnimatedQuickActionButton(
+                    PixelIcon::Code, QColor(0x4D, 0xA3, 0xFF), QColor(0x7B, 0xBC, 0xFF), 6.5, parent);
+            }
         }
+    } else if (!hasCustomIcon && item.type == QuickActionType::Study) {
+        btn = new AnimatedQuickActionButton(
+            PixelIcon::Study, PixelTheme::kPrimaryAccent, PixelTheme::kPrimaryAccentHover, 5.5, parent);
     } else if (!hasCustomIcon && item.type == QuickActionType::Settings) {
         btn = new AnimatedQuickActionButton(
             PixelIcon::Gear, PixelTheme::kPrimaryText, QColor(0xFF, 0xFF, 0xFF), -5.5, parent);
@@ -1245,6 +1255,9 @@ void QuickActionMenu::triggerAction(int index)
         break;
     case QuickActionType::Exit:
         emit exitRequested();
+        break;
+    case QuickActionType::Study:
+        emit studyRequested();
         break;
     }
     hideMenu();

@@ -3,6 +3,9 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSettings>
 #include <QTest>
 
@@ -26,6 +29,9 @@ private slots:
     void restoreDefaultsPreservesActiveSessionsAndAlarms();
     void persistsQuickActionIconScaleAndHandlesInvalidValues();
     void persistsCustomQuickActionsAndValidatesMalformedData();
+    void migratesStoredShortcutsToVsCodeAndStudy();
+    void migrationKeepsCustomizedNamesAndRespectsTheRadialLimit();
+    void migrationDoesNothingToCurrentListsOrMalformedEntries();
 
 private:
     void clearSettings();
@@ -238,18 +244,20 @@ void TestAppSettings::persistsCustomQuickActionsAndValidatesMalformedData()
 {
     clearSettings();
     {
-        // Fresh/upgrading user gets the 6 default shortcuts
+        // Fresh user gets the 7 default shortcuts
         AppSettings s;
-        QCOMPARE(s.quickActions().size(), 6);
+        QCOMPARE(s.quickActions().size(), 7);
         QCOMPARE(s.quickActions().at(0).id, QStringLiteral("builtin:spotify"));
-        QCOMPARE(s.quickActions().at(5).id, QStringLiteral("builtin:exit"));
+        QCOMPARE(s.quickActions().at(4).id, QStringLiteral("builtin:study"));
+        QCOMPARE(s.quickActions().at(5).id, QStringLiteral("builtin:settings"));
+        QCOMPARE(s.quickActions().at(6).id, QStringLiteral("builtin:exit"));
 
         // Reorder, disable Discord, and add a custom app
         QVector<QuickActionItem> items = s.quickActions();
         items[1].enabled = false; // Discord disabled
-        QuickActionItem cursor = items.takeAt(3);
-        items.prepend(cursor); // Cursor first
-        items.push_back({QStringLiteral("custom:vscode"), QStringLiteral("VS Code"),
+        QuickActionItem vscode = items.takeAt(3);
+        items.prepend(vscode); // VS Code first
+        items.push_back({QStringLiteral("custom:editor"), QStringLiteral("My Editor"),
                          QuickActionType::CustomApp, QStringLiteral("C:/Apps/Code.exe"), {}, true});
         s.setQuickActions(items);
         s.setPetSize(150);
@@ -258,16 +266,16 @@ void TestAppSettings::persistsCustomQuickActionsAndValidatesMalformedData()
     {
         // Reloaded after restart
         AppSettings s;
-        QCOMPARE(s.quickActions().size(), 7);
-        QCOMPARE(s.quickActions().at(0).id, QStringLiteral("builtin:cursor"));
+        QCOMPARE(s.quickActions().size(), 8);
+        QCOMPARE(s.quickActions().at(0).id, QStringLiteral("builtin:vscode"));
         QCOMPARE(s.quickActions().at(2).id, QStringLiteral("builtin:discord"));
         QCOMPARE(s.quickActions().at(2).enabled, false);
-        QCOMPARE(s.quickActions().at(6).id, QStringLiteral("custom:vscode"));
-        QCOMPARE(s.quickActions().at(6).applicationReference, QStringLiteral("C:/Apps/Code.exe"));
+        QCOMPARE(s.quickActions().at(7).id, QStringLiteral("custom:editor"));
+        QCOMPARE(s.quickActions().at(7).applicationReference, QStringLiteral("C:/Apps/Code.exe"));
 
         // restoreDefaultQuickActions resets only shortcuts, preserving Pet Size
         s.restoreDefaultQuickActions();
-        QCOMPARE(s.quickActions().size(), 6);
+        QCOMPARE(s.quickActions().size(), 7);
         QCOMPARE(s.quickActions().at(0).id, QStringLiteral("builtin:spotify"));
         QCOMPARE(s.petSize(), 150);
     }
@@ -278,11 +286,141 @@ void TestAppSettings::persistsCustomQuickActionsAndValidatesMalformedData()
         raw.sync();
 
         AppSettings s;
-        QCOMPARE(s.quickActions().size(), 6);
+        QCOMPARE(s.quickActions().size(), 7);
         QCOMPARE(s.quickActions().at(0).id, QStringLiteral("builtin:spotify"));
     }
     clearSettings();
 }
+
+namespace {
+QByteArray storedShortcuts(const QJsonArray& array)
+{
+    return QJsonDocument(array).toJson(QJsonDocument::Compact);
+}
+
+QJsonObject stored(const QString& id, const QString& name, const QString& type, const QString& ref = QString(),
+                   bool enabled = true, const QString& icon = QString())
+{
+    return QJsonObject{{QStringLiteral("id"), id}, {QStringLiteral("name"), name}, {QStringLiteral("type"), type},
+                       {QStringLiteral("appRef"), ref}, {QStringLiteral("icon"), icon}, {QStringLiteral("enabled"), enabled}};
+}
+
+QJsonArray version1Defaults()
+{
+    return QJsonArray{
+        stored(QStringLiteral("builtin:spotify"), QStringLiteral("Spotify"), QStringLiteral("builtin_app"), QStringLiteral("spotify")),
+        stored(QStringLiteral("builtin:discord"), QStringLiteral("Discord"), QStringLiteral("builtin_app"), QStringLiteral("discord")),
+        stored(QStringLiteral("builtin:league"), QStringLiteral("League of Legends"), QStringLiteral("builtin_app"), QStringLiteral("league")),
+        stored(QStringLiteral("builtin:cursor"), QStringLiteral("Cursor"), QStringLiteral("builtin_app"), QStringLiteral("cursor")),
+        stored(QStringLiteral("builtin:settings"), QStringLiteral("Settings"), QStringLiteral("settings")),
+        stored(QStringLiteral("builtin:exit"), QStringLiteral("Exit"), QStringLiteral("exit")),
+    };
+}
+} // namespace
+
+void TestAppSettings::migratesStoredShortcutsToVsCodeAndStudy()
+{
+    clearSettings();
+    {
+        // A version 1 list (no version key): Cursor becomes VS Code in place; Study lands above Settings.
+        QSettings raw(AppSettings::storageOrganization(), AppSettings::storageApplication());
+        QJsonArray v1 = version1Defaults();
+        QJsonObject discord = v1.at(1).toObject();
+        discord.insert(QStringLiteral("enabled"), false);
+        v1.replace(1, discord);
+        QJsonObject cursor = v1.at(3).toObject();
+        cursor.insert(QStringLiteral("enabled"), false);
+        v1.replace(3, cursor);
+        v1.append(stored(QStringLiteral("custom:cursor"), QStringLiteral("My Cursor"), QStringLiteral("custom_app"),
+                         QStringLiteral("C:/Apps/Cursor.exe")));
+        raw.setValue(QStringLiteral("pet/quickActionsJson"), storedShortcuts(v1));
+        raw.sync();
+    }
+    {
+        AppSettings s;
+        const QVector<QuickActionItem> items = s.quickActions();
+        QStringList ids;
+        for (const QuickActionItem& i : items) {
+            ids.append(i.id);
+        }
+        QCOMPARE(ids, (QStringList{QStringLiteral("builtin:spotify"), QStringLiteral("builtin:discord"),
+                                   QStringLiteral("builtin:league"), QStringLiteral("builtin:vscode"),
+                                   QStringLiteral("builtin:study"), QStringLiteral("builtin:settings"),
+                                   QStringLiteral("builtin:exit"), QStringLiteral("custom:cursor")}));
+        QCOMPARE(items.at(3).displayName, QStringLiteral("Visual Studio Code"));
+        QCOMPARE(items.at(3).applicationReference, QStringLiteral("vscode"));
+        QVERIFY(!items.at(3).enabled);        // the old Cursor entry's enabled state is kept
+        QVERIFY(!items.at(1).enabled);        // other shortcuts keep their state and order
+        QVERIFY(items.at(4).enabled);
+        QCOMPARE(items.at(7).type, QuickActionType::CustomApp);   // user-created Cursor entry untouched
+        QCOMPARE(items.at(7).applicationReference, QStringLiteral("C:/Apps/Cursor.exe"));
+        QCOMPARE(items.at(7).displayName, QStringLiteral("My Cursor"));
+        s.save();
+    }
+    {
+        // Migrated once: reloading does not insert a second Study shortcut or change anything.
+        AppSettings s;
+        QCOMPARE(s.quickActions().size(), 8);
+        QSettings raw(AppSettings::storageOrganization(), AppSettings::storageApplication());
+        QCOMPARE(raw.value(QStringLiteral("pet/quickActionsVersion")).toInt(), QuickActionItem::kStoredVersion);
+    }
+    clearSettings();
+}
+
+void TestAppSettings::migrationKeepsCustomizedNamesAndRespectsTheRadialLimit()
+{
+    clearSettings();
+    {
+        QJsonArray v1 = version1Defaults();
+        // The user renamed the built-in Cursor shortcut and gave it a custom icon: both are kept.
+        v1.replace(3, stored(QStringLiteral("builtin:cursor"), QStringLiteral("Editor"), QStringLiteral("builtin_app"),
+                             QStringLiteral("cursor"), true, QStringLiteral("C:/icons/editor.png")));
+        // Fill the radial menu: 6 built-ins plus 4 custom apps = 10 enabled shortcuts.
+        for (int i = 0; i < 4; ++i) {
+            v1.append(stored(QStringLiteral("custom:app%1").arg(i), QStringLiteral("App %1").arg(i),
+                             QStringLiteral("custom_app"), QStringLiteral("C:/Apps/app%1.exe").arg(i)));
+        }
+        QSettings raw(AppSettings::storageOrganization(), AppSettings::storageApplication());
+        raw.setValue(QStringLiteral("pet/quickActionsJson"), storedShortcuts(v1));
+        raw.sync();
+    }
+    AppSettings s;
+    const QVector<QuickActionItem> items = s.quickActions();
+    QCOMPARE(items.size(), 11);
+    QCOMPARE(items.at(3).id, QStringLiteral("builtin:vscode"));
+    QCOMPARE(items.at(3).displayName, QStringLiteral("Editor"));
+    QCOMPARE(items.at(3).customIconPath, QStringLiteral("C:/icons/editor.png"));
+    QCOMPARE(items.at(4).id, QStringLiteral("builtin:study"));
+    QVERIFY(!items.at(4).enabled);   // 10 were already enabled, so Study arrives disabled instead of pushing one out
+    int enabled = 0;
+    for (const QuickActionItem& i : items) {
+        enabled += i.enabled ? 1 : 0;
+    }
+    QCOMPARE(enabled, 10);
+    clearSettings();
+}
+
+void TestAppSettings::migrationDoesNothingToCurrentListsOrMalformedEntries()
+{
+    QJsonArray current = QuickActionItem::toJsonArray(QuickActionItem::defaultShortcuts());
+    QJsonArray copy = current;
+    QVERIFY(!QuickActionItem::migrateStoredList(copy, QuickActionItem::kStoredVersion));
+    QCOMPARE(copy, current);
+
+    // Running the upgrade twice never duplicates Study.
+    QJsonArray v1 = version1Defaults();
+    QVERIFY(QuickActionItem::migrateStoredList(v1, 1));
+    QJsonArray again = v1;
+    QVERIFY(!QuickActionItem::migrateStoredList(again, 1));
+    QCOMPARE(again, v1);
+
+    // Non-object entries are left for the parser to drop; they do not crash the upgrade.
+    QJsonArray odd{QJsonValue(5), stored(QStringLiteral("builtin:settings"), QStringLiteral("Settings"), QStringLiteral("settings"))};
+    QVERIFY(QuickActionItem::migrateStoredList(odd, 1));
+    QCOMPARE(odd.size(), 3);
+    QCOMPARE(odd.at(1).toObject().value(QStringLiteral("type")).toString(), QStringLiteral("study"));
+}
+
 
 QTEST_MAIN(TestAppSettings)
 #include "test_app_settings.moc"

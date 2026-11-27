@@ -224,7 +224,9 @@ PixelGrid gridFor(PixelIcon kind)
     case PixelIcon::Spotify:
     case PixelIcon::Discord:
     case PixelIcon::LeagueOfLegends:
-    case PixelIcon::Cursor:
+    case PixelIcon::GenericApp:
+    case PixelIcon::Code:
+    case PixelIcon::Study:
         return {{
             "....####....",
             ".##.####.##.",
@@ -546,8 +548,58 @@ QIcon icon(PixelIcon kind, const QColor& color, int logicalSize)
         return result;
     }
 
-    if (kind == PixelIcon::Cursor) {
-        // Recognizable Cursor isometric 3D faceted cube / directional prism mark
+    if (kind == PixelIcon::Code) {
+        // Generic code-editor mark: angle brackets around a slash (not a vendor logo).
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const qreal s = static_cast<qreal>(logicalSize);
+        QPen pen(color, std::max<qreal>(1.6, s * 0.10), Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        QPainterPath left;
+        left.moveTo(s * 0.34, s * 0.24);
+        left.lineTo(s * 0.12, s * 0.50);
+        left.lineTo(s * 0.34, s * 0.76);
+        p.drawPath(left);
+        QPainterPath right;
+        right.moveTo(s * 0.66, s * 0.24);
+        right.lineTo(s * 0.88, s * 0.50);
+        right.lineTo(s * 0.66, s * 0.76);
+        p.drawPath(right);
+        p.drawLine(QPointF(s * 0.56, s * 0.18), QPointF(s * 0.44, s * 0.82));
+        p.end();
+        QIcon result(pm);
+        cache.insert(key, result);
+        return result;
+    }
+
+    if (kind == PixelIcon::Study) {
+        // Two stacked flashcards: a tilted card behind, a front card with text lines.
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const qreal s = static_cast<qreal>(logicalSize);
+        p.setPen(Qt::NoPen);
+        QColor back = color;
+        back.setAlpha(120);
+        p.save();
+        p.translate(s * 0.52, s * 0.46);
+        p.rotate(-10.0);
+        p.setBrush(back);
+        p.drawRoundedRect(QRectF(-s * 0.32, -s * 0.30, s * 0.64, s * 0.52), s * 0.09, s * 0.09);
+        p.restore();
+        p.setBrush(color);
+        p.drawRoundedRect(QRectF(s * 0.18, s * 0.30, s * 0.64, s * 0.52), s * 0.09, s * 0.09);
+        QColor mark = PixelTheme::kBackground;
+        mark.setAlpha(210);
+        p.setBrush(mark);
+        p.drawRoundedRect(QRectF(s * 0.28, s * 0.43, s * 0.44, s * 0.07), s * 0.03, s * 0.03);
+        p.drawRoundedRect(QRectF(s * 0.28, s * 0.58, s * 0.30, s * 0.07), s * 0.03, s * 0.03);
+        p.end();
+        QIcon result(pm);
+        cache.insert(key, result);
+        return result;
+    }
+
+    if (kind == PixelIcon::GenericApp) {
+        // Isometric faceted cube used as the fallback application mark
         p.setRenderHint(QPainter::Antialiasing, true);
         const qreal s = static_cast<qreal>(logicalSize);
         const QPointF top(s * 0.50, s * 0.10);

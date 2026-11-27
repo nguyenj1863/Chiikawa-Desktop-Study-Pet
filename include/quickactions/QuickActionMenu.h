@@ -141,7 +141,8 @@ public:
     [[nodiscard]] AnimatedQuickActionButton* spotifyButton() const { return findButtonById(QStringLiteral("builtin:spotify")); }
     [[nodiscard]] AnimatedQuickActionButton* discordButton() const { return findButtonById(QStringLiteral("builtin:discord")); }
     [[nodiscard]] AnimatedQuickActionButton* leagueButton() const { return findButtonById(QStringLiteral("builtin:league")); }
-    [[nodiscard]] AnimatedQuickActionButton* cursorButton() const { return findButtonById(QStringLiteral("builtin:cursor")); }
+    [[nodiscard]] AnimatedQuickActionButton* vscodeButton() const { return findButtonById(QStringLiteral("builtin:vscode")); }
+    [[nodiscard]] AnimatedQuickActionButton* studyButton() const { return findButtonById(QStringLiteral("builtin:study")); }
     [[nodiscard]] AnimatedQuickActionButton* settingsButton() const { return findButtonById(QStringLiteral("builtin:settings")); }
     [[nodiscard]] AnimatedQuickActionButton* exitButton() const { return findButtonById(QStringLiteral("builtin:exit")); }
     [[nodiscard]] const Layout& currentLayout() const { return m_layout; }
@@ -186,6 +187,7 @@ signals:
     void externalAppRequested(ExternalAppLauncher::AppId app);
     void spotifyRequested();
     void settingsRequested();
+    void studyRequested();
     void exitRequested();
     void revealed();
     void dismissed();

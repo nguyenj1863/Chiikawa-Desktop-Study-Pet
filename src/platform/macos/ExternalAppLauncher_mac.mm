@@ -22,8 +22,8 @@ NSArray<NSString*>* bundleIdsFor(ExternalAppLauncher::AppId app)
             @"com.riotgames.LeagueofLegends.GameClient",
             @"com.riotgames.RiotGames.RiotClient"
         ];
-    case ExternalAppLauncher::AppId::Cursor:
-        return @[@"com.todesktop.230313mzl4w4u92"];
+    case ExternalAppLauncher::AppId::VSCode:
+        return @[@"com.microsoft.VSCode"];
     case ExternalAppLauncher::AppId::Count:
         break;
     }
@@ -39,8 +39,8 @@ NSArray<NSString*>* fallbackAppPathsFor(ExternalAppLauncher::AppId app)
         return @[@"/Applications/Discord.app"];
     case ExternalAppLauncher::AppId::LeagueOfLegends:
         return @[@"/Applications/League of Legends.app", @"/Applications/Riot Client.app"];
-    case ExternalAppLauncher::AppId::Cursor:
-        return @[@"/Applications/Cursor.app"];
+    case ExternalAppLauncher::AppId::VSCode:
+        return @[@"/Applications/Visual Studio Code.app"];
     case ExternalAppLauncher::AppId::Count:
         break;
     }
@@ -115,6 +115,14 @@ bool launchInstalled(ExternalAppLauncher::AppId app)
                                               configuration:cfg
                                           completionHandler:nil];
         return true;
+    }
+}
+
+QString installedPath(ExternalAppLauncher::AppId app)
+{
+    @autoreleasepool {
+        NSURL* url = resolveAppUrl(app);
+        return url == nil ? QString() : QString::fromNSString([url path]);
     }
 }
 

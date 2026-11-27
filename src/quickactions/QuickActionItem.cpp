@@ -24,6 +24,7 @@ QString typeToString(QuickActionType type)
     case QuickActionType::CustomApp:  return QStringLiteral("custom_app");
     case QuickActionType::Settings:   return QStringLiteral("settings");
     case QuickActionType::Exit:       return QStringLiteral("exit");
+    case QuickActionType::Study:      return QStringLiteral("study");
     }
     return QStringLiteral("custom_app");
 }
@@ -34,6 +35,7 @@ bool stringToType(const QString& str, QuickActionType& out)
     if (str == QStringLiteral("custom_app"))  { out = QuickActionType::CustomApp;  return true; }
     if (str == QStringLiteral("settings"))    { out = QuickActionType::Settings;   return true; }
     if (str == QStringLiteral("exit"))        { out = QuickActionType::Exit;       return true; }
+    if (str == QStringLiteral("study"))       { out = QuickActionType::Study;      return true; }
     return false;
 }
 
@@ -62,8 +64,10 @@ QVector<QuickActionItem> QuickActionItem::defaultShortcuts()
          QuickActionType::BuiltInApp, QStringLiteral("discord"), {}, true},
         {QStringLiteral("builtin:league"),   QStringLiteral("League of Legends"),
          QuickActionType::BuiltInApp, QStringLiteral("league"),  {}, true},
-        {QStringLiteral("builtin:cursor"),   QStringLiteral("Cursor"),
-         QuickActionType::BuiltInApp, QStringLiteral("cursor"),  {}, true},
+        {QStringLiteral("builtin:vscode"),   QStringLiteral("Visual Studio Code"),
+         QuickActionType::BuiltInApp, QStringLiteral("vscode"),  {}, true},
+        {QStringLiteral("builtin:study"),    QStringLiteral("Study"),
+         QuickActionType::Study,      {},                        {}, true},
         {QStringLiteral("builtin:settings"), QStringLiteral("Settings"),
          QuickActionType::Settings,   {},                        {}, true},
         {QStringLiteral("builtin:exit"),     QStringLiteral("Exit"),
@@ -129,6 +133,57 @@ QVector<QuickActionItem> QuickActionItem::fromJsonArray(const QJsonArray& array,
     return sanitized;
 }
 
+bool QuickActionItem::migrateStoredList(QJsonArray& array, int fromVersion)
+{
+    if (fromVersion >= kStoredVersion) {
+        return false;
+    }
+    bool changed = false;
+    bool hasStudy = false;
+    qsizetype settingsIndex = -1;
+    int enabledCount = 0;
+
+    for (qsizetype i = 0; i < array.size(); ++i) {
+        QJsonObject obj = array.at(i).toObject();
+        const QString type = obj.value(QStringLiteral("type")).toString();
+        if (type == QStringLiteral("builtin_app")
+            && obj.value(QStringLiteral("appRef")).toString() == QStringLiteral("cursor")) {
+            obj.insert(QStringLiteral("id"), QStringLiteral("builtin:vscode"));
+            obj.insert(QStringLiteral("appRef"), QStringLiteral("vscode"));
+            // Only the stock name changes; a name the user chose for the shortcut is kept.
+            if (obj.value(QStringLiteral("name")).toString().trimmed() == QStringLiteral("Cursor")) {
+                obj.insert(QStringLiteral("name"), QStringLiteral("Visual Studio Code"));
+            }
+            array.replace(i, obj);
+            changed = true;
+        }
+        if (type == QStringLiteral("study")) {
+            hasStudy = true;
+        }
+        if (type == QStringLiteral("settings") && settingsIndex < 0) {
+            settingsIndex = i;
+        }
+        if (obj.value(QStringLiteral("enabled")).toBool(true)) {
+            ++enabledCount;
+        }
+    }
+
+    if (!hasStudy && array.size() < kMaxConfiguredShortcuts) {
+        QJsonObject study;
+        study.insert(QStringLiteral("id"), QStringLiteral("builtin:study"));
+        study.insert(QStringLiteral("name"), QStringLiteral("Study"));
+        study.insert(QStringLiteral("type"), QStringLiteral("study"));
+        study.insert(QStringLiteral("appRef"), QString());
+        study.insert(QStringLiteral("icon"), QString());
+        // The radial menu shows at most 10 shortcuts; never push another one out silently.
+        study.insert(QStringLiteral("enabled"), enabledCount < kMaxVisibleRadialShortcuts);
+        const qsizetype at = settingsIndex >= 0 ? settingsIndex : array.size();
+        array.insert(at, study);
+        changed = true;
+    }
+    return changed;
+}
+
 QVector<QuickActionItem> QuickActionItem::sanitizeList(const QVector<QuickActionItem>& items)
 {
     QVector<QuickActionItem> result;
@@ -157,11 +212,16 @@ QVector<QuickActionItem> QuickActionItem::sanitizeList(const QVector<QuickAction
             if (item.displayName.isEmpty()) {
                 item.displayName = QStringLiteral("Exit");
             }
+        } else if (item.type == QuickActionType::Study) {
+            item.applicationReference.clear();
+            if (item.displayName.isEmpty()) {
+                item.displayName = QStringLiteral("Study");
+            }
         } else if (item.type == QuickActionType::BuiltInApp) {
             if (item.applicationReference != QStringLiteral("spotify")
                 && item.applicationReference != QStringLiteral("discord")
                 && item.applicationReference != QStringLiteral("league")
-                && item.applicationReference != QStringLiteral("cursor")) {
+                && item.applicationReference != QStringLiteral("vscode")) {
                 continue;
             }
             if (item.displayName.isEmpty()) {
@@ -250,9 +310,20 @@ QIcon QuickActionItem::resolveIcon(const QuickActionItem& item, int logicalSize)
         if (item.applicationReference == QStringLiteral("league")) {
             return PixelTheme::icon(PixelIcon::LeagueOfLegends, QColor(0xC8, 0xAA, 0x6E), logicalSize);
         }
-        if (item.applicationReference == QStringLiteral("cursor")) {
-            return PixelTheme::icon(PixelIcon::Cursor, QColor(0xE4, 0xE8, 0xF0), logicalSize);
+        if (item.applicationReference == QStringLiteral("vscode")) {
+            // Prefer the installed application's own icon; fall back to a generic code mark.
+            const QString exe = ExternalAppLauncher::installedAppPath(ExternalAppLauncher::AppId::VSCode);
+            if (!exe.isEmpty()) {
+                const QIcon native = ExternalAppLauncher::extractAppIcon(exe);
+                if (!native.isNull()) {
+                    return native;
+                }
+            }
+            return PixelTheme::icon(PixelIcon::Code, QColor(0x4D, 0xA3, 0xFF), logicalSize);
         }
+    }
+    if (item.type == QuickActionType::Study) {
+        return PixelTheme::icon(PixelIcon::Study, PixelTheme::kPrimaryAccent, logicalSize);
     }
     if (item.type == QuickActionType::Settings) {
         return PixelTheme::icon(PixelIcon::Gear, PixelTheme::kPrimaryText, logicalSize);
@@ -270,5 +341,5 @@ QIcon QuickActionItem::resolveIcon(const QuickActionItem& item, int logicalSize)
     }
 
     // 4. Generic fallback icon
-    return PixelTheme::icon(PixelIcon::Cursor, PixelTheme::kPrimaryText, logicalSize);
+    return PixelTheme::icon(PixelIcon::GenericApp, PixelTheme::kPrimaryText, logicalSize);
 }
