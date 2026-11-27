@@ -274,6 +274,37 @@ private slots:
         }
     }
 
+    void hoveringAnIconShowsItsNameInsideTheOverlay()
+    {
+        QuickActionMenu menu;
+        menu.setNativeOutsideObserverEnabled(false);
+        menu.setReducedMotionOverride(1);
+        menu.setAutoHideDurationMs(60000);
+        menu.showMenu(QRect(400, 300, 120, 120), QRect(15, 15, 90, 90));
+        QCOMPARE(menu.state(), QuickActionMenu::State::Open);
+        QVERIFY(menu.nameLabelText().isEmpty());
+
+        const QStringList expected = {QStringLiteral("Spotify"), QStringLiteral("Discord"),
+                                      QStringLiteral("League of Legends"), QStringLiteral("Visual Studio Code"),
+                                      QStringLiteral("Study"), QStringLiteral("Settings"), QStringLiteral("Exit")};
+        QCOMPARE(menu.actionCount(), static_cast<int>(expected.size()));
+        for (int i = 0; i < menu.actionCount(); ++i) {
+            menu.setHoveredIndex(i);
+            QCOMPARE(menu.nameLabelText(), expected.at(i));
+            const QRect label = menu.nameLabelGeometry();
+            QVERIFY(!label.isEmpty());
+            QVERIFY2(QRect(QPoint(0, 0), menu.size()).contains(label), qPrintable(expected.at(i)));
+        }
+        menu.setHoveredIndex(-1);
+        QVERIFY(menu.nameLabelText().isEmpty());
+
+        // Leaving the menu or closing it never leaves a stale name behind.
+        menu.setHoveredIndex(4);
+        QVERIFY(!menu.nameLabelText().isEmpty());
+        menu.hideImmediately();
+        QVERIFY(menu.nameLabelText().isEmpty());
+    }
+
     void circularEntranceReverseDismissalAndHoverCancel()
     {
         QuickActionMenu menu;

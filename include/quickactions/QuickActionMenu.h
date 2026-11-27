@@ -142,6 +142,9 @@ public:
     [[nodiscard]] AnimatedQuickActionButton* discordButton() const { return findButtonById(QStringLiteral("builtin:discord")); }
     [[nodiscard]] AnimatedQuickActionButton* leagueButton() const { return findButtonById(QStringLiteral("builtin:league")); }
     [[nodiscard]] AnimatedQuickActionButton* vscodeButton() const { return findButtonById(QStringLiteral("builtin:vscode")); }
+    /** Text of the hover name label, empty while hidden. */
+    [[nodiscard]] QString nameLabelText() const;
+    [[nodiscard]] QRect nameLabelGeometry() const;
     [[nodiscard]] AnimatedQuickActionButton* studyButton() const { return findButtonById(QStringLiteral("builtin:study")); }
     [[nodiscard]] AnimatedQuickActionButton* settingsButton() const { return findButtonById(QStringLiteral("builtin:settings")); }
     [[nodiscard]] AnimatedQuickActionButton* exitButton() const { return findButtonById(QStringLiteral("builtin:exit")); }
@@ -210,6 +213,7 @@ private:
     void setActiveFlag(bool active);
     void applyDefaultStackOrder();
     void syncOutwardDirection();
+    void updateNameLabel();
     void startRevealForIndex(int index);
     void applyIconProgress(int index, qreal t) const;
     void applyAllIconProgress() const;
@@ -228,6 +232,7 @@ private:
     QVector<qreal> m_progress;
 
     QVariantAnimation* m_retargetAnim = nullptr;
+    QLabel* m_nameLabel = nullptr;   // app name shown beside the hovered icon
     QTimer m_autoHideTimer;
     QElapsedTimer m_openedClock;
 

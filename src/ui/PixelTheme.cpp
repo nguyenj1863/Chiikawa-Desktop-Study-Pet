@@ -573,25 +573,45 @@ QIcon icon(PixelIcon kind, const QColor& color, int logicalSize)
     }
 
     if (kind == PixelIcon::Study) {
-        // Two stacked flashcards: a tilted card behind, a front card with text lines.
+        // A nerd face: round yellow face, big glasses, a small smile with buck teeth. The tint only
+        // decides whether the face is drawn in its resting or brighter hover shade.
         p.setRenderHint(QPainter::Antialiasing, true);
         const qreal s = static_cast<qreal>(logicalSize);
+        const bool hover = color == PixelTheme::kPrimaryAccentHover;
+        const QColor face = hover ? QColor(0xFF, 0xE0, 0x66) : QColor(0xFF, 0xCF, 0x3D);
+        const QColor outline(0x8A, 0x5A, 0x00);
+        const QColor ink(0x3A, 0x26, 0x00);
+
+        p.setPen(QPen(outline, std::max<qreal>(1.0, s * 0.045)));
+        p.setBrush(face);
+        p.drawEllipse(QPointF(s * 0.5, s * 0.5), s * 0.44, s * 0.44);
+
+        // Glasses: two lenses joined by a bridge, with the pupils inside.
+        const qreal lensR = s * 0.165;
+        const QPointF leftLens(s * 0.33, s * 0.43);
+        const QPointF rightLens(s * 0.67, s * 0.43);
+        p.setPen(QPen(ink, std::max<qreal>(1.2, s * 0.06), Qt::SolidLine, Qt::RoundCap));
+        p.drawLine(QPointF(leftLens.x() + lensR, leftLens.y() - s * 0.01),
+                   QPointF(rightLens.x() - lensR, rightLens.y() - s * 0.01));
+        p.setBrush(QColor(255, 255, 255, 245));
+        p.drawEllipse(leftLens, lensR, lensR);
+        p.drawEllipse(rightLens, lensR, lensR);
         p.setPen(Qt::NoPen);
-        QColor back = color;
-        back.setAlpha(120);
-        p.save();
-        p.translate(s * 0.52, s * 0.46);
-        p.rotate(-10.0);
-        p.setBrush(back);
-        p.drawRoundedRect(QRectF(-s * 0.32, -s * 0.30, s * 0.64, s * 0.52), s * 0.09, s * 0.09);
-        p.restore();
-        p.setBrush(color);
-        p.drawRoundedRect(QRectF(s * 0.18, s * 0.30, s * 0.64, s * 0.52), s * 0.09, s * 0.09);
-        QColor mark = PixelTheme::kBackground;
-        mark.setAlpha(210);
-        p.setBrush(mark);
-        p.drawRoundedRect(QRectF(s * 0.28, s * 0.43, s * 0.44, s * 0.07), s * 0.03, s * 0.03);
-        p.drawRoundedRect(QRectF(s * 0.28, s * 0.58, s * 0.30, s * 0.07), s * 0.03, s * 0.03);
+        p.setBrush(ink);
+        p.drawEllipse(QPointF(leftLens.x() + s * 0.02, leftLens.y() + s * 0.01), s * 0.05, s * 0.05);
+        p.drawEllipse(QPointF(rightLens.x() + s * 0.02, rightLens.y() + s * 0.01), s * 0.05, s * 0.05);
+
+        // Smile with two buck teeth.
+        p.setPen(QPen(ink, std::max<qreal>(1.1, s * 0.05), Qt::SolidLine, Qt::RoundCap));
+        p.setBrush(Qt::NoBrush);
+        QPainterPath smile;
+        smile.moveTo(s * 0.34, s * 0.69);
+        smile.quadTo(s * 0.5, s * 0.82, s * 0.66, s * 0.69);
+        p.drawPath(smile);
+        p.setPen(QPen(ink, std::max<qreal>(0.8, s * 0.025)));
+        p.setBrush(Qt::white);
+        p.drawRoundedRect(QRectF(s * 0.44, s * 0.735, s * 0.06, s * 0.085), s * 0.012, s * 0.012);
+        p.drawRoundedRect(QRectF(s * 0.50, s * 0.735, s * 0.06, s * 0.085), s * 0.012, s * 0.012);
         p.end();
         QIcon result(pm);
         cache.insert(key, result);

@@ -25,7 +25,6 @@
 #include <QPushButton>
 #include <QScreen>
 #include <QSignalBlocker>
-#include <QToolTip>
 #include <QVBoxLayout>
 #include <QVariantAnimation>
 #include <algorithm>
@@ -292,6 +291,17 @@ QuickActionMenu::QuickActionMenu(QWidget* parent)
     setWindowFlag(Qt::WindowDoesNotAcceptFocus, true);
     setMouseTracking(true);
 
+    // The system tooltip window can sit behind this always-on-top overlay, so the name is drawn here.
+    m_nameLabel = new QLabel(this);
+    m_nameLabel->setObjectName(QStringLiteral("quickActionName"));
+    m_nameLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    m_nameLabel->setAttribute(Qt::WA_StyledBackground, true);
+    m_nameLabel->setStyleSheet(QStringLiteral(
+        "QLabel#quickActionName { background: rgba(10, 12, 16, 228); color: #F3F6FC;"
+        " border: 1px solid rgba(255, 255, 255, 40); border-radius: 8px; padding: 3px 9px;"
+        " font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif; font-size: 12px; font-weight: 600; }"));
+    m_nameLabel->hide();
+
     m_retargetAnim = new QVariantAnimation(this);
     m_retargetAnim->setDuration(kRetargetMs);
     m_retargetAnim->setEasingCurve(QEasingCurve::OutCubic);
@@ -389,6 +399,9 @@ void QuickActionMenu::rebuildActionWidgets()
     m_hoveredIndex = -1;
     m_pressedIndex = -1;
     unsetCursor();
+    if (m_nameLabel) {
+        m_nameLabel->hide();
+    }
 
     for (auto* t : m_staggerTimers) {
         if (t) { t->stop(); t->deleteLater(); }
@@ -796,6 +809,47 @@ void QuickActionMenu::setHoveredIndex(int index)
     } else {
         unsetCursor();
     }
+    updateNameLabel();
+}
+
+void QuickActionMenu::updateNameLabel()
+{
+    if (!m_nameLabel) {
+        return;
+    }
+    if (m_hoveredIndex < 0 || m_hoveredIndex >= actionCount() || m_hoveredIndex >= m_shortcuts.size()
+        || (m_state != State::Open && m_state != State::Opening)) {
+        m_nameLabel->hide();
+        return;
+    }
+    const QuickActionItem& item = m_shortcuts[m_hoveredIndex];
+    m_nameLabel->setText(item.displayName.isEmpty() ? item.applicationReference : item.displayName);
+    m_nameLabel->adjustSize();
+
+    // Above the icon when there is room, otherwise below; always kept inside the overlay.
+    const QRectF icon = restingVisualRect(m_hoveredIndex).translated(m_buttons[m_hoveredIndex]->hoverOffset());
+    const int w = m_nameLabel->width();
+    const int h = m_nameLabel->height();
+    int x = static_cast<int>(icon.center().x()) - w / 2;
+    int y = static_cast<int>(icon.top()) - h - 3;
+    if (y < 0) {
+        y = static_cast<int>(icon.bottom()) + 3;
+    }
+    x = std::clamp(x, 0, std::max(0, width() - w));
+    y = std::clamp(y, 0, std::max(0, height() - h));
+    m_nameLabel->move(x, y);
+    m_nameLabel->raise();
+    m_nameLabel->show();
+}
+
+QString QuickActionMenu::nameLabelText() const
+{
+    return m_nameLabel && !m_nameLabel->isHidden() ? m_nameLabel->text() : QString();
+}
+
+QRect QuickActionMenu::nameLabelGeometry() const
+{
+    return m_nameLabel && !m_nameLabel->isHidden() ? m_nameLabel->geometry() : QRect();
 }
 
 void QuickActionMenu::setReducedMotionOverride(int overrideMode)
@@ -1166,6 +1220,9 @@ void QuickActionMenu::finishDismissal()
     m_hoveredIndex = -1;
     m_pressedIndex = -1;
     unsetCursor();
+    if (m_nameLabel) {
+        m_nameLabel->hide();
+    }
 
     for (int i = 0; i < actionCount(); ++i) {
         m_pathAnims[i]->stop();
@@ -1266,14 +1323,7 @@ void QuickActionMenu::triggerAction(int index)
 bool QuickActionMenu::event(QEvent* event)
 {
     if (event->type() == QEvent::ToolTip) {
-        const auto* helpEvent = static_cast<QHelpEvent*>(event);
-        const int idx = hitTestButton(helpEvent->pos());
-        if (idx >= 0 && idx < actionCount() && m_buttons[idx]) {
-            QToolTip::showText(helpEvent->globalPos(), m_buttons[idx]->toolTip(), this);
-        } else {
-            QToolTip::hideText();
-            event->ignore();
-        }
+        event->ignore();   // the hovered icon's name is drawn by the menu itself (see updateNameLabel)
         return true;
     }
     return QWidget::event(event);
