@@ -28,6 +28,13 @@ class AppLaunchNoticePopup;
 class QuestionScheduler;
 class QuizController;
 class QuizPopup;
+class StudyLibrary;
+class OllamaClient;
+class QuestionGenerator;
+class ProgressTracker;
+class WrittenAnswerEvaluator;
+class StudyQuestionProvider;
+class StudyLibraryWindow;
 
 #include "pet/AnimationManager.h"
 #include "platform/DesktopLayerHelper.h"
@@ -59,8 +66,19 @@ public:
     /** True when a scheduled trivia check-in may appear without interrupting anything. */
     [[nodiscard]] bool canShowTriviaCheckIn() const;
 
-    /** Shows a trivia question now (Settings "Ask Me a Question"); ignored if one is already open. */
+    /** Shows a question now (Settings "Ask Me a Question"); ignored if one is already open. */
     void askTriviaNow();
+
+    /** Opens the Study Library window beside the pet. */
+    void openStudyLibrary();
+
+    // Lock-In Trivia study stack, created on first use (nullptr before that).
+    [[nodiscard]] StudyLibrary* studyLibrary() const { return m_studyLibrary.get(); }
+    [[nodiscard]] StudyLibraryWindow* studyLibraryWindow() const { return m_libraryWindow.get(); }
+    [[nodiscard]] OllamaClient* ollamaClient() const { return m_ollama.get(); }
+    [[nodiscard]] QuestionGenerator* questionGenerator() const { return m_generator.get(); }
+    [[nodiscard]] ProgressTracker* progressTracker() const { return m_progressTracker.get(); }
+    [[nodiscard]] WrittenAnswerEvaluator* writtenEvaluator() const { return m_writtenEvaluator.get(); }
 
     void setExternalAppLauncher(std::unique_ptr<ExternalAppLauncher> launcher);
 
@@ -128,6 +146,13 @@ private:
     void playCompletionFeedback();
     void setupTrivia();
     void updateTriviaScheduling();
+    /** Creates the study stack (database, ingestion thread, local AI client) if not created yet. */
+    void ensureStudy();
+    /** Points the controller at study questions or general trivia, per the current settings. */
+    void applyStudyPreferences();
+    void refreshStudyProgress();
+    void refreshStudyCourses();
+    void showNoStudyQuestionsNotice();
 
     std::unique_ptr<AppSettings> m_settings;
     std::unique_ptr<StudyTimer> m_timer;
@@ -147,10 +172,18 @@ private:
     std::unique_ptr<QuickActionMenu> m_quickActionMenu;
     std::unique_ptr<AppLaunchNoticePopup> m_appNotice;
     std::unique_ptr<ExternalAppLauncher> m_appLauncher;
-    // Destroyed in reverse order: popup, then scheduler, then controller.
+    // Destroyed in reverse order: library window, popup, scheduler, controller, then the study stack
+    // the controller and windows point into.
+    std::unique_ptr<StudyLibrary> m_studyLibrary;
+    std::unique_ptr<OllamaClient> m_ollama;
+    std::unique_ptr<ProgressTracker> m_progressTracker;
+    std::unique_ptr<QuestionGenerator> m_generator;
+    std::unique_ptr<WrittenAnswerEvaluator> m_writtenEvaluator;
+    StudyQuestionProvider* m_studyProvider = nullptr;   // owned by m_quizController
     std::unique_ptr<QuizController> m_quizController;
     std::unique_ptr<QuestionScheduler> m_questionScheduler;
     std::unique_ptr<QuizPopup> m_quizPopup;
+    std::unique_ptr<StudyLibraryWindow> m_libraryWindow;
     DesktopLayerHelper m_desktopLayer;
 
     QTimer m_snoozeBubbleTimer;

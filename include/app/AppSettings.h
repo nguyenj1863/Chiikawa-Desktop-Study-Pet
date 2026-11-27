@@ -143,6 +143,28 @@ public:
     [[nodiscard]] QStringList triviaRecentIds() const { return m_triviaRecentIds; }
     void setTriviaRecentIds(const QStringList& ids);
 
+    // Lock-In Trivia study preferences. Restore Defaults resets mode and formats but keeps
+    // the selected course, the model, and all Study Library data and progress.
+    [[nodiscard]] int studyMode() const { return m_studyMode; }
+    void setStudyMode(int mode);
+
+    [[nodiscard]] qint64 studyCourseId() const { return m_studyCourseId; }
+    void setStudyCourseId(qint64 id);
+
+    /** Bit mask of SettingsDefaults::kStudyFormat* values; never empty. */
+    [[nodiscard]] int studyFormats() const { return m_studyFormats; }
+    /** Ignores an empty mask so at least one format always stays enabled; returns whether it applied. */
+    bool setStudyFormats(int mask);
+
+    [[nodiscard]] int studyFormatMode() const { return m_studyFormatMode; }
+    void setStudyFormatMode(int mode);
+
+    [[nodiscard]] int studyFocusFormat() const { return m_studyFocusFormat; }
+    void setStudyFocusFormat(int format);
+
+    [[nodiscard]] QString studyModel() const { return m_studyModel; }
+    void setStudyModel(const QString& model);
+
 private:
     void clampValues();
 
@@ -180,4 +202,11 @@ private:
     int m_triviaTotalPoints = 0;
     int m_triviaAnsweredCount = 0;
     QStringList m_triviaRecentIds;
+
+    int m_studyMode = SettingsDefaults::kStudyMode;
+    qint64 m_studyCourseId = 0;
+    int m_studyFormats = SettingsDefaults::kStudyFormatsMask;
+    int m_studyFormatMode = SettingsDefaults::kStudyFormatMode;
+    int m_studyFocusFormat = SettingsDefaults::kStudyFocusFormat;
+    QString m_studyModel = SettingsDefaults::defaultStudyModel();
 };

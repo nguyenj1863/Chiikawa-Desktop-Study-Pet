@@ -21,6 +21,14 @@
 #include "trivia/QuizController.h"
 #include "trivia/QuizPopup.h"
 #include "trivia/TriviaQuestionProvider.h"
+#include "ai/OllamaClient.h"
+#include "app/SettingsDefaults.h"
+#include "study/ProgressTracker.h"
+#include "study/QuestionGenerator.h"
+#include "study/QuestionSelector.h"
+#include "study/StudyLibrary.h"
+#include "study/WrittenAnswerEvaluator.h"
+#include "ui/StudyLibraryWindow.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -431,6 +439,11 @@ void PetWindow::applySettings()
         m_alarmNotification->setSnoozeMinutes(m_settings->snoozeMinutes());
     }
     updateTriviaScheduling();
+    applyStudyPreferences();
+    if (m_ollama && m_ollama->model() != m_settings->studyModel()) {
+        m_ollama->setModel(m_settings->studyModel());
+        m_generator->setModelName(m_ollama->model());
+    }
 
     const bool wantDesktopOnly = m_settings->desktopOnlyMode();
     if (!m_desktopLayerInitialized || m_appliedDesktopOnlyMode != wantDesktopOnly) {
@@ -587,6 +600,19 @@ void PetWindow::exitApplication()
     }
     if (m_quizPopup) {
         m_quizPopup->hide();
+    }
+    if (m_libraryWindow) {
+        m_libraryWindow->hide();
+    }
+    if (m_generator) {
+        m_generator->cancel();
+    }
+    if (m_studyLibrary) {
+        m_studyLibrary->cancelAll();
+    }
+    if (m_ollama) {
+        m_ollama->cancelAll();
+        m_ollama->cancelPull();
     }
     if (m_quickActionMenu) {
         m_quickActionMenu->hideImmediately();
@@ -845,7 +871,11 @@ void PetWindow::setupTrivia()
     m_quizPopup = std::make_unique<QuizPopup>(nullptr);
 
     connect(m_questionScheduler.get(), &QuestionScheduler::questionDue, this, [this]() {
-        m_quizController->ask();
+        if (m_settings->studyMode() == SettingsDefaults::kStudyModeDocuments) {
+            ensureStudy();
+        }
+        applyStudyPreferences();
+        m_quizController->ask();   // silently nothing when no questions are available yet
     });
     connect(m_quizController.get(), &QuizController::questionReady, this, [this](const Question& question) {
         if (m_bubble && m_bubble->isVisible()) {
@@ -870,6 +900,36 @@ void PetWindow::setupTrivia()
         m_quizPopup->showResult(result, question ? question->explanation : QString());
     });
     connect(m_quizPopup.get(), &QuizPopup::skipRequested, m_quizController.get(), &QuizController::skip);
+    connect(m_quizPopup.get(), &QuizPopup::choiceSubmitted, this, [this](const QString& optionId) {
+        m_quizController->submitChoice(optionId);
+    });
+    connect(m_quizPopup.get(), &QuizPopup::selectionSubmitted, this, [this](const QStringList& optionIds) {
+        m_quizController->submitSelection(QSet<QString>(optionIds.cbegin(), optionIds.cend()));
+    });
+    connect(m_quizPopup.get(), &QuizPopup::writtenSubmitted, this, [this](const QString& answer, bool allowSuggestion) {
+        if (m_quizController->submitWritten(answer, allowSuggestion) == QuizController::WrittenStep::Judging) {
+            m_quizPopup->showJudging();
+        }
+    });
+    connect(m_quizPopup.get(), &QuizPopup::revealRequested, this, [this]() {
+        if (m_quizController->reveal()) {
+            m_quizPopup->showReveal();
+        }
+    });
+    connect(m_quizPopup.get(), &QuizPopup::selfAssessed, this, [this](int rating) {
+        m_quizController->selfAssess(static_cast<SelfRating>(rating));
+    });
+    connect(m_quizPopup.get(), &QuizPopup::postponeRequested, this, [this]() {
+        // No penalty: close this question and ask again in a few minutes.
+        m_quizController->skip();
+        m_questionScheduler->postpone(std::chrono::minutes(5));
+    });
+    connect(m_quizPopup.get(), &QuizPopup::noticeActionTriggered, this, &PetWindow::openStudyLibrary);
+    connect(m_quizController.get(), &QuizController::evaluationReady, this, [this](const Evaluation& evaluation, int xp) {
+        m_quizPopup->showEvaluation(evaluation, xp);
+        refreshStudyProgress();
+    });
+    connect(m_quizController.get(), &QuizController::suggestionOffered, m_quizPopup.get(), &QuizPopup::showSuggestion);
     connect(m_quizPopup.get(), &QuizPopup::closed, this, [this]() {
         m_quizController->dismiss();
         if (m_movement) {
@@ -883,16 +943,175 @@ void PetWindow::setupTrivia()
     });
 
     connect(m_settingsPanel.get(), &SettingsPanel::triviaAskRequested, this, &PetWindow::askTriviaNow);
-    connect(m_settingsPanel.get(), &SettingsPanel::triviaProgressResetRequested,
-            m_quizController.get(), &QuizController::resetProgress);
+    connect(m_settingsPanel.get(), &SettingsPanel::triviaProgressResetRequested, this, [this]() {
+        m_quizController->resetProgress();
+        if (m_progressTracker) {
+            m_progressTracker->reset(0);
+        }
+        refreshStudyProgress();
+    });
+    connect(m_settingsPanel.get(), &SettingsPanel::studyLibraryRequested, this, &PetWindow::openStudyLibrary);
 
+    // Someone who already set up a course gets the study stack (and its course list) right away;
+    // everyone else only pays for it when they first use Lock-In Trivia.
+    if (m_settings->studyCourseId() > 0) {
+        ensureStudy();
+    }
+    applyStudyPreferences();
     updateTriviaScheduling();
 }
+
+void PetWindow::ensureStudy()
+{
+    if (m_studyLibrary) {
+        return;
+    }
+    m_studyLibrary = std::make_unique<StudyLibrary>();
+    m_ollama = std::make_unique<OllamaClient>();
+    m_ollama->setModel(m_settings->studyModel());
+    m_progressTracker = std::make_unique<ProgressTracker>(m_studyLibrary->database());
+    m_generator = std::make_unique<QuestionGenerator>(m_studyLibrary->database(), m_ollama.get());
+    m_generator->setModelName(m_ollama->model());
+    m_writtenEvaluator = std::make_unique<WrittenAnswerEvaluator>(m_ollama.get());
+
+    auto provider = std::make_unique<StudyQuestionProvider>(m_studyLibrary->database(), m_progressTracker.get());
+    m_studyProvider = provider.get();
+    m_quizController->addProvider(std::move(provider));
+    m_quizController->setProgressTracker(m_progressTracker.get());
+    m_quizController->setWrittenEvaluator(m_writtenEvaluator.get());
+
+    connect(m_studyLibrary.get(), &StudyLibrary::documentsChanged, this, &PetWindow::refreshStudyCourses);
+    refreshStudyCourses();
+    refreshStudyProgress();
+}
+
+void PetWindow::applyStudyPreferences()
+{
+    if (!m_quizController || !m_settings) {
+        return;
+    }
+    const bool trivia = m_settings->studyMode() == SettingsDefaults::kStudyModeTrivia;
+    m_quizController->setActiveProvider(trivia ? QStringLiteral("trivia") : QStringLiteral("study"));
+    if (trivia || !m_studyProvider) {
+        return;   // the study stack is configured when it is first created
+    }
+    SelectionPrefs prefs;
+    prefs.enabled.clear();
+    const int mask = m_settings->studyFormats();
+    if (mask & SettingsDefaults::kStudyFormatSingleChoice) {
+        prefs.enabled.append(QuestionType::SingleChoice);
+    }
+    if (mask & SettingsDefaults::kStudyFormatMultiSelect) {
+        prefs.enabled.append(QuestionType::MultiSelect);
+    }
+    if (mask & SettingsDefaults::kStudyFormatWritten) {
+        prefs.enabled.append(QuestionType::Written);
+    }
+    prefs.mode = m_settings->studyFormatMode() == SettingsDefaults::kStudyFormatModeFocus ? FormatMode::Focus
+                                                                                          : FormatMode::Mixed;
+    switch (m_settings->studyFocusFormat()) {
+    case SettingsDefaults::kStudyFormatMultiSelect:
+        prefs.focus = QuestionType::MultiSelect;
+        break;
+    case SettingsDefaults::kStudyFormatWritten:
+        prefs.focus = QuestionType::Written;
+        break;
+    default:
+        prefs.focus = QuestionType::SingleChoice;
+        break;
+    }
+    m_studyProvider->setCourse(m_settings->studyCourseId());
+    m_studyProvider->setPreferences(prefs);
+}
+
+void PetWindow::refreshStudyProgress()
+{
+    if (!m_progressTracker || !m_settingsPanel) {
+        return;
+    }
+    const StudyProgress p = m_progressTracker->progress(m_settings->studyCourseId());
+    const int answered = p.attempted + p.selfAssessed;
+    QString text = QStringLiteral("%1 XP · %2 answered").arg(p.totalXp()).arg(answered);
+    if (!p.reviewTopics.isEmpty()) {
+        text += QStringLiteral(" · %1 to review").arg(p.reviewTopics.size());
+    }
+    m_settingsPanel->setStudyProgressText(text);
+}
+
+void PetWindow::refreshStudyCourses()
+{
+    if (!m_studyLibrary || !m_settingsPanel) {
+        return;
+    }
+    const QVector<Course> courses = m_studyLibrary->database()->courses();
+    bool known = false;
+    for (const Course& c : courses) {
+        known = known || c.id == m_settings->studyCourseId();
+    }
+    if (!known) {
+        // The selected course was deleted: fall back to the first one (or none).
+        m_settings->setStudyCourseId(courses.isEmpty() ? 0 : courses.first().id);
+        m_settings->save();
+    }
+    m_settingsPanel->setStudyCourses(courses);
+    applyStudyPreferences();
+    refreshStudyProgress();
+}
+
+void PetWindow::showNoStudyQuestionsNotice()
+{
+    if (!m_quizPopup || !m_studyLibrary) {
+        return;
+    }
+    const qint64 course = m_settings->studyCourseId();
+    QString title;
+    QString body;
+    if (course <= 0) {
+        title = QStringLiteral("Your Study Library is empty");
+        body = QStringLiteral("Import lecture slides, PDFs, or notes and Chiikawa will quiz you on them, right on this computer.");
+    } else if (m_studyLibrary->database()->courseQuestions(course, {}).isEmpty()) {
+        title = QStringLiteral("No questions yet");
+        body = QStringLiteral("Import materials for this course and press Generate in the Study Library.");
+    } else {
+        title = QStringLiteral("No questions in your chosen formats");
+        body = QStringLiteral("Turn on more question formats, or generate questions in these formats.");
+    }
+    if (m_movement) {
+        m_movement->setPaused(MovementController::PauseReason::TriviaOpen, true);
+    }
+    m_quizPopup->showNotice(title, body, QStringLiteral("Open Study Library"), frameGeometry());
+}
+
+void PetWindow::openStudyLibrary()
+{
+    ensureStudy();
+    if (!m_libraryWindow) {
+        m_libraryWindow = std::make_unique<StudyLibraryWindow>(m_settings.get(), m_studyLibrary.get(), m_generator.get(),
+                                                               m_ollama.get(), m_progressTracker.get(), m_uiSound.get(),
+                                                               nullptr);
+        connect(m_libraryWindow.get(), &StudyLibraryWindow::courseChanged, this, [this](qint64) { refreshStudyCourses(); });
+        connect(m_libraryWindow.get(), &StudyLibraryWindow::preferencesChanged, this, [this]() {
+            if (m_ollama && m_ollama->model() != m_settings->studyModel()) {
+                m_ollama->setModel(m_settings->studyModel());
+            }
+            applyStudyPreferences();
+            refreshStudyProgress();
+        });
+    }
+    if (m_quizPopup && m_quizPopup->isVisible()) {
+        m_quizPopup->dismiss();
+    }
+    m_libraryWindow->showNear(frameGeometry());
+}
+
 
 void PetWindow::updateTriviaScheduling()
 {
     if (!m_questionScheduler || !m_settings || !m_timer) {
         return;
+    }
+    if (!m_settings->triviaEnabled()) {
+        m_questionScheduler->cancelPostponed();
     }
     const bool wanted = m_settings->triviaEnabled() && m_timer->isRunning();
     if (!wanted) {
@@ -922,7 +1141,7 @@ bool PetWindow::canShowTriviaCheckIn() const
         return false;
     }
     const auto visible = [](const QWidget* w) { return w && w->isVisible(); };
-    if (visible(m_settingsPanel.get()) || visible(m_onboardingWindow.get())
+    if (visible(m_settingsPanel.get()) || visible(m_onboardingWindow.get()) || visible(m_libraryWindow.get())
         || visible(m_alarmNotification.get()) || visible(m_completionToast.get())
         || visible(m_appNotice.get()) || visible(m_quickActionMenu.get())) {
         return false;
@@ -938,7 +1157,13 @@ void PetWindow::askTriviaNow()
     if (!isVisible()) {
         showPet();
     }
-    m_quizController->ask();
+    if (m_settings->studyMode() == SettingsDefaults::kStudyModeDocuments) {
+        ensureStudy();
+    }
+    applyStudyPreferences();
+    if (!m_quizController->ask() && m_settings->studyMode() == SettingsDefaults::kStudyModeDocuments) {
+        showNoStudyQuestionsNotice();
+    }
 }
 
 void PetWindow::playCompletionFeedback()

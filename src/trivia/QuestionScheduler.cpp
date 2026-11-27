@@ -9,6 +9,25 @@ QuestionScheduler::QuestionScheduler(QObject* parent)
     m_timer.setSingleShot(true);
     m_timer.setTimerType(Qt::CoarseTimer);
     connect(&m_timer, &QTimer::timeout, this, &QuestionScheduler::onTimeout);
+    m_postponed.setSingleShot(true);
+    m_postponed.setTimerType(Qt::CoarseTimer);
+    connect(&m_postponed, &QTimer::timeout, this, [this]() {
+        if (m_canAsk && !m_canAsk()) {
+            m_postponed.start(m_busyRetry);
+            return;
+        }
+        emit questionDue();
+    });
+}
+
+void QuestionScheduler::postpone(std::chrono::milliseconds delay)
+{
+    const auto clamped = std::max(delay, std::chrono::milliseconds(1));
+    if (m_running) {
+        m_timer.start(clamped);
+    } else {
+        m_postponed.start(clamped);
+    }
 }
 
 void QuestionScheduler::setBaseInterval(std::chrono::milliseconds interval)
@@ -36,6 +55,11 @@ void QuestionScheduler::stop()
 {
     m_running = false;
     m_timer.stop();
+}
+
+void QuestionScheduler::cancelPostponed()
+{
+    m_postponed.stop();
 }
 
 void QuestionScheduler::onTimeout()

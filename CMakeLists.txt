@@ -151,11 +151,13 @@ set(CHIIKAWA_UI_SOURCES
     src/ui/OnboardingWindow.cpp
     src/ui/PixelTheme.cpp
     src/ui/SettingsPanel.cpp
+    src/ui/StudyLibraryWindow.cpp
     include/ui/CollapsibleSection.h
     include/ui/OnboardingPreview.h
     include/ui/OnboardingWindow.h
     include/ui/PixelTheme.h
     include/ui/SettingsPanel.h
+    include/ui/StudyLibraryWindow.h
 )
 
 set(CHIIKAWA_PLATFORM_SOURCES
@@ -281,6 +283,7 @@ chiikawa_add_test(test_study_pipeline tests/test_study_pipeline.cpp tests/StudyT
 chiikawa_add_test(test_ollama_client tests/test_ollama_client.cpp)
 chiikawa_add_test(test_study_generation tests/test_study_generation.cpp tests/MockLlmClient.h)
 chiikawa_add_test(test_study_answers tests/test_study_answers.cpp tests/MockLlmClient.h)
+chiikawa_add_test(test_lock_in_ui tests/test_lock_in_ui.cpp tests/StudyTestUtils.h resources/resources.qrc)
 
 if(WIN32)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS

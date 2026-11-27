@@ -34,6 +34,15 @@ public:
     [[nodiscard]] bool isRunning() const { return m_running; }
     [[nodiscard]] int remainingMs() const { return m_timer.remainingTime(); }
 
+    /**
+     * Asks again after delay ("Later" on a question). While running, this replaces the
+     * next randomized check-in; when stopped, it fires once. Busy states still defer it.
+     */
+    void postpone(std::chrono::milliseconds delay);
+    [[nodiscard]] bool isPostponed() const { return m_postponed.isActive(); }
+    /** stop() leaves a postponed question pending; this cancels it (trivia disabled, app exit). */
+    void cancelPostponed();
+
     /** Randomized delay in [base * kMinJitter, base * kMaxJitter]. */
     [[nodiscard]] std::chrono::milliseconds nextDelay();
 
@@ -44,6 +53,7 @@ private:
     void onTimeout();
 
     QTimer m_timer;
+    QTimer m_postponed;
     QRandomGenerator m_rng;
     std::chrono::milliseconds m_base{15 * 60 * 1000};
     std::chrono::milliseconds m_busyRetry = kDefaultBusyRetry;

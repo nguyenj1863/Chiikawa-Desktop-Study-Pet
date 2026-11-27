@@ -1,6 +1,9 @@
 #include "trivia/QuizController.h"
 
 #include "app/AppSettings.h"
+#include "study/ChoiceEvaluators.h"
+#include "study/ProgressTracker.h"
+#include "study/WrittenAnswerEvaluator.h"
 #include "trivia/AnswerEvaluator.h"
 
 QuizController::QuizController(AppSettings* settings, QObject* parent)
@@ -9,14 +12,35 @@ QuizController::QuizController(AppSettings* settings, QObject* parent)
 {
     qRegisterMetaType<Question>();
     qRegisterMetaType<AnswerResult>();
+    qRegisterMetaType<Evaluation>();
 }
 
-QuizController::~QuizController() = default;
+QuizController::~QuizController()
+{
+    cancelJudging();
+}
 
 void QuizController::addProvider(std::unique_ptr<QuestionProvider> provider)
 {
     if (provider) {
         m_providers.push_back(std::move(provider));
+    }
+}
+
+void QuizController::setWrittenEvaluator(WrittenAnswerEvaluator* evaluator)
+{
+    if (m_written) {
+        disconnect(m_written, nullptr, this, nullptr);
+    }
+    m_written = evaluator;
+    if (m_written) {
+        connect(m_written, &WrittenAnswerEvaluator::judged, this, [this](int id, const Evaluation& evaluation) {
+            if (id != m_judgeId || m_state != State::Evaluating) {
+                return;
+            }
+            m_judgeId = 0;
+            record(evaluation);
+        });
     }
 }
 
@@ -27,6 +51,9 @@ bool QuizController::ask()
     }
     const QStringList recent = m_settings ? m_settings->triviaRecentIds() : QStringList();
     for (const auto& provider : m_providers) {
+        if (!m_activeProvider.isEmpty() && provider->id() != m_activeProvider) {
+            continue;
+        }
         std::optional<Question> q = provider->nextQuestion(recent);
         if (q && q->isValid()) {
             m_current = std::move(q);
@@ -42,7 +69,7 @@ bool QuizController::ask()
 
 AnswerResult QuizController::submit(const QString& answer)
 {
-    if (m_state != State::Asking || !m_current) {
+    if (m_state != State::Asking || !m_current || m_current->type != QuestionType::OpenTrivia) {
         return {};
     }
     AnswerResult result = AnswerEvaluator::evaluate(*m_current, answer, m_givenThisRound);
@@ -62,6 +89,77 @@ AnswerResult QuizController::submit(const QString& answer)
     emit answerEvaluated(result);
     emit progressChanged();
     return result;
+}
+
+Evaluation QuizController::record(const Evaluation& evaluation)
+{
+    const int xp = (m_tracker && m_current) ? m_tracker->record(*m_current, evaluation) : 0;
+    m_state = State::Answered;
+    emit evaluationReady(evaluation, xp);
+    emit progressChanged();
+    return evaluation;
+}
+
+Evaluation QuizController::submitChoice(const QString& optionId)
+{
+    if (m_state != State::Asking || !m_current || m_current->type != QuestionType::SingleChoice || optionId.isEmpty()) {
+        return {};
+    }
+    return record(SingleChoiceEvaluator::evaluate(*m_current, optionId));
+}
+
+Evaluation QuizController::submitSelection(const QSet<QString>& optionIds)
+{
+    if (m_state != State::Asking || !m_current || m_current->type != QuestionType::MultiSelect || optionIds.isEmpty()) {
+        return {};
+    }
+    return record(MultiSelectEvaluator::evaluate(*m_current, optionIds));
+}
+
+QuizController::WrittenStep QuizController::submitWritten(const QString& answer, bool allowSuggestion)
+{
+    if (m_state != State::Asking || !m_current || m_current->type != QuestionType::Written
+        || answer.trimmed().isEmpty()) {
+        return WrittenStep::Ignored;
+    }
+    const WrittenAnswerEvaluator::Precheck pre = WrittenAnswerEvaluator::precheck(*m_current, answer, allowSuggestion);
+    switch (pre.kind) {
+    case WrittenAnswerEvaluator::Precheck::Kind::Final:
+        record(pre.evaluation);
+        return WrittenStep::Final;
+    case WrittenAnswerEvaluator::Precheck::Kind::Suggest:
+        emit suggestionOffered(pre.suggestion);
+        return WrittenStep::Suggestion;
+    case WrittenAnswerEvaluator::Precheck::Kind::NeedsModel:
+        break;
+    }
+    if (!m_written) {
+        record(WrittenAnswerEvaluator::unavailableEvaluation(QStringLiteral("No local AI model is set up to check written answers.")));
+        return WrittenStep::Final;
+    }
+    m_state = State::Evaluating;
+    m_judgeId = m_written->judge(*m_current, answer);
+    emit judgingStarted();
+    return WrittenStep::Judging;
+}
+
+bool QuizController::reveal()
+{
+    if (!m_current || !m_current->isDocumentQuestion()
+        || (m_state != State::Asking && m_state != State::Evaluating)) {
+        return false;
+    }
+    cancelJudging();
+    m_state = State::Revealed;
+    return true;
+}
+
+Evaluation QuizController::selfAssess(SelfRating rating)
+{
+    if (m_state != State::Revealed || !m_current) {
+        return {};
+    }
+    return record(StudyEval::selfAssessment(rating));
 }
 
 void QuizController::skip()
@@ -116,8 +214,17 @@ void QuizController::rememberAsked(const QString& id)
     m_settings->save();
 }
 
+void QuizController::cancelJudging()
+{
+    if (m_judgeId != 0 && m_written) {
+        m_written->cancel(m_judgeId);
+    }
+    m_judgeId = 0;
+}
+
 void QuizController::finish()
 {
+    cancelJudging();
     m_state = State::Idle;
     m_current.reset();
     m_givenThisRound.clear();

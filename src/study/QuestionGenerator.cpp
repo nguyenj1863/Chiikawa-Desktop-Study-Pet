@@ -24,7 +24,8 @@ const char* const kSystemPrompt =
     "needed to answer. Write the question like a normal exam question: ask it directly and do not "
     "mention \"the passage\" or \"the text\", and never list the answer options inside the question. "
     "Write \"explanation\" to the student in 1-2 sentences, explaining why the answer is right; "
-    "do not describe the question itself. Reply with JSON only.";
+    "do not describe the question itself. In \"explanation\" and \"why\", the student never sees the passage: "
+    "refer to it as \"your notes\" or state the fact directly. Reply with JSON only.";
 
 QByteArray stringProp(const char* name)
 {

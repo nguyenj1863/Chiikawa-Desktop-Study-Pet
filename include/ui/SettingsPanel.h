@@ -1,5 +1,7 @@
 #pragma once
 
+#include "study/StudyTypes.h"
+
 #include <QTime>
 #include <QWidget>
 
@@ -46,8 +48,13 @@ public:
     void syncFromTimer();
     void syncFromAlarm();
 
-    /** Refreshes the Trivia Check-Ins points/answered labels from AppSettings. */
+    /** Refreshes the Lock-In Trivia stats and section summary. */
     void refreshTriviaSummary();
+
+    /** Courses offered in "Questions from" (plus General trivia). */
+    void setStudyCourses(const QVector<Course>& courses);
+    /** Study progress line shown when questions come from the Study Library. */
+    void setStudyProgressText(const QString& text);
 
     /** Converts separate hour/minute/AM-PM selector values into a QTime. */
     [[nodiscard]] static QTime composeAlarmTime(int displayHour, int minute, bool isPm, bool use24Hour);
@@ -77,6 +84,7 @@ signals:
     void panelResized();
     void triviaAskRequested();
     void triviaProgressResetRequested();
+    void studyLibraryRequested();
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
@@ -167,9 +175,12 @@ private:
     QPushButton* m_snooze10Btn = nullptr;
     QPushButton* m_snooze15Btn = nullptr;
 
-    // Trivia Check-Ins (Collapsible, collapsed by default)
+    // Lock-In Trivia (Collapsible, collapsed by default)
     CollapsibleSection* m_triviaSection = nullptr;
     QCheckBox* m_triviaEnableCheck = nullptr;
+    QComboBox* m_studySourceCombo = nullptr;
+    QVector<Course> m_studyCourses;
+    QString m_studyProgressText;
     QComboBox* m_triviaFrequencyCombo = nullptr;
     QLabel* m_triviaStatsLabel = nullptr;
     QPushButton* m_triviaAskBtn = nullptr;

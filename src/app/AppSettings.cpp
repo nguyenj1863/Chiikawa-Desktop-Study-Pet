@@ -125,6 +125,12 @@ void AppSettings::load()
     m_triviaTotalPoints = settings.value(QStringLiteral("trivia/totalPoints"), 0).toInt();
     m_triviaAnsweredCount = settings.value(QStringLiteral("trivia/answeredCount"), 0).toInt();
     m_triviaRecentIds = settings.value(QStringLiteral("trivia/recentIds")).toStringList();
+    m_studyMode = settings.value(QStringLiteral("study/mode"), SettingsDefaults::kStudyMode).toInt();
+    m_studyCourseId = settings.value(QStringLiteral("study/courseId"), 0).toLongLong();
+    m_studyFormats = settings.value(QStringLiteral("study/formats"), SettingsDefaults::kStudyFormatsMask).toInt();
+    m_studyFormatMode = settings.value(QStringLiteral("study/formatMode"), SettingsDefaults::kStudyFormatMode).toInt();
+    m_studyFocusFormat = settings.value(QStringLiteral("study/focusFormat"), SettingsDefaults::kStudyFocusFormat).toInt();
+    m_studyModel = settings.value(QStringLiteral("study/model"), SettingsDefaults::defaultStudyModel()).toString();
 
     if (settings.contains(QStringLiteral("pet/posX")) && settings.contains(QStringLiteral("pet/posY"))) {
         m_lastPosition = QPoint(
@@ -181,6 +187,12 @@ void AppSettings::save() const
     settings.setValue(QStringLiteral("trivia/totalPoints"), m_triviaTotalPoints);
     settings.setValue(QStringLiteral("trivia/answeredCount"), m_triviaAnsweredCount);
     settings.setValue(QStringLiteral("trivia/recentIds"), m_triviaRecentIds);
+    settings.setValue(QStringLiteral("study/mode"), m_studyMode);
+    settings.setValue(QStringLiteral("study/courseId"), m_studyCourseId);
+    settings.setValue(QStringLiteral("study/formats"), m_studyFormats);
+    settings.setValue(QStringLiteral("study/formatMode"), m_studyFormatMode);
+    settings.setValue(QStringLiteral("study/focusFormat"), m_studyFocusFormat);
+    settings.setValue(QStringLiteral("study/model"), m_studyModel);
 
     if (m_hasSavedPosition) {
         settings.setValue(QStringLiteral("pet/posX"), m_lastPosition.x());
@@ -208,6 +220,10 @@ void AppSettings::restoreDefaults()
     m_alarmUse24Hour = SettingsDefaults::kAlarmUse24Hour;
     m_triviaEnabled = SettingsDefaults::kTriviaEnabled;
     m_triviaIntervalMinutes = SettingsDefaults::kTriviaIntervalMinutes;
+    m_studyMode = SettingsDefaults::kStudyMode;
+    m_studyFormats = SettingsDefaults::kStudyFormatsMask;
+    m_studyFormatMode = SettingsDefaults::kStudyFormatMode;
+    m_studyFocusFormat = SettingsDefaults::kStudyFocusFormat;
     clampValues();
     save();
 }
@@ -387,6 +403,43 @@ void AppSettings::setTriviaRecentIds(const QStringList& ids)
     m_triviaRecentIds = ids;
 }
 
+void AppSettings::setStudyMode(int mode)
+{
+    m_studyMode = mode == SettingsDefaults::kStudyModeTrivia ? SettingsDefaults::kStudyModeTrivia
+                                                            : SettingsDefaults::kStudyModeDocuments;
+}
+
+void AppSettings::setStudyCourseId(qint64 id)
+{
+    m_studyCourseId = std::max<qint64>(0, id);
+}
+
+bool AppSettings::setStudyFormats(int mask)
+{
+    if ((mask & SettingsDefaults::kStudyFormatsAll) == 0) {
+        return false;
+    }
+    m_studyFormats = mask & SettingsDefaults::kStudyFormatsAll;
+    return true;
+}
+
+void AppSettings::setStudyFormatMode(int mode)
+{
+    m_studyFormatMode = mode == SettingsDefaults::kStudyFormatModeFocus ? SettingsDefaults::kStudyFormatModeFocus
+                                                                       : SettingsDefaults::kStudyFormatModeMixed;
+}
+
+void AppSettings::setStudyFocusFormat(int format)
+{
+    m_studyFocusFormat = SettingsDefaults::clampStudyFocusFormat(format);
+}
+
+void AppSettings::setStudyModel(const QString& model)
+{
+    const QString trimmed = model.trimmed();
+    m_studyModel = trimmed.isEmpty() ? SettingsDefaults::defaultStudyModel() : trimmed;
+}
+
 void AppSettings::clampValues()
 {
     m_petSize = std::clamp(m_petSize, SettingsDefaults::kMinPetSize, SettingsDefaults::kMaxPetSize);
@@ -405,4 +458,10 @@ void AppSettings::clampValues()
     m_triviaIntervalMinutes = SettingsDefaults::clampTriviaIntervalMinutes(m_triviaIntervalMinutes);
     m_triviaTotalPoints = std::max(0, m_triviaTotalPoints);
     m_triviaAnsweredCount = std::max(0, m_triviaAnsweredCount);
+    setStudyMode(m_studyMode);
+    setStudyCourseId(m_studyCourseId);
+    m_studyFormats = SettingsDefaults::clampStudyFormats(m_studyFormats);
+    setStudyFormatMode(m_studyFormatMode);
+    setStudyFocusFormat(m_studyFocusFormat);
+    setStudyModel(m_studyModel);
 }

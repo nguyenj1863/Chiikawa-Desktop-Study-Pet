@@ -1,6 +1,7 @@
 #include "app/AppSettings.h"
 #include "app/SettingsDefaults.h"
 #include "pet/PetWindow.h"
+#include "study/StudyDatabase.h"
 #include "timer/StudyTimer.h"
 #include "ui/SettingsPanel.h"
 #include "trivia/AnswerEvaluator.h"
@@ -10,6 +11,7 @@
 #include "trivia/TriviaQuestionProvider.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
@@ -20,8 +22,15 @@
 #include <QTest>
 
 namespace {
+QString studyStorageDir()
+{
+    return QDir::tempPath() + QStringLiteral("/chiikawa-trivia-tests-%1").arg(QCoreApplication::applicationPid());
+}
+
 [[maybe_unused]] const bool kIsolatedSettingsStore = [] {
     AppSettings::setStorageScope(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPetTriviaTests"));
+    // PetWindow may open the Study Library; keep it out of the real app data folder.
+    StudyDatabase::setStorageDirectory(studyStorageDir());
     return true;
 }();
 
@@ -69,6 +78,7 @@ class TestTrivia : public QObject {
 private slots:
     void initTestCase();
     void cleanup();
+    void cleanupTestCase();
 
     void bundledQuestionsLoad();
     void parserSkipsMalformedAndDuplicateEntries();
@@ -122,6 +132,11 @@ void TestTrivia::initTestCase()
 void TestTrivia::cleanup()
 {
     clearSettings();
+}
+
+void TestTrivia::cleanupTestCase()
+{
+    QDir(studyStorageDir()).removeRecursively();
 }
 
 void TestTrivia::bundledQuestionsLoad()
@@ -684,6 +699,7 @@ void TestTrivia::petBlocksCheckInsWhileBusy()
     {
         AppSettings settings;
         settings.setOnboardingCompleted(true);
+        settings.setStudyMode(SettingsDefaults::kStudyModeTrivia);   // general trivia questions
         settings.save();
     }
     PetWindow pet;
@@ -720,6 +736,7 @@ void TestTrivia::petAskNowShowsPopupAndShutsDownSafely()
     {
         AppSettings settings;
         settings.setOnboardingCompleted(true);
+        settings.setStudyMode(SettingsDefaults::kStudyModeTrivia);   // general trivia questions
         settings.save();
     }
     auto pet = std::make_unique<PetWindow>();

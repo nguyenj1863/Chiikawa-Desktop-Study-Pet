@@ -61,6 +61,41 @@ inline int clampTriviaIntervalMinutes(int minutes)
     return best;
 }
 
+// Lock-In Trivia: study questions from the Study Library (default) or general trivia.
+inline constexpr int kStudyModeDocuments = 0;
+inline constexpr int kStudyModeTrivia = 1;
+inline constexpr int kStudyMode = kStudyModeDocuments;
+
+// Enabled question formats as bits: 1 = multiple choice, 2 = multiple select, 4 = written answer.
+inline constexpr int kStudyFormatSingleChoice = 0x1;
+inline constexpr int kStudyFormatMultiSelect = 0x2;
+inline constexpr int kStudyFormatWritten = 0x4;
+inline constexpr int kStudyFormatsAll = 0x7;
+inline constexpr int kStudyFormatsMask = kStudyFormatsAll;
+
+inline constexpr int kStudyFormatModeMixed = 0;
+inline constexpr int kStudyFormatModeFocus = 1;
+inline constexpr int kStudyFormatMode = kStudyFormatModeMixed;
+inline constexpr int kStudyFocusFormat = kStudyFormatSingleChoice;
+
+/** Keeps only known format bits; an empty set falls back to every format (at least one must be on). */
+inline int clampStudyFormats(int mask)
+{
+    const int known = mask & kStudyFormatsAll;
+    return known == 0 ? kStudyFormatsAll : known;
+}
+
+/** A single known format bit for Focus mode. */
+inline int clampStudyFocusFormat(int format)
+{
+    return (format == kStudyFormatMultiSelect || format == kStudyFormatWritten) ? format : kStudyFormatSingleChoice;
+}
+
+inline QString defaultStudyModel()
+{
+    return QStringLiteral("qwen3.5:4b-q4_K_M");
+}
+
 inline QString defaultAlarmSoundId()
 {
     return QStringLiteral("soft_chime");

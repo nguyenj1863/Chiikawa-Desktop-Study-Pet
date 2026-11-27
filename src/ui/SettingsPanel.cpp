@@ -767,9 +767,9 @@ void SettingsPanel::buildUi()
     root->addWidget(m_alarmSection);
 
     // =========================================================================
-    // SECTION: TRIVIA CHECK-INS (Collapsed by default, opt-in)
+    // SECTION: LOCK-IN TRIVIA (Collapsed by default, opt-in)
     // =========================================================================
-    m_triviaSection = new CollapsibleSection(QStringLiteral("Trivia Check-Ins"), false, m_contentWidget);
+    m_triviaSection = new CollapsibleSection(QStringLiteral("Lock-In Trivia"), false, m_contentWidget);
     m_triviaSection->setObjectName(QStringLiteral("triviaSection"));
     connect(m_triviaSection, &CollapsibleSection::userToggled, this, [this](bool) {
         playUiClick();
@@ -782,12 +782,28 @@ void SettingsPanel::buildUi()
     auto* triviaBody = new QVBoxLayout();
     triviaBody->setSpacing(4);
 
-    m_triviaEnableCheck = new PixelCheckBox(QStringLiteral("Ask trivia during study sessions"), m_contentWidget);
+    m_triviaEnableCheck = new PixelCheckBox(QStringLiteral("Ask questions during study sessions"), m_contentWidget);
     m_triviaEnableCheck->setObjectName(QStringLiteral("triviaEnableCheck"));
     m_triviaEnableCheck->setToolTip(QStringLiteral("Chiikawa occasionally asks a quick question while the study timer runs"));
     connect(m_triviaEnableCheck, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
     connect(m_triviaEnableCheck, &QCheckBox::clicked, this, [this](bool) { playUiClick(); });
     triviaBody->addWidget(m_triviaEnableCheck);
+
+    auto* sourceRow = new QHBoxLayout();
+    sourceRow->setSpacing(6);
+    auto* sourceLabel = new QLabel(QStringLiteral("Questions"), m_contentWidget);
+    m_studySourceCombo = new QComboBox(m_contentWidget);
+    m_studySourceCombo->setObjectName(QStringLiteral("studySourceCombo"));
+    m_studySourceCombo->setCursor(Qt::PointingHandCursor);
+    m_studySourceCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_studySourceCombo->setToolTip(QStringLiteral("Study a course from your Study Library, or play general trivia"));
+    configureTranslucentPopup(m_studySourceCombo);
+    connect(m_studySourceCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
+    connect(m_studySourceCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
+    sourceRow->addWidget(sourceLabel);
+    sourceRow->addWidget(m_studySourceCombo, 1);
+    triviaBody->addLayout(sourceRow);
+    setStudyCourses({});
 
     auto* frequencyRow = new QHBoxLayout();
     frequencyRow->setSpacing(6);
@@ -814,7 +830,7 @@ void SettingsPanel::buildUi()
     m_triviaAskBtn = new QPushButton(QStringLiteral("Ask Me a Question"), m_contentWidget);
     m_triviaAskBtn->setObjectName(QStringLiteral("primary"));
     m_triviaAskBtn->setCursor(Qt::PointingHandCursor);
-    m_triviaAskBtn->setToolTip(QStringLiteral("Show a trivia question now"));
+    m_triviaAskBtn->setToolTip(QStringLiteral("Show a question now"));
     connect(m_triviaAskBtn, &QPushButton::clicked, this, [this]() {
         playUiClick();
         emit triviaAskRequested();
@@ -823,6 +839,20 @@ void SettingsPanel::buildUi()
     triviaStatsRow->addWidget(m_triviaAskBtn);
     triviaBody->addLayout(triviaStatsRow);
 
+    auto* triviaButtonsRow = new QHBoxLayout();
+    triviaButtonsRow->setSpacing(6);
+    auto* libraryBtn = new QPushButton(
+        PixelTheme::icon(PixelIcon::Edit, PixelTheme::kSecondaryText, 12),
+        QStringLiteral(" Study Library"), m_contentWidget);
+    libraryBtn->setObjectName(QStringLiteral("subtle"));
+    libraryBtn->setProperty("actionId", QStringLiteral("openStudyLibrary"));
+    libraryBtn->setIconSize(QSize(12, 12));
+    libraryBtn->setCursor(Qt::PointingHandCursor);
+    libraryBtn->setToolTip(QStringLiteral("Import lecture slides, PDFs, and notes, and generate questions"));
+    connect(libraryBtn, &QPushButton::clicked, this, [this]() {
+        playUiClick();
+        emit studyLibraryRequested();
+    });
     auto* triviaResetBtn = new QPushButton(
         PixelTheme::icon(PixelIcon::Reset, PixelTheme::kSecondaryText, 12),
         QStringLiteral(" Reset Progress"), m_contentWidget);
@@ -830,9 +860,11 @@ void SettingsPanel::buildUi()
     triviaResetBtn->setProperty("actionId", QStringLiteral("triviaResetProgress"));
     triviaResetBtn->setIconSize(QSize(12, 12));
     triviaResetBtn->setCursor(Qt::PointingHandCursor);
-    triviaResetBtn->setToolTip(QStringLiteral("Clear trivia points and answered count"));
+    triviaResetBtn->setToolTip(QStringLiteral("Clear trivia points, study XP, and answer history"));
     connect(triviaResetBtn, &QPushButton::clicked, this, &SettingsPanel::onTriviaResetClicked);
-    triviaBody->addWidget(triviaResetBtn);
+    triviaButtonsRow->addWidget(libraryBtn, 1);
+    triviaButtonsRow->addWidget(triviaResetBtn, 1);
+    triviaBody->addLayout(triviaButtonsRow);
 
     m_triviaSection->setContentLayout(triviaBody);
     root->addWidget(m_triviaSection);
@@ -1151,6 +1183,14 @@ void SettingsPanel::syncFromSettings()
     m_volumeValue->setText(QStringLiteral("%1%").arg(volPct));
     m_notifyCheck->setChecked(m_settings->alarmNotificationEnabled());
     m_triviaEnableCheck->setChecked(m_settings->triviaEnabled());
+    {
+        const qint64 wanted = m_settings->studyMode() == SettingsDefaults::kStudyModeTrivia ? -1 : m_settings->studyCourseId();
+        int index = m_studySourceCombo->findData(wanted);
+        if (index < 0 && wanted >= 0) {
+            index = 0;   // first course, or the "no courses yet" placeholder
+        }
+        m_studySourceCombo->setCurrentIndex(std::max(0, index));
+    }
     const int freqIdx = m_triviaFrequencyCombo->findData(m_settings->triviaIntervalMinutes());
     m_triviaFrequencyCombo->setCurrentIndex(freqIdx >= 0 ? freqIdx : 0);
 
@@ -1658,6 +1698,17 @@ void SettingsPanel::onPreferenceChanged()
     m_settings->setAlarmVolume(m_volumeSlider->value() / 100.0);
     m_settings->setAlarmNotificationEnabled(m_notifyCheck->isChecked());
     m_settings->setTriviaEnabled(m_triviaEnableCheck->isChecked());
+    {
+        const qint64 source = m_studySourceCombo->currentData().toLongLong();
+        if (source < 0) {
+            m_settings->setStudyMode(SettingsDefaults::kStudyModeTrivia);
+        } else {
+            m_settings->setStudyMode(SettingsDefaults::kStudyModeDocuments);
+            if (source > 0) {
+                m_settings->setStudyCourseId(source);
+            }
+        }
+    }
     m_settings->setTriviaIntervalMinutes(m_triviaFrequencyCombo->currentData().toInt());
 
     m_settings->save();
@@ -1670,17 +1721,52 @@ void SettingsPanel::onPreferenceChanged()
 
 void SettingsPanel::refreshTriviaSummary()
 {
-    if (!m_triviaSection || !m_settings) {
+    if (!m_triviaSection || !m_settings || !m_triviaStatsLabel) {
         return;
     }
     const int points = m_settings->triviaTotalPoints();
     const int answered = m_settings->triviaAnsweredCount();
-    m_triviaStatsLabel->setText(QStringLiteral("%1 pts · %2 answered").arg(points).arg(answered));
+    const bool trivia = m_settings->studyMode() == SettingsDefaults::kStudyModeTrivia;
+    if (trivia) {
+        m_triviaStatsLabel->setText(QStringLiteral("%1 pts · %2 answered").arg(points).arg(answered));
+    } else {
+        m_triviaStatsLabel->setText(m_studyProgressText.isEmpty() ? QStringLiteral("No study answers yet") : m_studyProgressText);
+    }
+    const QString source = m_studySourceCombo ? m_studySourceCombo->currentText() : QString();
     m_triviaSection->setSummary(m_settings->triviaEnabled()
-                                    ? QStringLiteral("Every ~%1 min · %2 pts")
-                                          .arg(m_settings->triviaIntervalMinutes())
-                                          .arg(points)
-                                    : QStringLiteral("Off · %1 pts").arg(points));
+                                    ? QStringLiteral("Every ~%1 min · %2").arg(m_settings->triviaIntervalMinutes()).arg(source)
+                                    : QStringLiteral("Off"));
+}
+
+void SettingsPanel::setStudyCourses(const QVector<Course>& courses)
+{
+    m_studyCourses = courses;
+    if (!m_studySourceCombo) {
+        return;
+    }
+    const bool wasSyncing = m_syncingUi;
+    m_syncingUi = true;
+    m_studySourceCombo->clear();
+    if (courses.isEmpty()) {
+        m_studySourceCombo->addItem(QStringLiteral("Study Library (no courses yet)"), qint64(0));
+    }
+    for (const Course& c : courses) {
+        m_studySourceCombo->addItem(c.name, c.id);
+    }
+    m_studySourceCombo->addItem(QStringLiteral("General trivia"), qint64(-1));
+    if (m_settings) {
+        const qint64 wanted = m_settings->studyMode() == SettingsDefaults::kStudyModeTrivia ? -1 : m_settings->studyCourseId();
+        const int index = m_studySourceCombo->findData(wanted);
+        m_studySourceCombo->setCurrentIndex(index >= 0 ? index : 0);
+    }
+    m_syncingUi = wasSyncing;
+    refreshTriviaSummary();
+}
+
+void SettingsPanel::setStudyProgressText(const QString& text)
+{
+    m_studyProgressText = text;
+    refreshTriviaSummary();
 }
 
 void SettingsPanel::onTriviaResetClicked()
@@ -1690,8 +1776,8 @@ void SettingsPanel::onTriviaResetClicked()
     }
     playUiClick();
     PixelConfirmDialog dlg(
-        QStringLiteral("Reset trivia progress?"),
-        QStringLiteral("Your trivia points and answered count will go back to zero."),
+        QStringLiteral("Reset Lock-In progress?"),
+        QStringLiteral("Trivia points, study XP, and answer history go back to zero. Your documents and questions are kept."),
         QStringLiteral("Reset"),
         QStringLiteral("Cancel"),
         this);
