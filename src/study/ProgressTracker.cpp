@@ -47,7 +47,7 @@ QString ProgressTracker::topicKey(qint64 documentId, const QString& topic)
 
 int ProgressTracker::record(const Question& question, const Evaluation& evaluation)
 {
-    if (!m_db || !question.isDocumentQuestion()) {
+    if (!m_db) {
         return 0;
     }
     const int xp = xpFor(question, evaluation);

@@ -1,6 +1,6 @@
 #include "study/WrittenAnswerEvaluator.h"
 
-#include "trivia/AnswerEvaluator.h"
+#include "study/AnswerNormalizer.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -76,7 +76,7 @@ QSet<QString> vocabulary(const Question& q)
     for (const QString& s : sources) {
         auto it = wordRe.globalMatch(s);
         while (it.hasNext()) {
-            const QString w = AnswerEvaluator::normalize(it.next().captured(0));
+            const QString w = AnswerNormalizer::normalize(it.next().captured(0));
             if (w.size() >= 5) {
                 vocab.insert(w);
             }
@@ -147,12 +147,12 @@ WrittenAnswerEvaluator::Precheck WrittenAnswerEvaluator::precheck(const Question
                                                                   bool allowSuggestion)
 {
     Precheck result;
-    const QString given = AnswerEvaluator::normalize(answer);
+    const QString given = AnswerNormalizer::normalize(answer);
     const QStringList forms = acceptedForms(question);
 
     // Stage 1: exact match after normalization, including aliases.
     for (const QString& form : forms) {
-        if (!given.isEmpty() && AnswerEvaluator::normalize(form) == given) {
+        if (!given.isEmpty() && AnswerNormalizer::normalize(form) == given) {
             result.kind = Precheck::Kind::Final;
             result.evaluation.verdict = Verdict::Correct;
             result.evaluation.score = 1.0;
@@ -167,7 +167,7 @@ WrittenAnswerEvaluator::Precheck WrittenAnswerEvaluator::precheck(const Question
 
     // Stage 2a: a short term answer that is a near miss of an accepted form ("Hamelt" -> "Hamlet").
     for (const QString& form : forms) {
-        const QString target = AnswerEvaluator::normalize(form);
+        const QString target = AnswerNormalizer::normalize(form);
         if (wordCount(target) > 4 || wordCount(given) > 4) {
             continue;
         }
@@ -189,7 +189,7 @@ WrittenAnswerEvaluator::Precheck WrittenAnswerEvaluator::precheck(const Question
     auto it = wordRe.globalMatch(answer);
     while (it.hasNext()) {
         const auto m = it.next();
-        const QString word = AnswerEvaluator::normalize(m.captured(0));
+        const QString word = AnswerNormalizer::normalize(m.captured(0));
         if (word.size() < 5 || vocab.contains(word)) {
             continue;
         }

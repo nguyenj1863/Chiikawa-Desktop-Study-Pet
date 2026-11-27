@@ -394,7 +394,7 @@ QString OllamaClient::setupMessage(SetupState state, const QString& model)
     case SetupState::Checking:
         return QStringLiteral("Checking for a local AI model…");
     case SetupState::NotInstalled:
-        return QStringLiteral("Lock-In Trivia uses Ollama to write questions on this computer. "
+        return QStringLiteral("Study questions are written by Ollama on this computer. "
                               "Install Ollama (free) from ollama.com, open it, then press Recheck.");
     case SetupState::NotRunning:
         return QStringLiteral("Ollama is installed but not running. Start it, then press Recheck.");

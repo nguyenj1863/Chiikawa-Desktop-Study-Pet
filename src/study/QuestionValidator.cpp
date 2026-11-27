@@ -115,9 +115,6 @@ bool evidenceSupported(const QString& evidence, const QString& source)
 Result validate(const Question& q, const QString& sourceText, const QStringList& existingConcepts,
                 const QStringList& existingPrompts)
 {
-    if (q.type == QuestionType::OpenTrivia) {
-        return fail(QStringLiteral("not a document question"));
-    }
     if (q.prompt.trimmed().size() < 10) {
         return fail(QStringLiteral("question text too short"));
     }
@@ -173,8 +170,6 @@ Result validate(const Question& q, const QString& sourceText, const QStringList&
         }
         return {true, QString()};
     }
-    case QuestionType::OpenTrivia:
-        break;
     }
     return fail(QStringLiteral("unknown question type"));
 }

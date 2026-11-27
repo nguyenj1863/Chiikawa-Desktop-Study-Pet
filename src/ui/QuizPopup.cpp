@@ -1,4 +1,4 @@
-#include "trivia/QuizPopup.h"
+#include "ui/QuizPopup.h"
 
 #ifdef Q_OS_MACOS
 #  include "platform/MacWindowHelper.h"
@@ -26,23 +26,6 @@
 
 namespace {
 
-QColor rarityColor(Rarity rarity)
-{
-    switch (rarity) {
-    case Rarity::Common:
-        return PixelTheme::kSecondaryText;
-    case Rarity::Uncommon:
-        return PixelTheme::kPrimaryAccent;
-    case Rarity::Rare:
-        return PixelTheme::kPrimaryAccentHover;
-    case Rarity::Legendary:
-        return PixelTheme::kPrimaryText;
-    case Rarity::Incorrect:
-        return PixelTheme::kDangerText;
-    }
-    return PixelTheme::kPrimaryText;
-}
-
 QColor verdictColor(Verdict verdict)
 {
     switch (verdict) {
@@ -67,8 +50,6 @@ QString formatHint(QuestionType type)
         return QStringLiteral("Select all that apply. More than one may be correct.");
     case QuestionType::Written:
         return QStringLiteral("Answer in your own words. Ctrl+Enter to check.");
-    case QuestionType::OpenTrivia:
-        break;
     }
     return QString();
 }
@@ -117,10 +98,10 @@ QuizPopup::QuizPopup(QWidget* parent)
     setAttribute(Qt::WA_ShowWithoutActivating);
     setAttribute(Qt::WA_DeleteOnClose, false);
     setFocusPolicy(Qt::NoFocus);
-    setFixedWidth(kWidth);
+    setFixedWidth(kStudyWidth);
     setStyleSheet(PixelTheme::styleSheet()
                   + QStringLiteral("QScrollArea#quizScroll, QWidget#quizBody { background: transparent; border: none; }"));
-    setAccessibleName(QStringLiteral("Lock-In Trivia question"));
+    setAccessibleName(QStringLiteral("Study question"));
 
     auto* root = new QVBoxLayout(this);
     root->setSpacing(8);
@@ -170,21 +151,6 @@ QuizPopup::QuizPopup(QWidget* parent)
     m_optionsBox->hide();
     body->addWidget(m_optionsBox);
 
-    m_answerRow = new QWidget(m_body);
-    m_answerRow->setObjectName(QStringLiteral("quizBody"));
-    auto* answerLayout = new QHBoxLayout(m_answerRow);
-    answerLayout->setContentsMargins(0, 0, 0, 0);
-    answerLayout->setSpacing(6);
-    m_answerEdit = new QLineEdit(m_answerRow);
-    m_answerEdit->setObjectName(QStringLiteral("triviaAnswerEdit"));
-    m_answerEdit->setPlaceholderText(QStringLiteral("Type an answer…"));
-    m_answerEdit->setStyleSheet(PixelTheme::textInputStyleSheet());
-    m_answerEdit->setFocusPolicy(Qt::ClickFocus);
-    m_answerEdit->setMaxLength(80);
-    m_answerEdit->installEventFilter(this);
-    answerLayout->addWidget(m_answerEdit, 1);
-    body->addWidget(m_answerRow);
-
     m_writtenEdit = new QPlainTextEdit(m_body);
     m_writtenEdit->setObjectName(QStringLiteral("writtenAnswerEdit"));
     m_writtenEdit->setPlaceholderText(QStringLiteral("Type your answer…"));
@@ -217,7 +183,7 @@ QuizPopup::QuizPopup(QWidget* parent)
     m_suggestionRow->hide();
     body->addWidget(m_suggestionRow);
 
-    m_resultLabel = makeLabel("triviaResult", m_body);
+    m_resultLabel = makeLabel("quizResult", m_body);
     body->addWidget(m_resultLabel);
     m_feedbackLabel = makeLabel("sectionSummary", m_body);
     body->addWidget(m_feedbackLabel);
@@ -334,7 +300,6 @@ QuizPopup::QuizPopup(QWidget* parent)
             emit selfAssessed(static_cast<int>(rating));
         });
     }
-    connect(m_answerEdit, &QLineEdit::returnPressed, this, &QuizPopup::submit);
     connect(m_writtenEdit, &QPlainTextEdit::textChanged, this, &QuizPopup::updateSubmitEnabled);
 
     hide();
@@ -443,18 +408,12 @@ void QuizPopup::showQuestion(const Question& question, const QRect& petGlobalGeo
     m_originalWritten.clear();
     m_phase = Phase::Asking;
 
-    const bool study = question.isDocumentQuestion();
-    setFixedWidth(study ? kStudyWidth : kWidth);
-    if (study) {
-        m_categoryLabel->setText(question.category.isEmpty() ? QStringLiteral("Lock-In Trivia")
-                                                             : QStringLiteral("Lock-In · %1").arg(question.category));
-    } else {
-        m_categoryLabel->setText(question.category.isEmpty() ? QStringLiteral("Trivia check-in")
-                                                             : QStringLiteral("Trivia · %1").arg(question.category));
-    }
+    setFixedWidth(kStudyWidth);
+    m_categoryLabel->setText(question.category.isEmpty() ? QStringLiteral("Study")
+                                                         : QStringLiteral("Study · %1").arg(question.category));
     m_promptLabel->setText(question.prompt);
     m_hintLabel->setText(formatHint(question.type));
-    m_hintLabel->setVisible(study);
+    m_hintLabel->setVisible(true);
 
     clearOptions();
     const bool choice = question.type == QuestionType::SingleChoice || question.type == QuestionType::MultiSelect;
@@ -476,9 +435,6 @@ void QuizPopup::showQuestion(const Question& question, const QRect& petGlobalGeo
     }
     m_optionsBox->setVisible(choice);
 
-    m_answerEdit->clear();
-    m_answerEdit->setEnabled(true);
-    m_answerRow->setVisible(question.type == QuestionType::OpenTrivia);
     m_writtenEdit->clear();
     m_writtenEdit->setReadOnly(false);
     m_writtenEdit->setEnabled(true);
@@ -497,9 +453,6 @@ void QuizPopup::showQuestion(const Question& question, const QRect& petGlobalGeo
     placeActionButtons(question.type == QuestionType::Written);
     m_submitBtn->setProperty("noticeAction", false);
     switch (question.type) {
-    case QuestionType::OpenTrivia:
-        m_submitBtn->setText(QStringLiteral("Submit"));
-        break;
     case QuestionType::SingleChoice:
     case QuestionType::MultiSelect:
         m_submitBtn->setText(QStringLiteral("Check Answer"));
@@ -523,12 +476,11 @@ void QuizPopup::showNotice(const QString& title, const QString& body, const QStr
     m_question = Question{};
     m_phase = Phase::Notice;
     setFixedWidth(kStudyWidth);
-    m_categoryLabel->setText(QStringLiteral("Lock-In Trivia"));
+    m_categoryLabel->setText(QStringLiteral("Study"));
     m_promptLabel->setText(title);
     m_hintLabel->hide();
     clearOptions();
     m_optionsBox->hide();
-    m_answerRow->hide();
     m_writtenEdit->hide();
     m_suggestionRow->hide();
     for (QLabel* label : {m_resultLabel, m_expectedLabel, m_explanationLabel, m_sourceLabel}) {
@@ -602,9 +554,6 @@ void QuizPopup::updateSubmitEnabled()
     case QuestionType::Written:
         m_submitBtn->setEnabled(!m_writtenEdit->toPlainText().trimmed().isEmpty());
         break;
-    case QuestionType::OpenTrivia:
-        m_submitBtn->setEnabled(true);
-        break;
     }
 }
 
@@ -623,7 +572,7 @@ void QuizPopup::setResultText(const QString& text, const QColor& color, bool dis
         QColor c = color;
         c.setAlpha(std::clamp(alpha, 0, 255));
         m_resultLabel->setStyleSheet(QStringLiteral(
-            "QLabel#triviaResult { color: rgba(%1, %2, %3, %4); font-family: '%5', 'Segoe UI', sans-serif;"
+            "QLabel#quizResult { color: rgba(%1, %2, %3, %4); font-family: '%5', 'Segoe UI', sans-serif;"
             " font-size: 13px; font-weight: 700; background: transparent; }")
                                          .arg(c.red()).arg(c.green()).arg(c.blue()).arg(c.alpha())
                                          .arg(family));
@@ -655,41 +604,6 @@ void QuizPopup::startAutoHide(int ms)
     if (!m_hovered) {
         m_autoHide.start(m_remainingMs);
     }
-}
-
-void QuizPopup::showResult(const AnswerResult& result, const QString& explanation)
-{
-    m_showingResult = true;
-    m_phase = Phase::Result;
-    m_answerEdit->setEnabled(false);
-    m_answerRow->hide();
-    m_skipBtn->hide();
-    m_laterBtn->hide();
-    m_revealBtn->hide();
-    m_submitBtn->setEnabled(true);
-    m_submitBtn->setText(QStringLiteral("Done"));
-
-    QString text;
-    if (result.empty) {
-        text = QStringLiteral("No answer given.");
-    } else if (result.duplicate) {
-        text = QStringLiteral("%1 was already counted · +0").arg(result.matchedCanonical);
-    } else if (result.isCorrect()) {
-        text = QStringLiteral("%1 · %2 · +%3")
-                   .arg(result.matchedCanonical, Trivia::rarityName(result.rarity))
-                   .arg(result.points);
-    } else {
-        text = QStringLiteral("Not on Chiikawa's list · +0");
-    }
-    setResultText(text, rarityColor(result.rarity),
-                  result.rarity == Rarity::Legendary || result.rarity == Rarity::Rare);
-
-    m_explanationLabel->setText(explanation);
-    m_explanationLabel->setVisible(!explanation.isEmpty());
-
-    reposition(m_lastPetRect);
-    update();
-    startAutoHide(kResultDisplayMs);
 }
 
 void QuizPopup::showEvaluation(const Evaluation& evaluation, int xp)
@@ -813,7 +727,7 @@ void QuizPopup::showReveal()
     m_explanationLabel->setVisible(!m_question.explanation.isEmpty());
     setSourceText();
     m_resultLabel->setText(QStringLiteral("How did you do?"));
-    m_resultLabel->setStyleSheet(QStringLiteral("QLabel#triviaResult { color: #F3F6FC; font-size: 12px; font-weight: 700; }"));
+    m_resultLabel->setStyleSheet(QStringLiteral("QLabel#quizResult { color: #F3F6FC; font-size: 12px; font-weight: 700; }"));
     m_resultLabel->show();
     m_actionRow->hide();
     m_selfRow->show();
@@ -905,11 +819,7 @@ void QuizPopup::engage()
     if (m_phase != Phase::Asking) {
         return;
     }
-    if (m_question.type == QuestionType::OpenTrivia && m_answerEdit->isEnabled()) {
-        activateWindow();
-        raise();
-        m_answerEdit->setFocus(Qt::MouseFocusReason);
-    } else if (m_question.type == QuestionType::Written && !m_writtenEdit->isReadOnly()) {
+    if (m_question.type == QuestionType::Written && !m_writtenEdit->isReadOnly()) {
         activateWindow();
         raise();
         m_writtenEdit->setFocus(Qt::MouseFocusReason);
@@ -922,15 +832,6 @@ void QuizPopup::submit()
         return;
     }
     switch (m_question.type) {
-    case QuestionType::OpenTrivia: {
-        const QString text = m_answerEdit->text();
-        if (text.trimmed().isEmpty()) {
-            engage();
-            return;
-        }
-        emit answerSubmitted(text);
-        return;
-    }
     case QuestionType::SingleChoice:
         for (const PixelOptionButton* option : std::as_const(m_options)) {
             if (option->isChecked()) {
@@ -1015,10 +916,8 @@ void QuizPopup::finishFadeOut()
     m_hovered = false;
     m_showingResult = false;
     m_phase = Phase::Hidden;
-    for (QWidget* input : {static_cast<QWidget*>(m_answerEdit), static_cast<QWidget*>(m_writtenEdit)}) {
-        if (input->hasFocus()) {
-            input->clearFocus();
-        }
+    if (m_writtenEdit->hasFocus()) {
+        m_writtenEdit->clearFocus();
     }
     hide();
     emit closed();
@@ -1107,7 +1006,7 @@ void QuizPopup::keyPressEvent(QKeyEvent* event)
 bool QuizPopup::eventFilter(QObject* watched, QEvent* event)
 {
     const bool written = watched == m_writtenEdit || watched == m_writtenEdit->viewport();
-    if (watched == m_answerEdit || written) {
+    if (written) {
         if (event->type() == QEvent::MouseButtonPress) {
             engage();
         } else if (event->type() == QEvent::KeyPress) {

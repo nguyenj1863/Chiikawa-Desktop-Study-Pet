@@ -1,8 +1,8 @@
 #pragma once
 
 #include "study/Evaluation.h"
-#include "trivia/QuestionProvider.h"
-#include "trivia/TriviaTypes.h"
+#include "study/QuestionProvider.h"
+#include "study/Question.h"
 
 #include <QObject>
 #include <QPointer>
@@ -16,8 +16,7 @@ class ProgressTracker;
 class WrittenAnswerEvaluator;
 
 /**
- * Owns the active check-in question and its lifecycle. General trivia is scored by
- * rarity and persists points through AppSettings; document questions are graded by
+ * Owns the active check-in question and its lifecycle. Questions are graded by
  * format-specific evaluators and recorded (with XP) through ProgressTracker.
  * Providers are tried in order; setActiveProvider() limits asking to one of them.
  */
@@ -57,9 +56,6 @@ public:
     /** Fetches a new question; returns false when one is already active or none are available. */
     bool ask();
 
-    /** Trivia: evaluates the typed answer and records rarity points. */
-    AnswerResult submit(const QString& answer);
-
     /** Multiple choice: grades the chosen option ID. */
     Evaluation submitChoice(const QString& optionId);
     /** Multiple select: grades the full set of chosen option IDs. */
@@ -81,12 +77,9 @@ public:
 
     [[nodiscard]] State state() const { return m_state; }
     [[nodiscard]] const std::optional<Question>& currentQuestion() const { return m_current; }
-    [[nodiscard]] int totalPoints() const;
-    [[nodiscard]] int answeredCount() const;
 
 signals:
     void questionReady(const Question& question);
-    void answerEvaluated(const AnswerResult& result);
     void evaluationReady(const Evaluation& evaluation, int xp);
     void suggestionOffered(const QString& suggestion);
     void judgingStarted();
@@ -106,6 +99,5 @@ private:
     QPointer<WrittenAnswerEvaluator> m_written;
     int m_judgeId = 0;
     std::optional<Question> m_current;
-    QStringList m_givenThisRound;
     State m_state = State::Idle;
 };

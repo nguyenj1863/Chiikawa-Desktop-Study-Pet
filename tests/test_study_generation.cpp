@@ -176,7 +176,6 @@ void TestStudyGeneration::schemasAreOrderedJson()
     }
     QVERIFY(QuestionGenerator::schemaFor(QuestionType::MultiSelect).startsWith("{\"type\":\"object\",\"properties\":{\"supported\""));
     QVERIFY(QuestionGenerator::schemaFor(QuestionType::SingleChoice).contains("\"minItems\":4"));
-    QVERIFY(QuestionGenerator::schemaFor(QuestionType::OpenTrivia).isEmpty());
 }
 
 void TestStudyGeneration::requestGroundsPromptInPassage()
@@ -334,9 +333,6 @@ void TestStudyGeneration::validatesWrittenAndDuplicates()
     QVERIFY(QuestionValidator::validate(q, kJoinsPassage, {QStringLiteral("inner VS left join")}).reason.contains(QStringLiteral("concept")));
     QVERIFY(QuestionValidator::validate(q, kJoinsPassage, {}, {q.prompt.toLower()}).reason.contains(QStringLiteral("duplicate")));
 
-    Question trivia;
-    trivia.type = QuestionType::OpenTrivia;
-    QVERIFY(!QuestionValidator::validate(trivia, kJoinsPassage).ok);
 }
 
 void TestStudyGeneration::stableIdsAndChunkPicking()

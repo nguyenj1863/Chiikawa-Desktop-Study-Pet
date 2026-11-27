@@ -1,5 +1,6 @@
 #include "MockLlmClient.h"
 
+#include "study/AnswerNormalizer.h"
 #include "study/ChoiceEvaluators.h"
 #include "study/ProgressTracker.h"
 #include "study/QuestionSelector.h"
@@ -64,7 +65,7 @@ Question written(const QString& expected = QStringLiteral("Hamlet"), const QStri
     q.difficulty = Difficulty::Easy;
     q.expectedAnswer = expected;
     q.keyConcepts = {expected};
-    q.answers.append({expected, aliases, Rarity::Common});
+    q.answers.append({expected, aliases});
     q.explanation = QStringLiteral("The soliloquy is spoken by Prince Hamlet.");
     q.sources.append({QStringLiteral("English 210"), QStringLiteral("p. 14"), QStringLiteral("Hamlet's soliloquy begins \"To be, or not to be\".")});
     return q;
@@ -109,6 +110,7 @@ private slots:
     void initTestCase();
     void cleanup();
 
+    void normalizesAnswers();
     void singleChoiceUsesOptionIds();
     void shuffledOptionsKeepAnswerMapping();
     void multiSelectGivesPartialCredit();
@@ -141,6 +143,24 @@ void TestStudyAnswers::initTestCase()
 void TestStudyAnswers::cleanup()
 {
     QDir(m_storage.path()).removeRecursively();
+}
+
+void TestStudyAnswers::normalizesAnswers()
+{
+    using AnswerNormalizer::normalize;
+    QCOMPARE(normalize(QStringLiteral("  the  MARS ")), QStringLiteral("mars"));
+    QCOMPARE(normalize(QStringLiteral("North\tAmerica")), QStringLiteral("north america"));
+    QCOMPARE(normalize(QStringLiteral("Apéry's constant")), QStringLiteral("aperys constant"));
+    QCOMPARE(normalize(QStringLiteral("Ulysses S. Grant")), QStringLiteral("ulysses s grant"));
+    QCOMPARE(normalize(QStringLiteral("cherry-pick")), QStringLiteral("cherry pick"));
+    QCOMPARE(normalize(QStringLiteral("A Midsummer Night's Dream")), QStringLiteral("midsummer nights dream"));
+    // A lone article is kept rather than normalized to nothing.
+    QCOMPARE(normalize(QStringLiteral("a")), QStringLiteral("a"));
+    QVERIFY(normalize(QStringLiteral("  ?! ")).isEmpty());
+    // '+' and '#' stay significant so C, C++ and C# remain distinct.
+    QCOMPARE(normalize(QStringLiteral("C++")), QStringLiteral("c++"));
+    QCOMPARE(normalize(QStringLiteral("C#")), QStringLiteral("c#"));
+    QVERIFY(normalize(QStringLiteral("c")) != normalize(QStringLiteral("C++")));
 }
 
 void TestStudyAnswers::singleChoiceUsesOptionIds()
@@ -444,7 +464,7 @@ void TestStudyAnswers::selectorRespectsFormatPreferences()
 {
     SelectionPrefs prefs;
     QCOMPARE(QuestionSelector::activeFormats(prefs).size(), 3);
-    prefs.enabled = {QuestionType::Written, QuestionType::OpenTrivia};
+    prefs.enabled = {QuestionType::Written, QuestionType::Written};   // duplicates collapse
     QCOMPARE(QuestionSelector::activeFormats(prefs), QList<QuestionType>{QuestionType::Written});
     prefs.enabled = {QuestionType::SingleChoice, QuestionType::Written};
     prefs.mode = FormatMode::Focus;

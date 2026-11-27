@@ -63,16 +63,16 @@ public:
     [[nodiscard]] QuizPopup* quizPopup() const { return m_quizPopup.get(); }
     [[nodiscard]] QuestionScheduler* questionScheduler() const { return m_questionScheduler.get(); }
 
-    /** True when a scheduled trivia check-in may appear without interrupting anything. */
-    [[nodiscard]] bool canShowTriviaCheckIn() const;
+    /** True when a scheduled check-in may appear without interrupting anything. */
+    [[nodiscard]] bool canShowCheckIn() const;
 
     /** Shows a question now (Settings "Ask Me a Question"); ignored if one is already open. */
-    void askTriviaNow();
+    void askQuestionNow();
 
     /** Opens the Study Library window beside the pet. */
     void openStudyLibrary();
 
-    // Lock-In Trivia study stack, created on first use (nullptr before that).
+    // Study stack, created on first use (nullptr before that).
     [[nodiscard]] StudyLibrary* studyLibrary() const { return m_studyLibrary.get(); }
     [[nodiscard]] StudyLibraryWindow* studyLibraryWindow() const { return m_libraryWindow.get(); }
     [[nodiscard]] OllamaClient* ollamaClient() const { return m_ollama.get(); }
@@ -144,11 +144,11 @@ private:
     [[nodiscard]] QRect currentVisibleSpriteBounds() const;
     void showCompletionToast();
     void playCompletionFeedback();
-    void setupTrivia();
-    void updateTriviaScheduling();
+    void setupCheckIns();
+    void updateCheckInScheduling();
     /** Creates the study stack (database, ingestion thread, local AI client) if not created yet. */
     void ensureStudy();
-    /** Points the controller at study questions or general trivia, per the current settings. */
+    /** Points the study provider at the chosen course and formats. */
     void applyStudyPreferences();
     void refreshStudyProgress();
     void refreshStudyCourses();

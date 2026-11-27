@@ -8,8 +8,8 @@
 #include "study/QuestionGenerator.h"
 #include "study/StudyDatabase.h"
 #include "study/StudyLibrary.h"
-#include "trivia/QuizController.h"
-#include "trivia/QuizPopup.h"
+#include "study/QuizController.h"
+#include "ui/QuizPopup.h"
 #include "ui/PixelTheme.h"
 #include "ui/StudyLibraryWindow.h"
 
@@ -33,11 +33,11 @@ namespace {
 
 QString studyStorageDir()
 {
-    return QDir::tempPath() + QStringLiteral("/chiikawa-lockin-ui-tests-%1").arg(QCoreApplication::applicationPid());
+    return QDir::tempPath() + QStringLiteral("/chiikawa-study-ui-tests-%1").arg(QCoreApplication::applicationPid());
 }
 
 [[maybe_unused]] const bool kIsolatedStores = [] {
-    AppSettings::setStorageScope(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPetLockInUiTests"));
+    AppSettings::setStorageScope(QStringLiteral("ChiikawaStudyPet"), QStringLiteral("DesktopPetStudyUiTests"));
     StudyDatabase::setStorageDirectory(studyStorageDir());
     return true;
 }();
@@ -73,7 +73,7 @@ Question writtenQuestion()
     q.topic = QStringLiteral("Hamlet");
     q.expectedAnswer = QStringLiteral("Hamlet");
     q.keyConcepts = {QStringLiteral("Hamlet")};
-    q.answers.append({QStringLiteral("Hamlet"), {}, Rarity::Common});
+    q.answers.append({QStringLiteral("Hamlet"), {}});
     q.explanation = QStringLiteral("Prince Hamlet speaks the soliloquy.");
     q.sources.append({QStringLiteral("English 210"), QStringLiteral("p. 14"), QStringLiteral("Hamlet's soliloquy.")});
     return q;
@@ -98,7 +98,7 @@ void disconnectOllama(OllamaClient* client)
 
 } // namespace
 
-class TestLockInUi : public QObject {
+class TestStudyUi : public QObject {
     Q_OBJECT
 
 private slots:
@@ -121,30 +121,30 @@ private:
     static void clearSettings();
 };
 
-void TestLockInUi::clearSettings()
+void TestStudyUi::clearSettings()
 {
     QSettings s(AppSettings::storageOrganization(), AppSettings::storageApplication());
     s.clear();
     s.sync();
 }
 
-void TestLockInUi::initTestCase()
+void TestStudyUi::initTestCase()
 {
     clearSettings();
     QDir(studyStorageDir()).removeRecursively();
 }
 
-void TestLockInUi::cleanup()
+void TestStudyUi::cleanup()
 {
     clearSettings();
 }
 
-void TestLockInUi::cleanupTestCase()
+void TestStudyUi::cleanupTestCase()
 {
     QDir(studyStorageDir()).removeRecursively();
 }
 
-void TestLockInUi::singleChoiceUsesRadiosAndMarksResult()
+void TestStudyUi::singleChoiceUsesRadiosAndMarksResult()
 {
     QuizPopup popup;
     QSignalSpy chosen(&popup, &QuizPopup::choiceSubmitted);
@@ -152,7 +152,6 @@ void TestLockInUi::singleChoiceUsesRadiosAndMarksResult()
     QCOMPARE(popup.width(), QuizPopup::kStudyWidth);
     QVERIFY(popup.hintLabel()->isVisible());
     QVERIFY(popup.hintLabel()->text().contains(QStringLiteral("Choose one")));
-    QVERIFY(!popup.answerEdit()->isVisible());
     QVERIFY(!popup.revealButton()->isVisible());
     QCOMPARE(popup.submitButton()->text(), QStringLiteral("Check Answer"));
     const auto options = popup.optionButtons();
@@ -191,10 +190,10 @@ void TestLockInUi::singleChoiceUsesRadiosAndMarksResult()
     // The picked and the right option are explained inline, so no duplicate feedback line.
     QVERIFY(!popup.feedbackLabel()->isVisible());
     QCOMPARE(popup.submitButton()->text(), QStringLiteral("Done"));
-    QVERIFY(popup.remainingDismissMs() > QuizPopup::kResultDisplayMs);
+    QVERIFY(popup.remainingDismissMs() > 10000);   // results stay long enough to read
 }
 
-void TestLockInUi::multiSelectUsesCheckboxesAndExplainsEveryOption()
+void TestStudyUi::multiSelectUsesCheckboxesAndExplainsEveryOption()
 {
     QuizPopup popup;
     QSignalSpy selected(&popup, &QuizPopup::selectionSubmitted);
@@ -228,7 +227,7 @@ void TestLockInUi::multiSelectUsesCheckboxesAndExplainsEveryOption()
     }
 }
 
-void TestLockInUi::writtenAnswerSuggestsJudgesAndReveals()
+void TestStudyUi::writtenAnswerSuggestsJudgesAndReveals()
 {
     QuizPopup popup;
     QSignalSpy written(&popup, &QuizPopup::writtenSubmitted);
@@ -286,7 +285,7 @@ void TestLockInUi::writtenAnswerSuggestsJudgesAndReveals()
     QVERIFY(popup.resultLabel()->text().contains(QStringLiteral("Partially got it · +2 XP")));
 }
 
-void TestLockInUi::popupScrollsInsteadOfGrowingPastTheCap()
+void TestStudyUi::popupScrollsInsteadOfGrowingPastTheCap()
 {
     QCOMPARE(QuizPopup::heightCap(QRect(0, 0, 1920, 1040)), QuizPopup::kMaxHeight);
     QCOMPARE(QuizPopup::heightCap(QRect(0, 0, 1280, 500)), 300);
@@ -311,7 +310,7 @@ void TestLockInUi::popupScrollsInsteadOfGrowingPastTheCap()
     QCOMPARE(small.scrollArea()->verticalScrollBar()->maximum(), 0);
 }
 
-void TestLockInUi::popupDoesNotStealFocusAndCanPostpone()
+void TestStudyUi::popupDoesNotStealFocusAndCanPostpone()
 {
     QWidget host;
     host.resize(200, 100);
@@ -337,7 +336,7 @@ void TestLockInUi::popupDoesNotStealFocusAndCanPostpone()
     QTRY_COMPARE_WITH_TIMEOUT(closed.count(), 1, 1000);
 }
 
-void TestLockInUi::noticeOffersAction()
+void TestStudyUi::noticeOffersAction()
 {
     QuizPopup popup;
     QSignalSpy action(&popup, &QuizPopup::noticeActionTriggered);
@@ -355,7 +354,7 @@ void TestLockInUi::noticeOffersAction()
     QTRY_VERIFY_WITH_TIMEOUT(!popup.isVisible(), 1000);
 }
 
-void TestLockInUi::optionButtonsWrapLongText()
+void TestStudyUi::optionButtonsWrapLongText()
 {
     PixelOptionButton shortOption(QStringLiteral("Yes"), PixelOptionButton::Indicator::Radio);
     PixelOptionButton longOption(QString(QStringLiteral("a long option that needs several lines ")).repeated(5),
@@ -370,7 +369,7 @@ void TestLockInUi::optionButtonsWrapLongText()
     QVERIFY(!longOption.autoExclusive());
 }
 
-void TestLockInUi::libraryWindowManagesCoursesFormatsAndDocuments()
+void TestStudyUi::libraryWindowManagesCoursesFormatsAndDocuments()
 {
     AppSettings settings;
     StudyLibrary library;
@@ -438,7 +437,7 @@ void TestLockInUi::libraryWindowManagesCoursesFormatsAndDocuments()
     QCOMPARE(settings.studyCourseId(), 0);
 }
 
-void TestLockInUi::petStudyFlowWorksWithoutOllama()
+void TestStudyUi::petStudyFlowWorksWithoutOllama()
 {
     {
         AppSettings settings;
@@ -454,7 +453,7 @@ void TestLockInUi::petStudyFlowWorksWithoutOllama()
     QVERIFY(!pet.studyLibrary());   // nothing study-related is created until it is used
 
     // Ask with an empty library: a notice offers the Study Library.
-    pet.askTriviaNow();
+    pet.askQuestionNow();
     QVERIFY(pet.studyLibrary());
     disconnectOllama(pet.ollamaClient());
     QuizPopup* popup = pet.quizPopup();
@@ -463,7 +462,7 @@ void TestLockInUi::petStudyFlowWorksWithoutOllama()
     popup->submitButton()->click();
     QVERIFY(pet.studyLibraryWindow());
     QVERIFY(pet.studyLibraryWindow()->isVisible());
-    QVERIFY(!pet.canShowTriviaCheckIn());   // the library counts as an open dialog
+    QVERIFY(!pet.canShowCheckIn());   // the library counts as an open dialog
     QTRY_COMPARE_WITH_TIMEOUT(closed.count(), 1, 1000);
 
     // Set up a course with cached questions directly (generation itself is covered elsewhere).
@@ -483,7 +482,7 @@ void TestLockInUi::petStudyFlowWorksWithoutOllama()
     QCOMPARE(pet.appSettings()->studyCourseId(), course);
 
     // Focus mode: only multiple choice questions are asked.
-    pet.askTriviaNow();
+    pet.askQuestionNow();
     QCOMPARE(popup->phase(), QuizPopup::Phase::Asking);
     QCOMPARE(popup->question().type, QuestionType::SingleChoice);
     QCOMPARE(popup->question().sources.first().title, QStringLiteral("Lecture 6"));
@@ -506,7 +505,7 @@ void TestLockInUi::petStudyFlowWorksWithoutOllama()
     // anything needing the model becomes "Needs review" instead of failing.
     pet.appSettings()->setStudyFocusFormat(SettingsDefaults::kStudyFormatWritten);
     pet.applySettings();
-    pet.askTriviaNow();
+    pet.askQuestionNow();
     QCOMPARE(popup->question().type, QuestionType::Written);
     popup->writtenEdit()->setPlainText(QStringLiteral("I think it is Macbeth or maybe Othello"));
     popup->submitButton()->click();
@@ -518,7 +517,7 @@ void TestLockInUi::petStudyFlowWorksWithoutOllama()
 
     // Reveal + self-assessment is recorded separately with reduced XP.
     QTest::qWait(250);   // let the closing fade finish
-    pet.askTriviaNow();
+    pet.askQuestionNow();
     QCOMPARE(popup->question().type, QuestionType::Written);
     popup->revealButton()->click();
     QCOMPARE(popup->phase(), QuizPopup::Phase::Revealed);
@@ -530,16 +529,7 @@ void TestLockInUi::petStudyFlowWorksWithoutOllama()
     QCOMPARE(progress.selfXp, 5);   // 25% of a medium question's 20 XP
     QCOMPARE(progress.attempted, 2);
     QCOMPARE(progress.needsReview, 1);
-
-    // Switching to general trivia asks trivia questions again.
-    pet.appSettings()->setStudyMode(SettingsDefaults::kStudyModeTrivia);
-    pet.applySettings();
-    popup->closeButton()->click();
-    QTRY_COMPARE_WITH_TIMEOUT(pet.quizController()->state(), QuizController::State::Idle, 1000);
-    QTest::qWait(250);
-    pet.askTriviaNow();
-    QCOMPARE(popup->question().type, QuestionType::OpenTrivia);
 }
 
-QTEST_MAIN(TestLockInUi)
-#include "test_lock_in_ui.moc"
+QTEST_MAIN(TestStudyUi)
+#include "test_study_ui.moc"

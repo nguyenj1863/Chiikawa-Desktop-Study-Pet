@@ -11,7 +11,7 @@ QList<QuestionType> activeFormats(const SelectionPrefs& prefs)
 {
     QList<QuestionType> enabled;
     for (const QuestionType t : prefs.enabled) {
-        if (t != QuestionType::OpenTrivia && !enabled.contains(t)) {
+        if (!enabled.contains(t)) {
             enabled.append(t);
         }
     }

@@ -41,17 +41,17 @@ inline constexpr bool kAlarmNotificationEnabled = true;
 inline constexpr int kSnoozeMinutes = 5;
 inline constexpr bool kAlarmUse24Hour = false;
 
-inline constexpr bool kTriviaEnabled = false;
-inline constexpr int kTriviaIntervalMinutes = 15;
-inline constexpr int kMinTriviaIntervalMinutes = 5;
-inline constexpr int kMaxTriviaIntervalMinutes = 60;
-inline constexpr int kTriviaIntervalChoices[] = {5, 10, 15, 30, 60};
+inline constexpr bool kCheckInsEnabled = false;
+inline constexpr int kCheckInMinutes = 15;
+inline constexpr int kMinCheckInMinutes = 5;
+inline constexpr int kMaxCheckInMinutes = 60;
+inline constexpr int kCheckInMinuteChoices[] = {5, 10, 15, 30, 60};
 
-/** Snaps a trivia check-in interval to the nearest offered choice. */
-inline int clampTriviaIntervalMinutes(int minutes)
+/** Snaps a check-in interval to the nearest offered choice. */
+inline int clampCheckInMinutes(int minutes)
 {
-    int best = kTriviaIntervalChoices[0];
-    for (const int choice : kTriviaIntervalChoices) {
+    int best = kCheckInMinuteChoices[0];
+    for (const int choice : kCheckInMinuteChoices) {
         const int diff = choice > minutes ? choice - minutes : minutes - choice;
         const int bestDiff = best > minutes ? best - minutes : minutes - best;
         if (diff < bestDiff) {
@@ -60,11 +60,6 @@ inline int clampTriviaIntervalMinutes(int minutes)
     }
     return best;
 }
-
-// Lock-In Trivia: study questions from the Study Library (default) or general trivia.
-inline constexpr int kStudyModeDocuments = 0;
-inline constexpr int kStudyModeTrivia = 1;
-inline constexpr int kStudyMode = kStudyModeDocuments;
 
 // Enabled question formats as bits: 1 = multiple choice, 2 = multiple select, 4 = written answer.
 inline constexpr int kStudyFormatSingleChoice = 0x1;

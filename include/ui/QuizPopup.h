@@ -1,7 +1,7 @@
 #pragma once
 
 #include "study/Evaluation.h"
-#include "trivia/TriviaTypes.h"
+#include "study/Question.h"
 
 #include <QElapsedTimer>
 #include <QList>
@@ -24,24 +24,22 @@ class PixelOptionButton;
  * Compact smoked-glass speech bubble that shows one check-in question near the pet.
  * It appears without activating or taking keyboard focus; text inputs only take
  * focus after the user deliberately clicks the popup. The layout adapts to the
- * question format (trivia text answer, single-choice radios, multi-select
+ * question format (single-choice radios, multi-select
  * checkboxes, written answer with Check / Reveal) and scrolls instead of clipping
  * when content is taller than the cap. Provider-agnostic: it only consumes
- * Question, AnswerResult, and Evaluation.
+ * Question and Evaluation.
  */
 class QuizPopup : public QWidget {
     Q_OBJECT
 
 public:
-    static constexpr int kWidth = 280;          // trivia
-    static constexpr int kStudyWidth = 324;     // document questions and notices
+    static constexpr int kStudyWidth = 324;
     static constexpr int kMaxHeight = 460;
     static constexpr int kPetGapPx = 8;
     static constexpr int kTailHeight = 7;
     static constexpr int kFadeInMs = 180;
     static constexpr int kFadeOutMs = 200;
     static constexpr int kEntranceSlidePx = 6;
-    static constexpr int kResultDisplayMs = 6000;
     static constexpr int kStudyResultDisplayMs = 15000;
 
     /** Where the bubble sits relative to the pet; the tail points back toward it. */
@@ -71,9 +69,7 @@ public:
     ~QuizPopup() override;
 
     void showQuestion(const Question& question, const QRect& petGlobalGeometry);
-    /** Trivia result (rarity and points). */
-    void showResult(const AnswerResult& result, const QString& explanation);
-    /** Document question result: verdict, XP, per-option marks, feedback, and source. */
+    /** Result: verdict, XP, per-option marks, feedback, and source. */
     void showEvaluation(const Evaluation& evaluation, int xp);
     void showSuggestion(const QString& suggestion);
     void showJudging();
@@ -105,7 +101,6 @@ public:
     [[nodiscard]] const Question& question() const { return m_question; }
 
     // Accessors for tests and accessibility checks
-    [[nodiscard]] QLineEdit* answerEdit() const { return m_answerEdit; }
     [[nodiscard]] QPlainTextEdit* writtenEdit() const { return m_writtenEdit; }
     [[nodiscard]] QPushButton* submitButton() const { return m_submitBtn; }
     [[nodiscard]] QPushButton* skipButton() const { return m_skipBtn; }
@@ -126,7 +121,6 @@ public:
     [[nodiscard]] int remainingDismissMs() const;
 
 signals:
-    void answerSubmitted(const QString& answer);
     void choiceSubmitted(const QString& optionId);
     void selectionSubmitted(const QStringList& optionIds);
     void writtenSubmitted(const QString& answer, bool allowSuggestion);
@@ -176,8 +170,6 @@ private:
     QWidget* m_optionsBox = nullptr;
     QVBoxLayout* m_optionsLayout = nullptr;
     QList<PixelOptionButton*> m_options;
-    QWidget* m_answerRow = nullptr;
-    QLineEdit* m_answerEdit = nullptr;
     QPlainTextEdit* m_writtenEdit = nullptr;
     QWidget* m_suggestionRow = nullptr;
     QLabel* m_suggestionLabel = nullptr;
@@ -210,7 +202,7 @@ private:
     QString m_originalWritten;
     QTimer m_autoHide;
     QElapsedTimer m_remainingClock;
-    int m_remainingMs = kResultDisplayMs;
+    int m_remainingMs = kStudyResultDisplayMs;
     QRect m_lastPetRect;
     Placement m_placement = Placement::Above;
     Phase m_phase = Phase::Hidden;

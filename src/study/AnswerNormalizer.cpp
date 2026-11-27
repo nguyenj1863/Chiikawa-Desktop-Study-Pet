@@ -1,8 +1,8 @@
-#include "trivia/AnswerEvaluator.h"
+#include "study/AnswerNormalizer.h"
 
 #include <QLatin1StringView>
 
-namespace AnswerEvaluator {
+namespace AnswerNormalizer {
 
 QString normalize(const QString& text)
 {
@@ -38,34 +38,4 @@ QString normalize(const QString& text)
     return out;
 }
 
-AnswerResult evaluate(const Question& question, const QString& input, const QStringList& alreadyGiven)
-{
-    AnswerResult result;
-    const QString needle = normalize(input);
-    if (needle.isEmpty()) {
-        result.empty = true;
-        return result;
-    }
-
-    for (const AcceptedAnswer& answer : question.answers) {
-        bool match = normalize(answer.canonical) == needle;
-        for (qsizetype i = 0; !match && i < answer.aliases.size(); ++i) {
-            match = normalize(answer.aliases.at(i)) == needle;
-        }
-        if (!match) {
-            continue;
-        }
-        result.matchedCanonical = answer.canonical;
-        result.rarity = answer.rarity;
-        if (alreadyGiven.contains(answer.canonical)) {
-            result.duplicate = true;
-            result.points = 0;
-        } else {
-            result.points = Trivia::pointsFor(answer.rarity);
-        }
-        return result;
-    }
-    return result;
-}
-
-} // namespace AnswerEvaluator
+} // namespace AnswerNormalizer

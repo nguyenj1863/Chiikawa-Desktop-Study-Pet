@@ -1,12 +1,12 @@
 #pragma once
 
-#include "trivia/TriviaTypes.h"
+#include "study/Question.h"
 
 #include <QStringList>
 #include <optional>
 
 /**
- * Source of check-in questions. The offline TriviaQuestionProvider implements
+ * Source of check-in questions. StudyQuestionProvider implements
  * this today; a document-grounded provider can implement it later and plug into
  * QuizController without changing the popup or scheduler.
  */

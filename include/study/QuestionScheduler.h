@@ -40,7 +40,7 @@ public:
      */
     void postpone(std::chrono::milliseconds delay);
     [[nodiscard]] bool isPostponed() const { return m_postponed.isActive(); }
-    /** stop() leaves a postponed question pending; this cancels it (trivia disabled, app exit). */
+    /** stop() leaves a postponed question pending; this cancels it (check-ins disabled, app exit). */
     void cancelPostponed();
 
     /** Randomized delay in [base * kMinJitter, base * kMaxJitter]. */

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "study/Evaluation.h"
-#include "trivia/TriviaTypes.h"
+#include "study/Question.h"
 
 #include <QSet>
 #include <QString>

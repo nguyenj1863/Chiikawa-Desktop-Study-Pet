@@ -127,27 +127,18 @@ public:
     [[nodiscard]] qint64 lastTriggeredOccurrenceUtcMs() const { return m_lastTriggeredOccurrenceUtcMs; }
     void setLastTriggeredOccurrenceUtcMs(qint64 utcMs);
 
-    // Trivia check-ins. Restore Defaults resets enabled/interval but keeps progress.
-    [[nodiscard]] bool triviaEnabled() const { return m_triviaEnabled; }
-    void setTriviaEnabled(bool enabled);
+    // Random study check-ins ("Chiikawa asks me questions"). Restore Defaults resets these.
+    [[nodiscard]] bool checkInsEnabled() const { return m_checkInsEnabled; }
+    void setCheckInsEnabled(bool enabled);
 
-    [[nodiscard]] int triviaIntervalMinutes() const { return m_triviaIntervalMinutes; }
-    void setTriviaIntervalMinutes(int minutes);
+    [[nodiscard]] int checkInMinutes() const { return m_checkInMinutes; }
+    void setCheckInMinutes(int minutes);
 
-    [[nodiscard]] int triviaTotalPoints() const { return m_triviaTotalPoints; }
-    void setTriviaTotalPoints(int points);
+    [[nodiscard]] QStringList recentQuestionIds() const { return m_recentQuestionIds; }
+    void setRecentQuestionIds(const QStringList& ids);
 
-    [[nodiscard]] int triviaAnsweredCount() const { return m_triviaAnsweredCount; }
-    void setTriviaAnsweredCount(int count);
-
-    [[nodiscard]] QStringList triviaRecentIds() const { return m_triviaRecentIds; }
-    void setTriviaRecentIds(const QStringList& ids);
-
-    // Lock-In Trivia study preferences. Restore Defaults resets mode and formats but keeps
+    // Study preferences. Restore Defaults resets formats but keeps
     // the selected course, the model, and all Study Library data and progress.
-    [[nodiscard]] int studyMode() const { return m_studyMode; }
-    void setStudyMode(int mode);
-
     [[nodiscard]] qint64 studyCourseId() const { return m_studyCourseId; }
     void setStudyCourseId(qint64 id);
 
@@ -197,13 +188,10 @@ private:
     qint64 m_snoozeTargetUtcMs = 0;
     qint64 m_lastTriggeredOccurrenceUtcMs = 0;
 
-    bool m_triviaEnabled = SettingsDefaults::kTriviaEnabled;
-    int m_triviaIntervalMinutes = SettingsDefaults::kTriviaIntervalMinutes;
-    int m_triviaTotalPoints = 0;
-    int m_triviaAnsweredCount = 0;
-    QStringList m_triviaRecentIds;
+    bool m_checkInsEnabled = SettingsDefaults::kCheckInsEnabled;
+    int m_checkInMinutes = SettingsDefaults::kCheckInMinutes;
+    QStringList m_recentQuestionIds;
 
-    int m_studyMode = SettingsDefaults::kStudyMode;
     qint64 m_studyCourseId = 0;
     int m_studyFormats = SettingsDefaults::kStudyFormatsMask;
     int m_studyFormatMode = SettingsDefaults::kStudyFormatMode;

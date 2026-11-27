@@ -1,17 +1,15 @@
-#include "trivia/QuizController.h"
+#include "study/QuizController.h"
 
 #include "app/AppSettings.h"
 #include "study/ChoiceEvaluators.h"
 #include "study/ProgressTracker.h"
 #include "study/WrittenAnswerEvaluator.h"
-#include "trivia/AnswerEvaluator.h"
 
 QuizController::QuizController(AppSettings* settings, QObject* parent)
     : QObject(parent)
     , m_settings(settings)
 {
     qRegisterMetaType<Question>();
-    qRegisterMetaType<AnswerResult>();
     qRegisterMetaType<Evaluation>();
 }
 
@@ -49,7 +47,7 @@ bool QuizController::ask()
     if (m_state != State::Idle) {
         return false;
     }
-    const QStringList recent = m_settings ? m_settings->triviaRecentIds() : QStringList();
+    const QStringList recent = m_settings ? m_settings->recentQuestionIds() : QStringList();
     for (const auto& provider : m_providers) {
         if (!m_activeProvider.isEmpty() && provider->id() != m_activeProvider) {
             continue;
@@ -57,7 +55,6 @@ bool QuizController::ask()
         std::optional<Question> q = provider->nextQuestion(recent);
         if (q && q->isValid()) {
             m_current = std::move(q);
-            m_givenThisRound.clear();
             m_state = State::Asking;
             rememberAsked(m_current->id);
             emit questionReady(*m_current);
@@ -65,30 +62,6 @@ bool QuizController::ask()
         }
     }
     return false;
-}
-
-AnswerResult QuizController::submit(const QString& answer)
-{
-    if (m_state != State::Asking || !m_current || m_current->type != QuestionType::OpenTrivia) {
-        return {};
-    }
-    AnswerResult result = AnswerEvaluator::evaluate(*m_current, answer, m_givenThisRound);
-    if (result.empty) {
-        // Nothing typed: keep asking without consuming the question.
-        return result;
-    }
-    m_state = State::Answered;
-    if (result.isCorrect() && !result.duplicate) {
-        m_givenThisRound.append(result.matchedCanonical);
-    }
-    if (m_settings) {
-        m_settings->setTriviaAnsweredCount(m_settings->triviaAnsweredCount() + 1);
-        m_settings->setTriviaTotalPoints(m_settings->triviaTotalPoints() + result.points);
-        m_settings->save();
-    }
-    emit answerEvaluated(result);
-    emit progressChanged();
-    return result;
 }
 
 Evaluation QuizController::record(const Evaluation& evaluation)
@@ -145,8 +118,7 @@ QuizController::WrittenStep QuizController::submitWritten(const QString& answer,
 
 bool QuizController::reveal()
 {
-    if (!m_current || !m_current->isDocumentQuestion()
-        || (m_state != State::Asking && m_state != State::Evaluating)) {
+    if (!m_current || (m_state != State::Asking && m_state != State::Evaluating)) {
         return false;
     }
     cancelJudging();
@@ -181,22 +153,10 @@ void QuizController::dismiss()
 void QuizController::resetProgress()
 {
     if (m_settings) {
-        m_settings->setTriviaTotalPoints(0);
-        m_settings->setTriviaAnsweredCount(0);
-        m_settings->setTriviaRecentIds({});
+        m_settings->setRecentQuestionIds({});
         m_settings->save();
     }
     emit progressChanged();
-}
-
-int QuizController::totalPoints() const
-{
-    return m_settings ? m_settings->triviaTotalPoints() : 0;
-}
-
-int QuizController::answeredCount() const
-{
-    return m_settings ? m_settings->triviaAnsweredCount() : 0;
 }
 
 void QuizController::rememberAsked(const QString& id)
@@ -204,13 +164,13 @@ void QuizController::rememberAsked(const QString& id)
     if (!m_settings) {
         return;
     }
-    QStringList recent = m_settings->triviaRecentIds();
+    QStringList recent = m_settings->recentQuestionIds();
     recent.removeAll(id);
     recent.append(id);
     while (recent.size() > kRecentWindow) {
         recent.removeFirst();
     }
-    m_settings->setTriviaRecentIds(recent);
+    m_settings->setRecentQuestionIds(recent);
     m_settings->save();
 }
 
@@ -227,6 +187,5 @@ void QuizController::finish()
     cancelJudging();
     m_state = State::Idle;
     m_current.reset();
-    m_givenThisRound.clear();
     emit finished();
 }

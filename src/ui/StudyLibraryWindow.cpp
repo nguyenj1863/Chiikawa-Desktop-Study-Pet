@@ -74,10 +74,8 @@ QString typeTag(QuestionType type)
         return QStringLiteral("Select all");
     case QuestionType::Written:
         return QStringLiteral("Written");
-    case QuestionType::OpenTrivia:
-        break;
     }
-    return QStringLiteral("Trivia");
+    return QStringLiteral("Question");
 }
 
 QString unitName(DocumentKind kind, int count)

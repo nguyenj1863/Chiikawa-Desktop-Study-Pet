@@ -14,6 +14,5 @@
         <file alias="assets/fonts/Nunito.ttf">../assets/fonts/Nunito.ttf</file>
         <file alias="assets/icons/arrow_down.png">../assets/icons/arrow_down.png</file>
         <file alias="assets/icons/arrow_up.png">../assets/icons/arrow_up.png</file>
-        <file alias="assets/trivia/questions.json">trivia/questions.json</file>
     </qresource>
 </RCC>

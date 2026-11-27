@@ -1,6 +1,6 @@
 #pragma once
 
-#include "trivia/TriviaTypes.h"
+#include "study/Question.h"
 
 #include <QString>
 #include <QStringList>

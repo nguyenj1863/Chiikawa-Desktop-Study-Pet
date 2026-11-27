@@ -102,26 +102,34 @@ set(CHIIKAWA_AI_SOURCES
 )
 
 set(CHIIKAWA_STUDY_SOURCES
+    src/study/AnswerNormalizer.cpp
     src/study/ChoiceEvaluators.cpp
     src/study/Chunker.cpp
     src/study/DocumentExtractor.cpp
     src/study/ProgressTracker.cpp
     src/study/QuestionGenerator.cpp
+    src/study/QuestionScheduler.cpp
     src/study/QuestionSelector.cpp
     src/study/QuestionValidator.cpp
+    src/study/QuizController.cpp
     src/study/Retriever.cpp
     src/study/StudyDatabase.cpp
     src/study/StudyLibrary.cpp
     src/study/WrittenAnswerEvaluator.cpp
     src/study/ZipReader.cpp
+    include/study/AnswerNormalizer.h
     include/study/ChoiceEvaluators.h
     include/study/Chunker.h
     include/study/DocumentExtractor.h
     include/study/Evaluation.h
     include/study/ProgressTracker.h
+    include/study/Question.h
     include/study/QuestionGenerator.h
+    include/study/QuestionProvider.h
+    include/study/QuestionScheduler.h
     include/study/QuestionSelector.h
     include/study/QuestionValidator.h
+    include/study/QuizController.h
     include/study/Retriever.h
     include/study/StudyDatabase.h
     include/study/StudyLibrary.h
@@ -130,33 +138,20 @@ set(CHIIKAWA_STUDY_SOURCES
     include/study/ZipReader.h
 )
 
-set(CHIIKAWA_TRIVIA_SOURCES
-    src/trivia/AnswerEvaluator.cpp
-    src/trivia/QuestionScheduler.cpp
-    src/trivia/QuizController.cpp
-    src/trivia/QuizPopup.cpp
-    src/trivia/TriviaQuestionProvider.cpp
-    include/trivia/AnswerEvaluator.h
-    include/trivia/QuestionProvider.h
-    include/trivia/QuestionScheduler.h
-    include/trivia/QuizController.h
-    include/trivia/QuizPopup.h
-    include/trivia/TriviaQuestionProvider.h
-    include/trivia/TriviaTypes.h
-)
-
 set(CHIIKAWA_UI_SOURCES
     src/ui/CollapsibleSection.cpp
     src/ui/OnboardingPreview.cpp
     src/ui/OnboardingWindow.cpp
     src/ui/PixelTheme.cpp
     src/ui/SettingsPanel.cpp
+    src/ui/QuizPopup.cpp
     src/ui/StudyLibraryWindow.cpp
     include/ui/CollapsibleSection.h
     include/ui/OnboardingPreview.h
     include/ui/OnboardingWindow.h
     include/ui/PixelTheme.h
     include/ui/SettingsPanel.h
+    include/ui/QuizPopup.h
     include/ui/StudyLibraryWindow.h
 )
 
@@ -187,7 +182,6 @@ add_library(chiikawa_core STATIC
     ${CHIIKAWA_ALARM_SOURCES}
     ${CHIIKAWA_AI_SOURCES}
     ${CHIIKAWA_STUDY_SOURCES}
-    ${CHIIKAWA_TRIVIA_SOURCES}
     ${CHIIKAWA_UI_SOURCES}
     ${CHIIKAWA_PLATFORM_SOURCES}
 )
@@ -277,13 +271,13 @@ chiikawa_add_test(test_animation_manager tests/test_animation_manager.cpp resour
 chiikawa_add_test(test_alarm_and_settings tests/test_alarm_and_settings.cpp resources/resources.qrc)
 chiikawa_add_test(test_onboarding tests/test_onboarding.cpp resources/resources.qrc)
 chiikawa_add_test(test_quick_actions tests/test_quick_actions.cpp resources/resources.qrc)
-chiikawa_add_test(test_trivia tests/test_trivia.cpp resources/resources.qrc)
+chiikawa_add_test(test_checkins tests/test_checkins.cpp resources/resources.qrc)
 chiikawa_add_test(test_study_extract tests/test_study_extract.cpp tests/StudyTestUtils.h)
 chiikawa_add_test(test_study_pipeline tests/test_study_pipeline.cpp tests/StudyTestUtils.h)
 chiikawa_add_test(test_ollama_client tests/test_ollama_client.cpp)
 chiikawa_add_test(test_study_generation tests/test_study_generation.cpp tests/MockLlmClient.h)
 chiikawa_add_test(test_study_answers tests/test_study_answers.cpp tests/MockLlmClient.h)
-chiikawa_add_test(test_lock_in_ui tests/test_lock_in_ui.cpp tests/StudyTestUtils.h resources/resources.qrc)
+chiikawa_add_test(test_study_ui tests/test_study_ui.cpp tests/StudyTestUtils.h resources/resources.qrc)
 
 if(WIN32)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS

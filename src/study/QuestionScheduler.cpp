@@ -1,4 +1,4 @@
-#include "trivia/QuestionScheduler.h"
+#include "study/QuestionScheduler.h"
 
 #include <algorithm>
 

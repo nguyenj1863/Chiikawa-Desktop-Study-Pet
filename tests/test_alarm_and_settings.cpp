@@ -735,7 +735,7 @@ void TestAlarmAndSettings::redesignedTimerAndAlarmControls()
     const int collapsedHeight = panel.height();
     qInfo() << "SettingsPanel dimensions: width=" << panel.width() << "collapsedHeight=" << collapsedHeight;
     QCOMPARE(panel.width(), SettingsPanel::kPanelWidth);
-    // 5 sections (Study Timer + collapsed Alarm, Trivia Check-Ins, Pet Preferences, Quick Actions)
+    // 5 sections (Study Timer + collapsed Alarm, Study, Pet Preferences, Quick Actions)
     QVERIFY2(collapsedHeight <= 425, qPrintable(QStringLiteral("Collapsed height too tall: %1").arg(collapsedHeight)));
 
     // Find Edit pencil button and verify size + state tooltips across Idle, Running, Paused

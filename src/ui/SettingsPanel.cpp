@@ -767,27 +767,27 @@ void SettingsPanel::buildUi()
     root->addWidget(m_alarmSection);
 
     // =========================================================================
-    // SECTION: LOCK-IN TRIVIA (Collapsed by default, opt-in)
+    // SECTION: STUDY CHECK-INS (Collapsed by default, opt-in)
     // =========================================================================
-    m_triviaSection = new CollapsibleSection(QStringLiteral("Lock-In Trivia"), false, m_contentWidget);
-    m_triviaSection->setObjectName(QStringLiteral("triviaSection"));
-    connect(m_triviaSection, &CollapsibleSection::userToggled, this, [this](bool) {
+    m_studySection = new CollapsibleSection(QStringLiteral("Study"), false, m_contentWidget);
+    m_studySection->setObjectName(QStringLiteral("studySection"));
+    connect(m_studySection, &CollapsibleSection::userToggled, this, [this](bool) {
         playUiClick();
     });
-    connect(m_triviaSection, &CollapsibleSection::heightChanged, this, [this]() {
+    connect(m_studySection, &CollapsibleSection::heightChanged, this, [this]() {
         updateLayoutSize();
         emit panelResized();
     });
 
-    auto* triviaBody = new QVBoxLayout();
-    triviaBody->setSpacing(4);
+    auto* studyBody = new QVBoxLayout();
+    studyBody->setSpacing(4);
 
-    m_triviaEnableCheck = new PixelCheckBox(QStringLiteral("Ask questions during study sessions"), m_contentWidget);
-    m_triviaEnableCheck->setObjectName(QStringLiteral("triviaEnableCheck"));
-    m_triviaEnableCheck->setToolTip(QStringLiteral("Chiikawa occasionally asks a quick question while the study timer runs"));
-    connect(m_triviaEnableCheck, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
-    connect(m_triviaEnableCheck, &QCheckBox::clicked, this, [this](bool) { playUiClick(); });
-    triviaBody->addWidget(m_triviaEnableCheck);
+    m_checkInsEnableCheck = new PixelCheckBox(QStringLiteral("Ask questions during study sessions"), m_contentWidget);
+    m_checkInsEnableCheck->setObjectName(QStringLiteral("checkInsEnableCheck"));
+    m_checkInsEnableCheck->setToolTip(QStringLiteral("Chiikawa occasionally asks a quick question while the study timer runs"));
+    connect(m_checkInsEnableCheck, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
+    connect(m_checkInsEnableCheck, &QCheckBox::clicked, this, [this](bool) { playUiClick(); });
+    studyBody->addWidget(m_checkInsEnableCheck);
 
     auto* sourceRow = new QHBoxLayout();
     sourceRow->setSpacing(6);
@@ -796,51 +796,51 @@ void SettingsPanel::buildUi()
     m_studySourceCombo->setObjectName(QStringLiteral("studySourceCombo"));
     m_studySourceCombo->setCursor(Qt::PointingHandCursor);
     m_studySourceCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_studySourceCombo->setToolTip(QStringLiteral("Study a course from your Study Library, or play general trivia"));
+    m_studySourceCombo->setToolTip(QStringLiteral("The Study Library course Chiikawa asks questions from"));
     configureTranslucentPopup(m_studySourceCombo);
     connect(m_studySourceCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
     connect(m_studySourceCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
     sourceRow->addWidget(sourceLabel);
     sourceRow->addWidget(m_studySourceCombo, 1);
-    triviaBody->addLayout(sourceRow);
+    studyBody->addLayout(sourceRow);
     setStudyCourses({});
 
     auto* frequencyRow = new QHBoxLayout();
     frequencyRow->setSpacing(6);
     auto* frequencyLabel = new QLabel(QStringLiteral("Frequency"), m_contentWidget);
-    m_triviaFrequencyCombo = new QComboBox(m_contentWidget);
-    m_triviaFrequencyCombo->setObjectName(QStringLiteral("triviaFrequencyCombo"));
-    m_triviaFrequencyCombo->setCursor(Qt::PointingHandCursor);
-    m_triviaFrequencyCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    for (const int minutes : SettingsDefaults::kTriviaIntervalChoices) {
-        m_triviaFrequencyCombo->addItem(QStringLiteral("About every %1 min").arg(minutes), minutes);
+    m_checkInFrequencyCombo = new QComboBox(m_contentWidget);
+    m_checkInFrequencyCombo->setObjectName(QStringLiteral("checkInFrequencyCombo"));
+    m_checkInFrequencyCombo->setCursor(Qt::PointingHandCursor);
+    m_checkInFrequencyCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    for (const int minutes : SettingsDefaults::kCheckInMinuteChoices) {
+        m_checkInFrequencyCombo->addItem(QStringLiteral("About every %1 min").arg(minutes), minutes);
     }
-    configureTranslucentPopup(m_triviaFrequencyCombo);
-    connect(m_triviaFrequencyCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
-    connect(m_triviaFrequencyCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
+    configureTranslucentPopup(m_checkInFrequencyCombo);
+    connect(m_checkInFrequencyCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
+    connect(m_checkInFrequencyCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
     frequencyRow->addWidget(frequencyLabel);
-    frequencyRow->addWidget(m_triviaFrequencyCombo, 1);
-    triviaBody->addLayout(frequencyRow);
+    frequencyRow->addWidget(m_checkInFrequencyCombo, 1);
+    studyBody->addLayout(frequencyRow);
 
-    auto* triviaStatsRow = new QHBoxLayout();
-    triviaStatsRow->setSpacing(6);
-    m_triviaStatsLabel = new QLabel(m_contentWidget);
-    m_triviaStatsLabel->setObjectName(QStringLiteral("sectionSummary"));
-    m_triviaStatsLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    m_triviaAskBtn = new QPushButton(QStringLiteral("Ask Me a Question"), m_contentWidget);
-    m_triviaAskBtn->setObjectName(QStringLiteral("primary"));
-    m_triviaAskBtn->setCursor(Qt::PointingHandCursor);
-    m_triviaAskBtn->setToolTip(QStringLiteral("Show a question now"));
-    connect(m_triviaAskBtn, &QPushButton::clicked, this, [this]() {
+    auto* studyStatsRow = new QHBoxLayout();
+    studyStatsRow->setSpacing(6);
+    m_studyStatsLabel = new QLabel(m_contentWidget);
+    m_studyStatsLabel->setObjectName(QStringLiteral("sectionSummary"));
+    m_studyStatsLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_askQuestionBtn = new QPushButton(QStringLiteral("Ask Me a Question"), m_contentWidget);
+    m_askQuestionBtn->setObjectName(QStringLiteral("primary"));
+    m_askQuestionBtn->setCursor(Qt::PointingHandCursor);
+    m_askQuestionBtn->setToolTip(QStringLiteral("Show a question now"));
+    connect(m_askQuestionBtn, &QPushButton::clicked, this, [this]() {
         playUiClick();
-        emit triviaAskRequested();
+        emit askQuestionRequested();
     });
-    triviaStatsRow->addWidget(m_triviaStatsLabel, 1);
-    triviaStatsRow->addWidget(m_triviaAskBtn);
-    triviaBody->addLayout(triviaStatsRow);
+    studyStatsRow->addWidget(m_studyStatsLabel, 1);
+    studyStatsRow->addWidget(m_askQuestionBtn);
+    studyBody->addLayout(studyStatsRow);
 
-    auto* triviaButtonsRow = new QHBoxLayout();
-    triviaButtonsRow->setSpacing(6);
+    auto* studyButtonsRow = new QHBoxLayout();
+    studyButtonsRow->setSpacing(6);
     auto* libraryBtn = new QPushButton(
         PixelTheme::icon(PixelIcon::Edit, PixelTheme::kSecondaryText, 12),
         QStringLiteral(" Study Library"), m_contentWidget);
@@ -853,21 +853,21 @@ void SettingsPanel::buildUi()
         playUiClick();
         emit studyLibraryRequested();
     });
-    auto* triviaResetBtn = new QPushButton(
+    auto* studyResetBtn = new QPushButton(
         PixelTheme::icon(PixelIcon::Reset, PixelTheme::kSecondaryText, 12),
         QStringLiteral(" Reset Progress"), m_contentWidget);
-    triviaResetBtn->setObjectName(QStringLiteral("subtle"));
-    triviaResetBtn->setProperty("actionId", QStringLiteral("triviaResetProgress"));
-    triviaResetBtn->setIconSize(QSize(12, 12));
-    triviaResetBtn->setCursor(Qt::PointingHandCursor);
-    triviaResetBtn->setToolTip(QStringLiteral("Clear trivia points, study XP, and answer history"));
-    connect(triviaResetBtn, &QPushButton::clicked, this, &SettingsPanel::onTriviaResetClicked);
-    triviaButtonsRow->addWidget(libraryBtn, 1);
-    triviaButtonsRow->addWidget(triviaResetBtn, 1);
-    triviaBody->addLayout(triviaButtonsRow);
+    studyResetBtn->setObjectName(QStringLiteral("subtle"));
+    studyResetBtn->setProperty("actionId", QStringLiteral("studyResetProgress"));
+    studyResetBtn->setIconSize(QSize(12, 12));
+    studyResetBtn->setCursor(Qt::PointingHandCursor);
+    studyResetBtn->setToolTip(QStringLiteral("Clear study XP and answer history"));
+    connect(studyResetBtn, &QPushButton::clicked, this, &SettingsPanel::onStudyResetClicked);
+    studyButtonsRow->addWidget(libraryBtn, 1);
+    studyButtonsRow->addWidget(studyResetBtn, 1);
+    studyBody->addLayout(studyButtonsRow);
 
-    m_triviaSection->setContentLayout(triviaBody);
-    root->addWidget(m_triviaSection);
+    m_studySection->setContentLayout(studyBody);
+    root->addWidget(m_studySection);
 
     // =========================================================================
     // SECTION 3: PET PREFERENCES (Collapsed by default, auto-persisted)
@@ -1182,17 +1182,13 @@ void SettingsPanel::syncFromSettings()
     m_volumeSlider->setValue(volPct);
     m_volumeValue->setText(QStringLiteral("%1%").arg(volPct));
     m_notifyCheck->setChecked(m_settings->alarmNotificationEnabled());
-    m_triviaEnableCheck->setChecked(m_settings->triviaEnabled());
+    m_checkInsEnableCheck->setChecked(m_settings->checkInsEnabled());
     {
-        const qint64 wanted = m_settings->studyMode() == SettingsDefaults::kStudyModeTrivia ? -1 : m_settings->studyCourseId();
-        int index = m_studySourceCombo->findData(wanted);
-        if (index < 0 && wanted >= 0) {
-            index = 0;   // first course, or the "no courses yet" placeholder
-        }
-        m_studySourceCombo->setCurrentIndex(std::max(0, index));
+        const int index = m_studySourceCombo->findData(m_settings->studyCourseId());
+        m_studySourceCombo->setCurrentIndex(std::max(0, index));   // first course, or the placeholder
     }
-    const int freqIdx = m_triviaFrequencyCombo->findData(m_settings->triviaIntervalMinutes());
-    m_triviaFrequencyCombo->setCurrentIndex(freqIdx >= 0 ? freqIdx : 0);
+    const int freqIdx = m_checkInFrequencyCombo->findData(m_settings->checkInMinutes());
+    m_checkInFrequencyCombo->setCurrentIndex(freqIdx >= 0 ? freqIdx : 0);
 
     const bool want24 = m_settings->alarmUse24Hour();
     if (want24 != m_use24Hour) {
@@ -1214,7 +1210,7 @@ void SettingsPanel::syncFromSettings()
     refreshPetSummary();
     refreshQuickActionsSummary();
     refreshAlarmSummary();
-    refreshTriviaSummary();
+    refreshStudySummary();
 }
 
 void SettingsPanel::syncFromTimer()
@@ -1697,44 +1693,32 @@ void SettingsPanel::onPreferenceChanged()
     m_settings->setAlarmSoundId(m_soundCombo->currentData().toString());
     m_settings->setAlarmVolume(m_volumeSlider->value() / 100.0);
     m_settings->setAlarmNotificationEnabled(m_notifyCheck->isChecked());
-    m_settings->setTriviaEnabled(m_triviaEnableCheck->isChecked());
+    m_settings->setCheckInsEnabled(m_checkInsEnableCheck->isChecked());
     {
         const qint64 source = m_studySourceCombo->currentData().toLongLong();
-        if (source < 0) {
-            m_settings->setStudyMode(SettingsDefaults::kStudyModeTrivia);
-        } else {
-            m_settings->setStudyMode(SettingsDefaults::kStudyModeDocuments);
-            if (source > 0) {
-                m_settings->setStudyCourseId(source);
-            }
+        if (source > 0) {
+            m_settings->setStudyCourseId(source);
         }
     }
-    m_settings->setTriviaIntervalMinutes(m_triviaFrequencyCombo->currentData().toInt());
+    m_settings->setCheckInMinutes(m_checkInFrequencyCombo->currentData().toInt());
 
     m_settings->save();
     refreshPetSummary();
     refreshQuickActionsSummary();
     refreshAlarmSummary();
-    refreshTriviaSummary();
+    refreshStudySummary();
     emit settingsApplied();
 }
 
-void SettingsPanel::refreshTriviaSummary()
+void SettingsPanel::refreshStudySummary()
 {
-    if (!m_triviaSection || !m_settings || !m_triviaStatsLabel) {
+    if (!m_studySection || !m_settings || !m_studyStatsLabel) {
         return;
     }
-    const int points = m_settings->triviaTotalPoints();
-    const int answered = m_settings->triviaAnsweredCount();
-    const bool trivia = m_settings->studyMode() == SettingsDefaults::kStudyModeTrivia;
-    if (trivia) {
-        m_triviaStatsLabel->setText(QStringLiteral("%1 pts · %2 answered").arg(points).arg(answered));
-    } else {
-        m_triviaStatsLabel->setText(m_studyProgressText.isEmpty() ? QStringLiteral("No study answers yet") : m_studyProgressText);
-    }
+    m_studyStatsLabel->setText(m_studyProgressText.isEmpty() ? QStringLiteral("No study answers yet") : m_studyProgressText);
     const QString source = m_studySourceCombo ? m_studySourceCombo->currentText() : QString();
-    m_triviaSection->setSummary(m_settings->triviaEnabled()
-                                    ? QStringLiteral("Every ~%1 min · %2").arg(m_settings->triviaIntervalMinutes()).arg(source)
+    m_studySection->setSummary(m_settings->checkInsEnabled()
+                                    ? QStringLiteral("Every ~%1 min · %2").arg(m_settings->checkInMinutes()).arg(source)
                                     : QStringLiteral("Off"));
 }
 
@@ -1753,31 +1737,29 @@ void SettingsPanel::setStudyCourses(const QVector<Course>& courses)
     for (const Course& c : courses) {
         m_studySourceCombo->addItem(c.name, c.id);
     }
-    m_studySourceCombo->addItem(QStringLiteral("General trivia"), qint64(-1));
     if (m_settings) {
-        const qint64 wanted = m_settings->studyMode() == SettingsDefaults::kStudyModeTrivia ? -1 : m_settings->studyCourseId();
-        const int index = m_studySourceCombo->findData(wanted);
+        const int index = m_studySourceCombo->findData(m_settings->studyCourseId());
         m_studySourceCombo->setCurrentIndex(index >= 0 ? index : 0);
     }
     m_syncingUi = wasSyncing;
-    refreshTriviaSummary();
+    refreshStudySummary();
 }
 
 void SettingsPanel::setStudyProgressText(const QString& text)
 {
     m_studyProgressText = text;
-    refreshTriviaSummary();
+    refreshStudySummary();
 }
 
-void SettingsPanel::onTriviaResetClicked()
+void SettingsPanel::onStudyResetClicked()
 {
     if (!m_settings) {
         return;
     }
     playUiClick();
     PixelConfirmDialog dlg(
-        QStringLiteral("Reset Lock-In progress?"),
-        QStringLiteral("Trivia points, study XP, and answer history go back to zero. Your documents and questions are kept."),
+        QStringLiteral("Reset study progress?"),
+        QStringLiteral("Study XP and answer history go back to zero. Your documents and questions are kept."),
         QStringLiteral("Reset"),
         QStringLiteral("Cancel"),
         this);
@@ -1786,8 +1768,8 @@ void SettingsPanel::onTriviaResetClicked()
     if (res != QDialog::Accepted) {
         return;
     }
-    emit triviaProgressResetRequested();
-    refreshTriviaSummary();
+    emit studyProgressResetRequested();
+    refreshStudySummary();
 }
 
 void SettingsPanel::onRestoreDefaultsClicked()

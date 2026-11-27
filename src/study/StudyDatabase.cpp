@@ -147,7 +147,7 @@ Question readQuestion(const QSqlQuery& q)
         aliases.append(a.toString());
     }
     if (!out.expectedAnswer.isEmpty()) {
-        out.answers.append({out.expectedAnswer, aliases, Rarity::Common});
+        out.answers.append({out.expectedAnswer, aliases});
     }
     SourceRef source;
     source.title = q.value(9).toString();

@@ -2,7 +2,7 @@
 
 #include "ai/LlmClient.h"
 #include "study/StudyTypes.h"
-#include "trivia/TriviaTypes.h"
+#include "study/Question.h"
 
 #include <QHash>
 #include <QList>

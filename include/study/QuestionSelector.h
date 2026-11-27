@@ -1,7 +1,7 @@
 #pragma once
 
-#include "trivia/QuestionProvider.h"
-#include "trivia/TriviaTypes.h"
+#include "study/QuestionProvider.h"
+#include "study/Question.h"
 
 #include <QList>
 #include <QRandomGenerator>

@@ -48,10 +48,10 @@ public:
     void syncFromTimer();
     void syncFromAlarm();
 
-    /** Refreshes the Lock-In Trivia stats and section summary. */
-    void refreshTriviaSummary();
+    /** Refreshes the study stats and section summary. */
+    void refreshStudySummary();
 
-    /** Courses offered in "Questions from" (plus General trivia). */
+    /** Courses offered in "Questions". */
     void setStudyCourses(const QVector<Course>& courses);
     /** Study progress line shown when questions come from the Study Library. */
     void setStudyProgressText(const QString& text);
@@ -82,8 +82,8 @@ signals:
     void dragFinished();
     void closedByUser();
     void panelResized();
-    void triviaAskRequested();
-    void triviaProgressResetRequested();
+    void askQuestionRequested();
+    void studyProgressResetRequested();
     void studyLibraryRequested();
 
 protected:
@@ -108,7 +108,7 @@ private slots:
     void onPreviewSoundClicked();
     void onPreferenceChanged();
     void onRestoreDefaultsClicked();
-    void onTriviaResetClicked();
+    void onStudyResetClicked();
     void onClosePanel();
 
 private:
@@ -175,15 +175,15 @@ private:
     QPushButton* m_snooze10Btn = nullptr;
     QPushButton* m_snooze15Btn = nullptr;
 
-    // Lock-In Trivia (Collapsible, collapsed by default)
-    CollapsibleSection* m_triviaSection = nullptr;
-    QCheckBox* m_triviaEnableCheck = nullptr;
+    // Study check-ins (Collapsible, collapsed by default)
+    CollapsibleSection* m_studySection = nullptr;
+    QCheckBox* m_checkInsEnableCheck = nullptr;
     QComboBox* m_studySourceCombo = nullptr;
     QVector<Course> m_studyCourses;
     QString m_studyProgressText;
-    QComboBox* m_triviaFrequencyCombo = nullptr;
-    QLabel* m_triviaStatsLabel = nullptr;
-    QPushButton* m_triviaAskBtn = nullptr;
+    QComboBox* m_checkInFrequencyCombo = nullptr;
+    QLabel* m_studyStatsLabel = nullptr;
+    QPushButton* m_askQuestionBtn = nullptr;
 
     // Pet Preferences (Collapsible, collapsed by default)
     CollapsibleSection* m_petSection = nullptr;

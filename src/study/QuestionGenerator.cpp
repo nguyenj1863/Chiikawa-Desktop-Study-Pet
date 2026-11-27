@@ -89,10 +89,8 @@ QString typeName(QuestionType t)
         return QStringLiteral("multiple select");
     case QuestionType::Written:
         return QStringLiteral("written answer");
-    case QuestionType::OpenTrivia:
-        break;
     }
-    return QStringLiteral("trivia");
+    return QStringLiteral("question");
 }
 
 } // namespace
@@ -141,8 +139,6 @@ QByteArray QuestionGenerator::schemaFor(QuestionType type)
                              stringProp("explanation"), difficulty},
                             {"concept", "evidence", "question", "expected_answer", "key_points", "aliases",
                              "explanation", "difficulty"});
-    case QuestionType::OpenTrivia:
-        break;
     }
     return QByteArray();
 }
@@ -175,8 +171,6 @@ LlmRequest QuestionGenerator::buildRequest(QuestionType type, const Chunk& chunk
             "- \"expected_answer\" is a model answer taken from the passage.\n"
             "- \"key_points\" lists 1-4 essential ideas a correct answer must include.\n"
             "- \"aliases\" lists other acceptable names or spellings when the answer is a single term (otherwise empty).");
-        break;
-    case QuestionType::OpenTrivia:
         break;
     }
     QString avoid;
@@ -278,7 +272,7 @@ std::optional<Question> QuestionGenerator::parseResponse(QuestionType type, cons
                 aliases.append(alias);
             }
         }
-        q.answers.append({q.expectedAnswer, aliases, Rarity::Common});
+        q.answers.append({q.expectedAnswer, aliases});
     } else {
         return fail(QStringLiteral("unsupported type"));
     }
@@ -328,7 +322,7 @@ bool QuestionGenerator::start(const QList<qint64>& documentIds, const QList<Ques
     }
     m_formats.clear();
     for (const QuestionType t : formats) {
-        if (t != QuestionType::OpenTrivia && !m_formats.contains(t)) {
+        if (!m_formats.contains(t)) {
             m_formats.append(t);
         }
     }

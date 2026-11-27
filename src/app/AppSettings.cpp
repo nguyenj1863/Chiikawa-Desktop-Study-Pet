@@ -120,12 +120,14 @@ void AppSettings::load()
         m_snoozeTargetUtcMs = 0;
     }
 
-    m_triviaEnabled = settings.value(QStringLiteral("trivia/enabled"), SettingsDefaults::kTriviaEnabled).toBool();
-    m_triviaIntervalMinutes = settings.value(QStringLiteral("trivia/intervalMinutes"), SettingsDefaults::kTriviaIntervalMinutes).toInt();
-    m_triviaTotalPoints = settings.value(QStringLiteral("trivia/totalPoints"), 0).toInt();
-    m_triviaAnsweredCount = settings.value(QStringLiteral("trivia/answeredCount"), 0).toInt();
-    m_triviaRecentIds = settings.value(QStringLiteral("trivia/recentIds")).toStringList();
-    m_studyMode = settings.value(QStringLiteral("study/mode"), SettingsDefaults::kStudyMode).toInt();
+    // Check-in keys were stored under "trivia/" before the Study App; read those as a fallback.
+    const auto readKey = [&settings](const char* current, const char* legacy, const QVariant& fallback) {
+        const QString key = QString::fromLatin1(current);
+        return settings.contains(key) ? settings.value(key) : settings.value(QString::fromLatin1(legacy), fallback);
+    };
+    m_checkInsEnabled = readKey("study/checkinsEnabled", "trivia/enabled", SettingsDefaults::kCheckInsEnabled).toBool();
+    m_checkInMinutes = readKey("study/checkinMinutes", "trivia/intervalMinutes", SettingsDefaults::kCheckInMinutes).toInt();
+    m_recentQuestionIds = readKey("study/recentIds", "trivia/recentIds", QStringList()).toStringList();
     m_studyCourseId = settings.value(QStringLiteral("study/courseId"), 0).toLongLong();
     m_studyFormats = settings.value(QStringLiteral("study/formats"), SettingsDefaults::kStudyFormatsMask).toInt();
     m_studyFormatMode = settings.value(QStringLiteral("study/formatMode"), SettingsDefaults::kStudyFormatMode).toInt();
@@ -182,12 +184,14 @@ void AppSettings::save() const
     settings.setValue(QStringLiteral("alarm/snoozeTargetUtcMs"), m_snoozeTargetUtcMs);
     settings.setValue(QStringLiteral("alarm/lastTriggeredOccurrenceUtcMs"), m_lastTriggeredOccurrenceUtcMs);
 
-    settings.setValue(QStringLiteral("trivia/enabled"), m_triviaEnabled);
-    settings.setValue(QStringLiteral("trivia/intervalMinutes"), m_triviaIntervalMinutes);
-    settings.setValue(QStringLiteral("trivia/totalPoints"), m_triviaTotalPoints);
-    settings.setValue(QStringLiteral("trivia/answeredCount"), m_triviaAnsweredCount);
-    settings.setValue(QStringLiteral("trivia/recentIds"), m_triviaRecentIds);
-    settings.setValue(QStringLiteral("study/mode"), m_studyMode);
+    settings.setValue(QStringLiteral("study/checkinsEnabled"), m_checkInsEnabled);
+    settings.setValue(QStringLiteral("study/checkinMinutes"), m_checkInMinutes);
+    settings.setValue(QStringLiteral("study/recentIds"), m_recentQuestionIds);
+    // Retire the general-trivia and pre-Study-App keys; their values were migrated on load.
+    for (const char* legacy : {"trivia/enabled", "trivia/intervalMinutes", "trivia/recentIds", "trivia/totalPoints",
+                               "trivia/answeredCount", "study/mode"}) {
+        settings.remove(QString::fromLatin1(legacy));
+    }
     settings.setValue(QStringLiteral("study/courseId"), m_studyCourseId);
     settings.setValue(QStringLiteral("study/formats"), m_studyFormats);
     settings.setValue(QStringLiteral("study/formatMode"), m_studyFormatMode);
@@ -218,9 +222,8 @@ void AppSettings::restoreDefaults()
     m_alarmNotificationEnabled = SettingsDefaults::kAlarmNotificationEnabled;
     m_snoozeMinutes = SettingsDefaults::kSnoozeMinutes;
     m_alarmUse24Hour = SettingsDefaults::kAlarmUse24Hour;
-    m_triviaEnabled = SettingsDefaults::kTriviaEnabled;
-    m_triviaIntervalMinutes = SettingsDefaults::kTriviaIntervalMinutes;
-    m_studyMode = SettingsDefaults::kStudyMode;
+    m_checkInsEnabled = SettingsDefaults::kCheckInsEnabled;
+    m_checkInMinutes = SettingsDefaults::kCheckInMinutes;
     m_studyFormats = SettingsDefaults::kStudyFormatsMask;
     m_studyFormatMode = SettingsDefaults::kStudyFormatMode;
     m_studyFocusFormat = SettingsDefaults::kStudyFocusFormat;
@@ -378,35 +381,19 @@ void AppSettings::setLastTriggeredOccurrenceUtcMs(qint64 utcMs)
     m_lastTriggeredOccurrenceUtcMs = std::max<qint64>(0, utcMs);
 }
 
-void AppSettings::setTriviaEnabled(bool enabled)
+void AppSettings::setCheckInsEnabled(bool enabled)
 {
-    m_triviaEnabled = enabled;
+    m_checkInsEnabled = enabled;
 }
 
-void AppSettings::setTriviaIntervalMinutes(int minutes)
+void AppSettings::setCheckInMinutes(int minutes)
 {
-    m_triviaIntervalMinutes = SettingsDefaults::clampTriviaIntervalMinutes(minutes);
+    m_checkInMinutes = SettingsDefaults::clampCheckInMinutes(minutes);
 }
 
-void AppSettings::setTriviaTotalPoints(int points)
+void AppSettings::setRecentQuestionIds(const QStringList& ids)
 {
-    m_triviaTotalPoints = std::max(0, points);
-}
-
-void AppSettings::setTriviaAnsweredCount(int count)
-{
-    m_triviaAnsweredCount = std::max(0, count);
-}
-
-void AppSettings::setTriviaRecentIds(const QStringList& ids)
-{
-    m_triviaRecentIds = ids;
-}
-
-void AppSettings::setStudyMode(int mode)
-{
-    m_studyMode = mode == SettingsDefaults::kStudyModeTrivia ? SettingsDefaults::kStudyModeTrivia
-                                                            : SettingsDefaults::kStudyModeDocuments;
+    m_recentQuestionIds = ids;
 }
 
 void AppSettings::setStudyCourseId(qint64 id)
@@ -455,10 +442,7 @@ void AppSettings::clampValues()
     }
     m_alarmVolume = std::clamp(m_alarmVolume, SettingsDefaults::kMinAlarmVolume, SettingsDefaults::kMaxAlarmVolume);
     m_snoozeMinutes = SettingsDefaults::clampSnoozeMinutes(m_snoozeMinutes);
-    m_triviaIntervalMinutes = SettingsDefaults::clampTriviaIntervalMinutes(m_triviaIntervalMinutes);
-    m_triviaTotalPoints = std::max(0, m_triviaTotalPoints);
-    m_triviaAnsweredCount = std::max(0, m_triviaAnsweredCount);
-    setStudyMode(m_studyMode);
+    m_checkInMinutes = SettingsDefaults::clampCheckInMinutes(m_checkInMinutes);
     setStudyCourseId(m_studyCourseId);
     m_studyFormats = SettingsDefaults::clampStudyFormats(m_studyFormats);
     setStudyFormatMode(m_studyFormatMode);
