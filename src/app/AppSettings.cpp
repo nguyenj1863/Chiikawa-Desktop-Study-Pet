@@ -120,6 +120,12 @@ void AppSettings::load()
         m_snoozeTargetUtcMs = 0;
     }
 
+    m_triviaEnabled = settings.value(QStringLiteral("trivia/enabled"), SettingsDefaults::kTriviaEnabled).toBool();
+    m_triviaIntervalMinutes = settings.value(QStringLiteral("trivia/intervalMinutes"), SettingsDefaults::kTriviaIntervalMinutes).toInt();
+    m_triviaTotalPoints = settings.value(QStringLiteral("trivia/totalPoints"), 0).toInt();
+    m_triviaAnsweredCount = settings.value(QStringLiteral("trivia/answeredCount"), 0).toInt();
+    m_triviaRecentIds = settings.value(QStringLiteral("trivia/recentIds")).toStringList();
+
     if (settings.contains(QStringLiteral("pet/posX")) && settings.contains(QStringLiteral("pet/posY"))) {
         m_lastPosition = QPoint(
             settings.value(QStringLiteral("pet/posX")).toInt(),
@@ -170,6 +176,12 @@ void AppSettings::save() const
     settings.setValue(QStringLiteral("alarm/snoozeTargetUtcMs"), m_snoozeTargetUtcMs);
     settings.setValue(QStringLiteral("alarm/lastTriggeredOccurrenceUtcMs"), m_lastTriggeredOccurrenceUtcMs);
 
+    settings.setValue(QStringLiteral("trivia/enabled"), m_triviaEnabled);
+    settings.setValue(QStringLiteral("trivia/intervalMinutes"), m_triviaIntervalMinutes);
+    settings.setValue(QStringLiteral("trivia/totalPoints"), m_triviaTotalPoints);
+    settings.setValue(QStringLiteral("trivia/answeredCount"), m_triviaAnsweredCount);
+    settings.setValue(QStringLiteral("trivia/recentIds"), m_triviaRecentIds);
+
     if (m_hasSavedPosition) {
         settings.setValue(QStringLiteral("pet/posX"), m_lastPosition.x());
         settings.setValue(QStringLiteral("pet/posY"), m_lastPosition.y());
@@ -194,6 +206,8 @@ void AppSettings::restoreDefaults()
     m_alarmNotificationEnabled = SettingsDefaults::kAlarmNotificationEnabled;
     m_snoozeMinutes = SettingsDefaults::kSnoozeMinutes;
     m_alarmUse24Hour = SettingsDefaults::kAlarmUse24Hour;
+    m_triviaEnabled = SettingsDefaults::kTriviaEnabled;
+    m_triviaIntervalMinutes = SettingsDefaults::kTriviaIntervalMinutes;
     clampValues();
     save();
 }
@@ -348,6 +362,31 @@ void AppSettings::setLastTriggeredOccurrenceUtcMs(qint64 utcMs)
     m_lastTriggeredOccurrenceUtcMs = std::max<qint64>(0, utcMs);
 }
 
+void AppSettings::setTriviaEnabled(bool enabled)
+{
+    m_triviaEnabled = enabled;
+}
+
+void AppSettings::setTriviaIntervalMinutes(int minutes)
+{
+    m_triviaIntervalMinutes = SettingsDefaults::clampTriviaIntervalMinutes(minutes);
+}
+
+void AppSettings::setTriviaTotalPoints(int points)
+{
+    m_triviaTotalPoints = std::max(0, points);
+}
+
+void AppSettings::setTriviaAnsweredCount(int count)
+{
+    m_triviaAnsweredCount = std::max(0, count);
+}
+
+void AppSettings::setTriviaRecentIds(const QStringList& ids)
+{
+    m_triviaRecentIds = ids;
+}
+
 void AppSettings::clampValues()
 {
     m_petSize = std::clamp(m_petSize, SettingsDefaults::kMinPetSize, SettingsDefaults::kMaxPetSize);
@@ -363,4 +402,7 @@ void AppSettings::clampValues()
     }
     m_alarmVolume = std::clamp(m_alarmVolume, SettingsDefaults::kMinAlarmVolume, SettingsDefaults::kMaxAlarmVolume);
     m_snoozeMinutes = SettingsDefaults::clampSnoozeMinutes(m_snoozeMinutes);
+    m_triviaIntervalMinutes = SettingsDefaults::clampTriviaIntervalMinutes(m_triviaIntervalMinutes);
+    m_triviaTotalPoints = std::max(0, m_triviaTotalPoints);
+    m_triviaAnsweredCount = std::max(0, m_triviaAnsweredCount);
 }

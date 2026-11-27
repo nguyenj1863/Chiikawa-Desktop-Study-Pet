@@ -6,6 +6,7 @@
 #include <QPoint>
 #include <QSettings>
 #include <QString>
+#include <QStringList>
 #include <QTime>
 #include <QVector>
 
@@ -126,6 +127,22 @@ public:
     [[nodiscard]] qint64 lastTriggeredOccurrenceUtcMs() const { return m_lastTriggeredOccurrenceUtcMs; }
     void setLastTriggeredOccurrenceUtcMs(qint64 utcMs);
 
+    // Trivia check-ins. Restore Defaults resets enabled/interval but keeps progress.
+    [[nodiscard]] bool triviaEnabled() const { return m_triviaEnabled; }
+    void setTriviaEnabled(bool enabled);
+
+    [[nodiscard]] int triviaIntervalMinutes() const { return m_triviaIntervalMinutes; }
+    void setTriviaIntervalMinutes(int minutes);
+
+    [[nodiscard]] int triviaTotalPoints() const { return m_triviaTotalPoints; }
+    void setTriviaTotalPoints(int points);
+
+    [[nodiscard]] int triviaAnsweredCount() const { return m_triviaAnsweredCount; }
+    void setTriviaAnsweredCount(int count);
+
+    [[nodiscard]] QStringList triviaRecentIds() const { return m_triviaRecentIds; }
+    void setTriviaRecentIds(const QStringList& ids);
+
 private:
     void clampValues();
 
@@ -157,4 +174,10 @@ private:
     int m_alarmState = 0;
     qint64 m_snoozeTargetUtcMs = 0;
     qint64 m_lastTriggeredOccurrenceUtcMs = 0;
+
+    bool m_triviaEnabled = SettingsDefaults::kTriviaEnabled;
+    int m_triviaIntervalMinutes = SettingsDefaults::kTriviaIntervalMinutes;
+    int m_triviaTotalPoints = 0;
+    int m_triviaAnsweredCount = 0;
+    QStringList m_triviaRecentIds;
 };

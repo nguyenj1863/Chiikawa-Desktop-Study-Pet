@@ -41,6 +41,26 @@ inline constexpr bool kAlarmNotificationEnabled = true;
 inline constexpr int kSnoozeMinutes = 5;
 inline constexpr bool kAlarmUse24Hour = false;
 
+inline constexpr bool kTriviaEnabled = false;
+inline constexpr int kTriviaIntervalMinutes = 15;
+inline constexpr int kMinTriviaIntervalMinutes = 5;
+inline constexpr int kMaxTriviaIntervalMinutes = 60;
+inline constexpr int kTriviaIntervalChoices[] = {5, 10, 15, 30, 60};
+
+/** Snaps a trivia check-in interval to the nearest offered choice. */
+inline int clampTriviaIntervalMinutes(int minutes)
+{
+    int best = kTriviaIntervalChoices[0];
+    for (const int choice : kTriviaIntervalChoices) {
+        const int diff = choice > minutes ? choice - minutes : minutes - choice;
+        const int bestDiff = best > minutes ? best - minutes : minutes - best;
+        if (diff < bestDiff) {
+            best = choice;
+        }
+    }
+    return best;
+}
+
 inline QString defaultAlarmSoundId()
 {
     return QStringLiteral("soft_chime");
