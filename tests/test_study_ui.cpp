@@ -14,10 +14,12 @@
 #include "ui/QuizPopup.h"
 #include "ui/PixelTheme.h"
 #include "ui/StudyLibraryWindow.h"
+#include "ui/StudySetList.h"
 
 #include <QApplication>
 #include <QComboBox>
 #include <QDir>
+#include <QMimeData>
 #include <QFile>
 #include <QLabel>
 #include <QMouseEvent>
@@ -118,6 +120,9 @@ private slots:
     void optionButtonsWrapLongText();
 
     void libraryWindowManagesSetsFormatsAndDocuments();
+    void libraryListsSetsAndDrillsIntoOne();
+    void libraryHidesTheReadyBannerAndCollapsesFormats();
+    void libraryExplainsWhichFilesCanBeImported();
     void petStudyFlowWorksWithoutOllama();
     void studyShortcutOpensTheStudyWindow();
 
@@ -398,7 +403,7 @@ void TestStudyUi::libraryWindowManagesSetsFormatsAndDocuments()
     QCOMPARE(settings.studySetId(), studySet);
     QCOMPARE(window.createSet(QStringLiteral("cs 340")), 0);   // duplicate name rejected
     QVERIFY(window.renameCurrentSet(QStringLiteral("CS 340 Databases")));
-    QCOMPARE(window.setCombo()->currentText(), QStringLiteral("CS 340 Databases"));
+    QCOMPARE(window.currentSetName(), QStringLiteral("CS 340 Databases"));
 
     // Formats: at least one stays on; Focus mode is saved.
     window.formatCheck(SettingsDefaults::kStudyFormatMultiSelect)->setChecked(false);
@@ -468,6 +473,140 @@ void TestStudyUi::studyShortcutOpensTheStudyWindow()
     QVERIFY(pet.studyLibraryWindow()->isVisible());
     disconnectOllama(pet.ollamaClient());
     pet.studyLibraryWindow()->hide();
+}
+
+void TestStudyUi::libraryListsSetsAndDrillsIntoOne()
+{
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    QuestionGenerator generator(library.database(), &ollama);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+
+    // Nothing yet: the list explains how to start and shows no rows.
+    QVERIFY(!window.isShowingSet());
+    QVERIFY(window.setList()->ids().isEmpty());
+    QVERIFY(window.titleLabel()->text().contains(QStringLiteral("Study Library")));
+    QVERIFY(!window.backButton()->isVisibleTo(&window));
+
+    const qint64 a = library.database()->addStudySet(QStringLiteral("Biology")).value_or(0);
+    const qint64 b = library.database()->addStudySet(QStringLiteral("Databases")).value_or(0);
+    QVERIFY(a > 0 && b > 0);
+    window.showNear(kPet);   // reopening reloads the list
+    QCOMPARE(window.setList()->ids().size(), 2);
+    QVERIFY(window.setList()->metaText(a).contains(QStringLiteral("0 documents")));
+    QVERIFY(!window.isShowingSet());
+
+    // Clicking a row opens that set's materials; Back returns to the list.
+    QFrame* row = window.setList()->rowFor(b);
+    QVERIFY(row);
+    QTest::mouseClick(row, Qt::LeftButton, Qt::NoModifier, row->rect().center());
+    QVERIFY(window.isShowingSet());
+    QCOMPARE(window.currentSet(), b);
+    QCOMPARE(window.currentSetName(), QStringLiteral("Databases"));
+    QVERIFY(window.titleLabel()->text().contains(QStringLiteral("Databases")));
+    QVERIFY(window.backButton()->isVisibleTo(&window));
+    QCOMPARE(settings.studySetId(), b);
+    window.backButton()->click();
+    QVERIFY(!window.isShowingSet());
+    QVERIFY(window.titleLabel()->text().contains(QStringLiteral("Study Library")));
+
+    // Row actions work on their own set without opening it.
+    QVERIFY(window.renameSet(a, QStringLiteral("Cell Biology")));
+    QCOMPARE(window.setList()->ids().size(), 2);
+    QVERIFY(window.removeSet(a, true));
+    QCOMPARE(window.setList()->ids(), QList<qint64>{b});
+    QVERIFY(!window.isShowingSet());
+
+    // Creating a set goes straight to its materials.
+    const qint64 c = window.createSet(QStringLiteral("Networks"));
+    QVERIFY(c > 0);
+    QVERIFY(window.isShowingSet());
+    QCOMPARE(window.currentSet(), c);
+    QVERIFY(window.removeSet(c, true));
+    QVERIFY(window.removeSet(b, true));
+    QVERIFY(window.setList()->ids().isEmpty());
+}
+
+void TestStudyUi::libraryHidesTheReadyBannerAndCollapsesFormats()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    QuestionGenerator generator(library.database(), &ollama);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+    QTRY_COMPARE_WITH_TIMEOUT(ollama.setupState(), OllamaClient::SetupState::NotInstalled, 5000);
+    QVERIFY(window.setupCard()->isVisibleTo(&window));   // the user has something to do
+
+    // A working model needs no banner at all.
+    emit ollama.setupStateChanged(OllamaClient::SetupState::Ready);
+    QVERIFY(!window.setupCard()->isVisibleTo(&window));
+    QVERIFY(!window.setupLabel()->isVisibleTo(&window));
+    emit ollama.setupStateChanged(OllamaClient::SetupState::NotRunning);
+    QVERIFY(window.setupCard()->isVisibleTo(&window));
+
+    // Question formats: collapsed, multiple choice by default, expandable.
+    QCOMPARE(settings.studyFormats(), SettingsDefaults::kStudyFormatSingleChoice);
+    const qint64 id = window.createSet(QStringLiteral("Formats"));
+    QVERIFY(id > 0);
+    QVERIFY(window.isShowingSet());
+    QVERIFY(!window.formatsExpanded());
+    QVERIFY(window.formatsToggle()->text().contains(QStringLiteral("Multiple choice")));
+    QVERIFY(!window.formatsToggle()->text().contains(QStringLiteral("Written")));
+    QVERIFY(window.formatCheck(SettingsDefaults::kStudyFormatSingleChoice)->isChecked());
+    QVERIFY(!window.formatCheck(SettingsDefaults::kStudyFormatMultiSelect)->isChecked());
+    QVERIFY(!window.formatCheck(SettingsDefaults::kStudyFormatWritten)->isChecked());
+    window.formatsToggle()->click();
+    QVERIFY(window.formatsExpanded());
+    window.formatCheck(SettingsDefaults::kStudyFormatWritten)->setChecked(true);
+    QVERIFY(window.formatsToggle()->text().contains(QStringLiteral("Written answer")));
+    window.formatsToggle()->click();
+    QVERIFY(!window.formatsExpanded());
+    QVERIFY(window.removeCurrentSet(true));
+}
+
+void TestStudyUi::libraryExplainsWhichFilesCanBeImported()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    QuestionGenerator generator(library.database(), &ollama);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+    const qint64 id = window.createSet(QStringLiteral("Imports"));
+    QVERIFY(id > 0);
+
+    const QString types = window.importTypesLabel()->text();
+    QVERIFY(types.contains(QStringLiteral(".pptx")));
+    QVERIFY(types.contains(QStringLiteral(".txt")));
+    QVERIFY(types.contains(QStringLiteral(".md")));
+    QVERIFY(types.contains(QStringLiteral("PDF")));
+    QCOMPARE(window.importButton()->text(), QStringLiteral("Choose files…"));
+    QVERIFY(window.importPptxButton()->isEnabled());
+    QVERIFY(window.importTextButton()->isEnabled());
+
+    // Unsupported files are named in the message instead of being silently dropped.
+    window.importFiles({QStringLiteral("C:/notes/report.docx"), QStringLiteral("C:/notes/old.ppt")});
+    const QString message = window.statusLabel()->text();
+    QVERIFY(message.contains(QStringLiteral("report.docx")));
+    QVERIFY(message.contains(QStringLiteral("old.ppt")));
+    QVERIFY(message.contains(QStringLiteral(".pptx")));
+    QVERIFY(message.contains(QStringLiteral("Save older")));
+    QVERIFY(window.documentRows().isEmpty());
+    QVERIFY(window.removeCurrentSet(true));
 }
 
 void TestStudyUi::petStudyFlowWorksWithoutOllama()

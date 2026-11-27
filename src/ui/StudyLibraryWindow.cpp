@@ -12,19 +12,24 @@
 #include "study/QuestionSelector.h"
 #include "study/StudyLibrary.h"
 #include "ui/PixelTheme.h"
+#include "ui/StudySetList.h"
 
 #include <QAbstractItemView>
 #include <QAbstractSlider>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDesktopServices>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QProgressBar>
@@ -32,6 +37,7 @@
 #include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QStackedWidget>
 #include <QStandardPaths>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -78,6 +84,35 @@ QString typeTag(QuestionType type)
     return QStringLiteral("Question");
 }
 
+bool supportedSuffix(const QString& suffix)
+{
+    const QString s = suffix.toLower();
+    return s == QLatin1String("pptx") || s == QLatin1String("txt") || s == QLatin1String("md")
+        || s == QLatin1String("markdown") || (s == QLatin1String("pdf") && DocumentExtractor::pdfSupported());
+}
+
+QString skippedMessage(const QStringList& rejected, qsizetype skipped)
+{
+    if (rejected.isEmpty()) {
+        return QStringLiteral("%1 file%2 skipped.").arg(skipped).arg(skipped == 1 ? QString() : QStringLiteral("s"));
+    }
+    QStringList shown = rejected.mid(0, 3);
+    QString names = shown.join(QStringLiteral(", "));
+    if (rejected.size() > 3) {
+        names += QStringLiteral(" and %1 more").arg(rejected.size() - 3);
+    }
+    QString message = QStringLiteral("Can't import %1. Use PowerPoint (.pptx), PDF, text (.txt), or Markdown (.md) files.").arg(names);
+    for (const QString& name : rejected) {
+        const QString ext = QFileInfo(name).suffix().toLower();
+        if (ext == QLatin1String("ppt") || ext == QLatin1String("doc") || ext == QLatin1String("docx")
+            || ext == QLatin1String("odp") || ext == QLatin1String("pages") || ext == QLatin1String("key")) {
+            message += QStringLiteral(" Save older Office or Keynote files as .pptx or PDF first.");
+            break;
+        }
+    }
+    return message;
+}
+
 QString unitName(DocumentKind kind, int count)
 {
     if (kind == DocumentKind::Pptx) {
@@ -109,9 +144,10 @@ StudyLibraryWindow::StudyLibraryWindow(AppSettings* settings, StudyLibrary* libr
     PixelTheme::ensureFontsLoaded();
     setAttribute(Qt::WA_TranslucentBackground);
     setFixedWidth(kWidth);
+    setAcceptDrops(true);
     setWindowTitle(QStringLiteral("Study Library"));
     setStyleSheet(PixelTheme::styleSheet()
-                  + QStringLiteral("QScrollArea#docScroll, QWidget#docList { background: transparent; border: none; }"));
+                  + QStringLiteral("QScrollArea#docScroll, QWidget#docList, QWidget#setList { background: transparent; border: none; }"));
     buildUi();
 
     if (m_library) {
@@ -196,8 +232,17 @@ void StudyLibraryWindow::buildUi()
     // Header
     auto* header = new QHBoxLayout();
     header->setContentsMargins(2, 0, 0, 0);
+    m_backBtn = makeButton(QStringLiteral("‹ Sets"), this, "chip");
+    m_backBtn->setToolTip(QStringLiteral("Back to all study sets"));
+    m_backBtn->hide();
+    connect(m_backBtn, &QPushButton::clicked, this, [this]() {
+        click();
+        showSetList();
+    });
     auto* title = new QLabel(QStringLiteral("Study Library"), this);
     title->setObjectName(QStringLiteral("title"));
+    title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_titleLabel = title;
     auto* closeBtn = new PixelIconButton(PixelIcon::Close, 30, 11, false, this);
     closeBtn->setToolTip(QStringLiteral("Close Study Library"));
     closeBtn->setAccessibleName(QStringLiteral("Close Study Library"));
@@ -205,6 +250,7 @@ void StudyLibraryWindow::buildUi()
         click();
         hide();
     });
+    header->addWidget(m_backBtn);
     header->addWidget(title, 1);
     header->addWidget(closeBtn);
     shell->addLayout(header);
@@ -288,52 +334,25 @@ void StudyLibraryWindow::buildUi()
         }
     });
 
-    // StudySet row
-    auto* setRow = new QHBoxLayout();
-    setRow->setSpacing(6);
-    setRow->addWidget(makeLabel(QStringLiteral("Study Set"), "sectionTitle", this));
-    m_setCombo = new QComboBox(this);
-    m_setCombo->setObjectName(QStringLiteral("studySetCombo"));
-    m_setCombo->setCursor(Qt::PointingHandCursor);
-    m_setCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    setRow->addWidget(m_setCombo, 1);
-    m_newSetBtn = makeButton(QStringLiteral("New"), this, "chip");
-    m_renameSetBtn = makeButton(QStringLiteral("Rename"), this, "chip");
-    m_deleteSetBtn = makeButton(QStringLiteral("Delete"), this, "chip");
-    m_deleteSetBtn->setToolTip(QStringLiteral("Delete this study set and all of its documents and progress"));
-    for (QPushButton* b : {m_newSetBtn, m_renameSetBtn, m_deleteSetBtn}) {
-        setRow->addWidget(b);
-    }
-    shell->addLayout(setRow);
-    connect(m_setCombo, &QComboBox::currentIndexChanged, this, [this](int) {
-        if (m_syncing) {
-            return;
-        }
-        const qint64 id = currentSet();
-        if (m_settings) {
-            m_settings->setStudySetId(id);
-            m_settings->save();
-        }
-        m_expandedDocs.clear();
-        rebuildDocuments();
-        updateActions();
-        emit setChanged(id);
-    });
-    connect(m_setCombo, &QComboBox::activated, this, [this](int) { click(); });
+    // Page 0: the list of study sets
+    m_stack = new QStackedWidget(this);
+    auto* listPage = new QWidget(m_stack);
+    auto* listLayout = new QVBoxLayout(listPage);
+    listLayout->setContentsMargins(0, 0, 0, 0);
+    listLayout->setSpacing(6);
+
+    auto* listHeader = new QHBoxLayout();
+    listHeader->setSpacing(6);
+    listHeader->addWidget(makeLabel(QStringLiteral("Your study sets"), "sectionTitle", listPage), 1);
+    m_newSetBtn = makeButton(QStringLiteral("New set"), listPage, "primary");
+    listHeader->addWidget(m_newSetBtn);
+    listLayout->addLayout(listHeader);
     connect(m_newSetBtn, &QPushButton::clicked, this, [this]() {
         click();
-        beginSetEdit(false);
-    });
-    connect(m_renameSetBtn, &QPushButton::clicked, this, [this]() {
-        click();
-        beginSetEdit(true);
-    });
-    connect(m_deleteSetBtn, &QPushButton::clicked, this, [this]() {
-        click();
-        removeCurrentSet(false);
+        beginSetEdit(false, 0);
     });
 
-    m_setEditRow = new QWidget(this);
+    m_setEditRow = new QWidget(listPage);
     auto* editLayout = new QHBoxLayout(m_setEditRow);
     editLayout->setContentsMargins(0, 0, 0, 0);
     editLayout->setSpacing(6);
@@ -348,7 +367,7 @@ void StudyLibraryWindow::buildUi()
     editLayout->addWidget(cancelSet);
     editLayout->addWidget(saveSet);
     m_setEditRow->hide();
-    shell->addWidget(m_setEditRow);
+    listLayout->addWidget(m_setEditRow);
     connect(saveSet, &QPushButton::clicked, this, [this]() {
         click();
         finishSetEdit(true);
@@ -359,12 +378,90 @@ void StudyLibraryWindow::buildUi()
     });
     connect(m_setEdit, &QLineEdit::returnPressed, this, [this]() { finishSetEdit(true); });
 
-    // Question formats
-    auto* formatCard = makeCard(this);
+    m_setsEmpty = makeLabel(QStringLiteral("No study sets yet. Create one to import your notes and slides, then generate practice questions."),
+                            "muted", listPage);
+    listLayout->addWidget(m_setsEmpty);
+    auto* setScroll = new QScrollArea(listPage);
+    setScroll->setObjectName(QStringLiteral("docScroll"));
+    setScroll->setWidgetResizable(true);
+    setScroll->setFrameShape(QFrame::NoFrame);
+    setScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setScroll->viewport()->setAutoFillBackground(false);
+    m_setList = new StudySetList(setScroll);
+    setScroll->setWidget(m_setList);
+    listLayout->addWidget(setScroll, 1);
+    connect(m_setList, &StudySetList::openRequested, this, [this](qint64 id) {
+        click();
+        openSet(id);
+    });
+    connect(m_setList, &StudySetList::renameRequested, this, [this](qint64 id) {
+        click();
+        beginSetEdit(true, id);
+    });
+    connect(m_setList, &StudySetList::deleteRequested, this, [this](qint64 id) {
+        click();
+        removeSet(id, false);
+    });
+    m_stack->addWidget(listPage);
+
+    // Page 1: one set's materials
+    auto* detailPage = new QWidget(m_stack);
+    auto* detail = new QVBoxLayout(detailPage);
+    detail->setContentsMargins(0, 0, 0, 0);
+    detail->setSpacing(7);
+
+    // Importing: say which files work
+    auto* importCard = makeCard(detailPage);
+    auto* importLayout = new QVBoxLayout(importCard);
+    importLayout->setContentsMargins(10, 8, 10, 9);
+    importLayout->setSpacing(5);
+    importLayout->addWidget(makeLabel(QStringLiteral("Add study materials"), "sectionTitle", importCard));
+    const bool pdf = DocumentExtractor::pdfSupported();
+    m_importTypes = makeLabel(QStringLiteral("PowerPoint (.pptx) · %1 · Text (.txt) · Markdown (.md)")
+                                  .arg(pdf ? QStringLiteral("PDF (.pdf)") : QStringLiteral("PDF (not available in this build)")),
+                              "muted", importCard);
+    importLayout->addWidget(m_importTypes);
+    auto* importRow = new QHBoxLayout();
+    importRow->setSpacing(5);
+    m_importPptxBtn = makeButton(QStringLiteral("PowerPoint"), importCard, "chip");
+    m_importPdfBtn = makeButton(QStringLiteral("PDF"), importCard, "chip");
+    m_importTextBtn = makeButton(QStringLiteral("Text / Markdown"), importCard, "chip");
+    m_importPdfBtn->setEnabled(pdf);
+    m_importPptxBtn->setToolTip(QStringLiteral("Choose .pptx slide decks"));
+    m_importPdfBtn->setToolTip(pdf ? QStringLiteral("Choose .pdf files") : QStringLiteral("PDF import is not available in this build"));
+    m_importTextBtn->setToolTip(QStringLiteral("Choose .txt, .md, or .markdown notes"));
+    m_importBtn = makeButton(QStringLiteral("Choose files…"), importCard, "primary");
+    m_importBtn->setToolTip(QStringLiteral("Pick any supported files, or drop them on this window"));
+    importRow->addWidget(m_importPptxBtn);
+    importRow->addWidget(m_importPdfBtn);
+    importRow->addWidget(m_importTextBtn);
+    importRow->addStretch(1);
+    importRow->addWidget(m_importBtn);
+    importLayout->addLayout(importRow);
+    importLayout->addWidget(makeLabel(QStringLiteral("Or drop files anywhere on this window."), "muted", importCard));
+    detail->addWidget(importCard);
+    connect(m_importBtn, &QPushButton::clicked, this, [this]() { onImportClicked(QString()); });
+    connect(m_importPptxBtn, &QPushButton::clicked, this, [this]() { onImportClicked(QStringLiteral("PowerPoint (*.pptx)")); });
+    connect(m_importPdfBtn, &QPushButton::clicked, this, [this]() { onImportClicked(QStringLiteral("PDF (*.pdf)")); });
+    connect(m_importTextBtn, &QPushButton::clicked, this,
+            [this]() { onImportClicked(QStringLiteral("Text and Markdown (*.txt *.md *.markdown)")); });
+
+    // Question formats (collapsed: multiple choice is the default)
+    auto* formatCard = makeCard(detailPage);
     auto* formats = new QVBoxLayout(formatCard);
-    formats->setContentsMargins(10, 8, 10, 8);
+    formats->setContentsMargins(10, 6, 10, 6);
     formats->setSpacing(3);
-    formats->addWidget(makeLabel(QStringLiteral("Question formats"), "sectionTitle", formatCard));
+    m_formatsToggle = makeButton(QString(), formatCard, "chip");
+    m_formatsToggle->setObjectName(QStringLiteral("formatsToggle"));
+    m_formatsToggle->setStyleSheet(QStringLiteral("QPushButton#formatsToggle { text-align: left; background: transparent; border: none;"
+                                                  " color: #F3F6FC; padding: 3px 2px; }"
+                                                  " QPushButton#formatsToggle:hover { color: #FFFFFF; }"));
+    m_formatsToggle->setIconSize(QSize(12, 12));
+    formats->addWidget(m_formatsToggle);
+    m_formatsBody = new QWidget(formatCard);
+    auto* body = new QVBoxLayout(m_formatsBody);
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(3);
     const QList<QPair<int, QString>> formatNames = {
         {SettingsDefaults::kStudyFormatSingleChoice, QStringLiteral("Multiple choice")},
         {SettingsDefaults::kStudyFormatMultiSelect, QStringLiteral("Multiple select")},
@@ -373,7 +470,7 @@ void StudyLibraryWindow::buildUi()
     auto* checks = new QHBoxLayout();
     checks->setSpacing(4);
     for (const auto& f : formatNames) {
-        auto* check = new PixelCheckBox(f.second, formatCard);
+        auto* check = new PixelCheckBox(f.second, m_formatsBody);
         check->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
         m_formatChecks.insert(f.first, check);
         checks->addWidget(check);
@@ -381,11 +478,11 @@ void StudyLibraryWindow::buildUi()
         connect(check, &QCheckBox::clicked, this, [this](bool) { click(); });
     }
     checks->addStretch(1);
-    formats->addLayout(checks);
+    body->addLayout(checks);
     auto* modeRow = new QHBoxLayout();
     modeRow->setSpacing(4);
-    m_mixedBtn = new PixelOptionButton(QStringLiteral("Mixed"), PixelOptionButton::Indicator::Radio, formatCard);
-    m_focusBtn = new PixelOptionButton(QStringLiteral("Only"), PixelOptionButton::Indicator::Radio, formatCard);
+    m_mixedBtn = new PixelOptionButton(QStringLiteral("Mixed"), PixelOptionButton::Indicator::Radio, m_formatsBody);
+    m_focusBtn = new PixelOptionButton(QStringLiteral("Only"), PixelOptionButton::Indicator::Radio, m_formatsBody);
     for (PixelOptionButton* b : {m_mixedBtn, m_focusBtn}) {
         b->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         b->setFixedWidth(b == m_mixedBtn ? 82 : 66);
@@ -393,7 +490,7 @@ void StudyLibraryWindow::buildUi()
         connect(b, &QAbstractButton::toggled, this, &StudyLibraryWindow::applyFormatControls);
         connect(b, &QAbstractButton::clicked, this, [this](bool) { click(); });
     }
-    m_focusCombo = new QComboBox(formatCard);
+    m_focusCombo = new QComboBox(m_formatsBody);
     m_focusCombo->setCursor(Qt::PointingHandCursor);
     for (const auto& f : formatNames) {
         m_focusCombo->addItem(f.second, f.first);
@@ -402,14 +499,20 @@ void StudyLibraryWindow::buildUi()
     modeRow->addWidget(m_mixedBtn);
     modeRow->addWidget(m_focusBtn);
     modeRow->addWidget(m_focusCombo, 1);
-    formats->addLayout(modeRow);
-    m_formatHint = makeLabel(QString(), "muted", formatCard);
+    body->addLayout(modeRow);
+    m_formatHint = makeLabel(QString(), "muted", m_formatsBody);
     m_formatHint->hide();
-    formats->addWidget(m_formatHint);
-    shell->addWidget(formatCard);
+    body->addWidget(m_formatHint);
+    formats->addWidget(m_formatsBody);
+    detail->addWidget(formatCard);
+    connect(m_formatsToggle, &QPushButton::clicked, this, [this]() {
+        click();
+        setFormatsExpanded(!formatsExpanded());
+    });
+    setFormatsExpanded(false);
 
     // Documents
-    m_docScroll = new QScrollArea(this);
+    m_docScroll = new QScrollArea(detailPage);
     m_docScroll->setObjectName(QStringLiteral("docScroll"));
     m_docScroll->setWidgetResizable(true);
     m_docScroll->setFrameShape(QFrame::NoFrame);
@@ -420,36 +523,37 @@ void StudyLibraryWindow::buildUi()
     m_docLayout = new QVBoxLayout(m_docList);
     m_docLayout->setContentsMargins(0, 0, 4, 0);
     m_docLayout->setSpacing(5);
-    m_emptyLabel = makeLabel(QStringLiteral("No documents yet. Import lecture slides (PPTX), PDFs, or notes (TXT, MD)."),
+    m_emptyLabel = makeLabel(QStringLiteral("No documents yet. Add PowerPoint, PDF, text, or Markdown files above."),
                              "muted", m_docList);
     m_docLayout->addWidget(m_emptyLabel);
     m_docLayout->addStretch(1);
     m_docScroll->setWidget(m_docList);
-    m_docScroll->setMinimumHeight(150);
-    shell->addWidget(m_docScroll, 1);
+    m_docScroll->setMinimumHeight(120);
+    detail->addWidget(m_docScroll, 1);
 
-    // Actions and status
+    auto* actions = new QHBoxLayout();
+    actions->setSpacing(6);
+    m_cancelBtn = makeButton(QStringLiteral("Cancel"), detailPage);
+    m_regenerateBtn = makeButton(QStringLiteral("Regenerate"), detailPage);
+    m_generateBtn = makeButton(QStringLiteral("Generate"), detailPage, "primary");
+    m_generateBtn->setToolTip(QStringLiteral("Write new questions from the checked documents"));
+    m_regenerateBtn->setToolTip(QStringLiteral("Replace the questions of the checked documents"));
+    actions->addStretch(1);
+    actions->addWidget(m_cancelBtn);
+    actions->addWidget(m_regenerateBtn);
+    actions->addWidget(m_generateBtn);
+    detail->addLayout(actions);
+    m_stack->addWidget(detailPage);
+    shell->addWidget(m_stack, 1);
+
+    // Progress and status are shared by both pages
     m_progress = new QProgressBar(this);
     m_progress->setTextVisible(false);
     m_progress->hide();
     shell->addWidget(m_progress);
     m_statusLabel = makeLabel(QString(), "muted", this);
     shell->addWidget(m_statusLabel);
-    auto* actions = new QHBoxLayout();
-    actions->setSpacing(6);
-    m_importBtn = makeButton(QStringLiteral("Import…"), this);
-    m_cancelBtn = makeButton(QStringLiteral("Cancel"), this);
-    m_regenerateBtn = makeButton(QStringLiteral("Regenerate"), this);
-    m_generateBtn = makeButton(QStringLiteral("Generate"), this, "primary");
-    m_generateBtn->setToolTip(QStringLiteral("Write new questions from the checked documents"));
-    m_regenerateBtn->setToolTip(QStringLiteral("Replace the questions of the checked documents"));
-    actions->addWidget(m_importBtn);
-    actions->addStretch(1);
-    actions->addWidget(m_cancelBtn);
-    actions->addWidget(m_regenerateBtn);
-    actions->addWidget(m_generateBtn);
-    shell->addLayout(actions);
-    connect(m_importBtn, &QPushButton::clicked, this, &StudyLibraryWindow::onImportClicked);
+
     connect(m_generateBtn, &QPushButton::clicked, this, [this]() {
         click();
         generate(false);
@@ -486,38 +590,114 @@ bool StudyLibraryWindow::confirm(const QString& title, const QString& body, cons
 
 qint64 StudyLibraryWindow::currentSet() const
 {
-    return m_setCombo->currentIndex() >= 0 ? m_setCombo->currentData().toLongLong() : 0;
+    return m_currentSet;
+}
+
+QString StudyLibraryWindow::currentSetName() const
+{
+    return setName(m_currentSet);
+}
+
+QString StudyLibraryWindow::setName(qint64 id) const
+{
+    if (m_library && m_library->isOpen()) {
+        for (const StudySet& s : m_library->database()->studySets()) {
+            if (s.id == id) {
+                return s.name;
+            }
+        }
+    }
+    return QString();
 }
 
 void StudyLibraryWindow::selectSet(qint64 setId)
 {
-    const int index = m_setCombo->findData(setId);
-    if (index >= 0) {
-        m_setCombo->setCurrentIndex(index);
+    openSet(setId);
+}
+
+bool StudyLibraryWindow::isShowingSet() const
+{
+    return m_stack && m_stack->currentIndex() == 1;
+}
+
+void StudyLibraryWindow::applyView()
+{
+    const bool showSet = m_showingSet && m_currentSet > 0;
+    m_stack->setCurrentIndex(showSet ? 1 : 0);
+    m_backBtn->setVisible(showSet);
+    const QString text = showSet ? setName(m_currentSet) : QStringLiteral("Study Library");
+    m_titleLabel->setToolTip(showSet ? text : QString());
+    m_titleLabel->setText(m_titleLabel->fontMetrics().elidedText(text, Qt::ElideRight, kWidth - 150));
+}
+
+void StudyLibraryWindow::showSetList()
+{
+    m_showingSet = false;
+    applyView();
+}
+
+void StudyLibraryWindow::openSet(qint64 setId)
+{
+    if (setName(setId).isEmpty()) {
+        return;
     }
+    const bool changed = setId != m_currentSet;
+    m_currentSet = setId;
+    m_showingSet = true;
+    if (changed) {
+        if (m_settings) {
+            m_settings->setStudySetId(setId);
+            m_settings->save();
+        }
+        m_expandedDocs.clear();
+    }
+    applyView();
+    rebuildDocuments();
+    updateActions();
+    if (changed) {
+        emit setChanged(setId);
+    }
+}
+
+void StudyLibraryWindow::rebuildSetList()
+{
+    QList<StudySetList::Entry> entries;
+    if (m_library && m_library->isOpen()) {
+        for (const StudySet& s : m_library->database()->studySets()) {
+            int questions = 0;
+            const QVector<DocumentRecord> docs = m_library->database()->documents(s.id);
+            for (const DocumentRecord& d : docs) {
+                questions += d.questionCount;
+            }
+            entries.append({s.id, s.name, static_cast<int>(docs.size()), questions});
+        }
+    }
+    m_setList->setEntries(entries);
+    m_setsEmpty->setVisible(entries.isEmpty());
 }
 
 void StudyLibraryWindow::reloadSets(qint64 selectId)
 {
-    m_syncing = true;
-    m_setCombo->clear();
+    qint64 id = 0;
     if (m_library && m_library->isOpen()) {
-        for (const StudySet& c : m_library->database()->studySets()) {
-            m_setCombo->addItem(c.name, c.id);
+        const QVector<StudySet> sets = m_library->database()->studySets();
+        for (const StudySet& s : sets) {
+            if (s.id == selectId) {
+                id = selectId;
+            }
+        }
+        if (id == 0 && !sets.isEmpty()) {
+            id = sets.first().id;   // the saved set (used for check-ins) falls back to the first one
         }
     }
-    int index = m_setCombo->findData(selectId);
-    if (index < 0 && m_setCombo->count() > 0) {
-        index = 0;
-    }
-    m_setCombo->setCurrentIndex(index);
-    m_syncing = false;
-    const qint64 id = currentSet();
+    m_currentSet = id;
     if (m_settings && m_settings->studySetId() != id) {
         m_settings->setStudySetId(id);
         m_settings->save();
         emit setChanged(id);
     }
+    rebuildSetList();
+    applyView();
     rebuildDocuments();
     updateActions();
 }
@@ -535,29 +715,33 @@ qint64 StudyLibraryWindow::createSet(const QString& name)
     }
     reloadSets(*id);
     emit setChanged(*id);
+    openSet(*id);   // straight to its materials so the first files can be added
     return *id;
 }
 
-bool StudyLibraryWindow::renameCurrentSet(const QString& name)
+bool StudyLibraryWindow::renameSet(qint64 id, const QString& name)
 {
-    const qint64 id = currentSet();
     if (!m_library || id <= 0 || !m_library->database()->renameStudySet(id, name)) {
         m_statusLabel->setText(QStringLiteral("That name is empty or already used."));
         return false;
     }
-    reloadSets(id);
-    emit setChanged(id);
+    reloadSets(m_currentSet);
+    emit setChanged(m_currentSet);
     return true;
 }
 
-bool StudyLibraryWindow::removeCurrentSet(bool confirmed)
+bool StudyLibraryWindow::renameCurrentSet(const QString& name)
 {
-    const qint64 id = currentSet();
+    return renameSet(m_currentSet, name);
+}
+
+bool StudyLibraryWindow::removeSet(qint64 id, bool confirmed)
+{
     if (!m_library || id <= 0) {
         return false;
     }
     if (!confirmed
-        && !confirm(QStringLiteral("Delete “%1”?").arg(m_setCombo->currentText()),
+        && !confirm(QStringLiteral("Delete “%1”?").arg(setName(id)),
                     QStringLiteral("Its documents, questions, and study progress will be deleted from this computer."),
                     QStringLiteral("Delete"))) {
         return false;
@@ -566,15 +750,22 @@ bool StudyLibraryWindow::removeCurrentSet(bool confirmed)
         m_generator->cancel();
     }
     const bool ok = m_library->removeStudySet(id);
-    reloadSets(0);
-    emit setChanged(currentSet());
+    m_showingSet = false;
+    reloadSets(id == m_currentSet ? 0 : m_currentSet);
+    emit setChanged(m_currentSet);
     return ok;
 }
 
-void StudyLibraryWindow::beginSetEdit(bool rename)
+bool StudyLibraryWindow::removeCurrentSet(bool confirmed)
+{
+    return removeSet(m_currentSet, confirmed);
+}
+
+void StudyLibraryWindow::beginSetEdit(bool rename, qint64 id)
 {
     m_renaming = rename;
-    m_setEdit->setText(rename ? m_setCombo->currentText() : QString());
+    m_editTarget = rename ? id : 0;
+    m_setEdit->setText(rename ? setName(id) : QString());
     m_setEditRow->show();
     activateWindow();
     m_setEdit->setFocus();
@@ -585,7 +776,7 @@ void StudyLibraryWindow::finishSetEdit(bool accept)
 {
     if (accept) {
         const QString name = m_setEdit->text();
-        const bool ok = m_renaming ? renameCurrentSet(name) : createSet(name) != 0;
+        const bool ok = m_renaming ? renameSet(m_editTarget, name) : createSet(name) != 0;
         if (!ok) {
             return;
         }
@@ -599,32 +790,73 @@ void StudyLibraryWindow::importFiles(const QStringList& paths)
         m_statusLabel->setText(QStringLiteral("Create a study set first."));
         return;
     }
+    QStringList rejected;
+    for (const QString& path : paths) {
+        const QFileInfo info(path);
+        if (!supportedSuffix(info.suffix())) {
+            rejected.append(info.fileName());
+        }
+    }
     const QList<qint64> ids = m_library->importFiles(currentSet(), paths);
     const qsizetype skipped = paths.size() - ids.size();
-    m_statusLabel->setText(skipped > 0 ? QStringLiteral("Importing %1 file(s). %2 skipped: use PDF, PPTX, TXT, or MD.")
-                                             .arg(ids.size())
-                                             .arg(skipped)
-                                       : QStringLiteral("Importing %1 file(s)…").arg(ids.size()));
+    QString message;
+    if (!ids.isEmpty()) {
+        message = QStringLiteral("Importing %1 file(s)…").arg(ids.size());
+    }
+    if (skipped > 0) {
+        message += (message.isEmpty() ? QString() : QStringLiteral(" ")) + skippedMessage(rejected, skipped);
+    }
+    m_statusLabel->setText(message);
     refresh();
 }
 
-void StudyLibraryWindow::onImportClicked()
+void StudyLibraryWindow::onImportClicked(const QString& filter)
 {
     click();
     if (currentSet() <= 0) {
-        beginSetEdit(false);
+        showSetList();
+        beginSetEdit(false, 0);
         m_statusLabel->setText(QStringLiteral("Create a study set first, then import its materials."));
         return;
     }
-    QString filter = DocumentExtractor::pdfSupported()
-        ? QStringLiteral("Study materials (*.pdf *.pptx *.txt *.md *.markdown)")
-        : QStringLiteral("Study materials (*.pptx *.txt *.md *.markdown)");
+    const bool pdf = DocumentExtractor::pdfSupported();
+    QString filters = filter;
+    if (filters.isEmpty()) {
+        filters = QStringLiteral("All supported (%1);;PowerPoint (*.pptx);;%2Text and Markdown (*.txt *.md *.markdown)")
+                      .arg(pdf ? QStringLiteral("*.pdf *.pptx *.txt *.md *.markdown") : QStringLiteral("*.pptx *.txt *.md *.markdown"),
+                           pdf ? QStringLiteral("PDF (*.pdf);;") : QString());
+    }
     const QStringList paths = QFileDialog::getOpenFileNames(
-        this, QStringLiteral("Import study materials"),
-        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation), filter);
+        this, QStringLiteral("Add study materials"),
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation), filters);
     if (!paths.isEmpty()) {
         importFiles(paths);
     }
+}
+
+void StudyLibraryWindow::dragEnterEvent(QDragEnterEvent* event)
+{
+    if (isShowingSet() && event->mimeData()->hasUrls()) {
+        event->acceptProposedAction();
+        return;
+    }
+    QWidget::dragEnterEvent(event);
+}
+
+void StudyLibraryWindow::dropEvent(QDropEvent* event)
+{
+    QStringList paths;
+    for (const QUrl& url : event->mimeData()->urls()) {
+        if (url.isLocalFile()) {
+            paths.append(url.toLocalFile());
+        }
+    }
+    if (isShowingSet() && !paths.isEmpty()) {
+        importFiles(paths);
+        event->acceptProposedAction();
+        return;
+    }
+    QWidget::dropEvent(event);
 }
 
 QList<qint64> StudyLibraryWindow::checkedDocuments() const
@@ -698,6 +930,7 @@ bool StudyLibraryWindow::removeDocument(qint64 documentId, bool confirmed)
 
 void StudyLibraryWindow::refresh()
 {
+    rebuildSetList();
     rebuildDocuments();
     updateActions();
 }
@@ -721,7 +954,7 @@ void StudyLibraryWindow::rebuildDocuments()
     const QVector<DocumentRecord> docs = (m_library && studySet > 0) ? m_library->database()->documents(studySet)
                                                                    : QVector<DocumentRecord>();
     m_emptyLabel->setVisible(docs.isEmpty());
-    m_emptyLabel->setText(studySet > 0 ? QStringLiteral("No documents yet. Import lecture slides (PPTX), PDFs, or notes (TXT, MD).")
+    m_emptyLabel->setText(studySet > 0 ? QStringLiteral("No documents yet. Add PowerPoint, PDF, text, or Markdown files above.")
                                      : QStringLiteral("Create a study set to start your Study Library."));
     int insertAt = m_docLayout->indexOf(m_emptyLabel) + 1;
     for (const DocumentRecord& d : docs) {
@@ -825,9 +1058,10 @@ void StudyLibraryWindow::updateActions()
             anyQuestions = anyQuestions || doc->questionCount > 0;
         }
     }
-    m_renameSetBtn->setEnabled(hasSet);
-    m_deleteSetBtn->setEnabled(hasSet && !generating);
-    m_importBtn->setEnabled(true);
+    m_importBtn->setEnabled(hasSet);
+    m_importPptxBtn->setEnabled(hasSet);
+    m_importPdfBtn->setEnabled(hasSet && DocumentExtractor::pdfSupported());
+    m_importTextBtn->setEnabled(hasSet);
     m_generateBtn->setEnabled(hasSet && modelReady && anyText && !generating);
     m_regenerateBtn->setEnabled(hasSet && modelReady && anyQuestions && !generating);
     m_cancelBtn->setVisible(generating || importing);
@@ -861,6 +1095,13 @@ void StudyLibraryWindow::updateSetupBanner(OllamaClient::SetupState state)
     m_modelCombo->setCurrentIndex(std::max(0, m_modelCombo->findData(model)));
     m_syncing = false;
     m_modelRow->setVisible(state == OllamaClient::SetupState::Ready || state == OllamaClient::SetupState::ModelMissing);
+    // A working setup needs no banner; the card returns only when something must be done, or to
+    // switch models when more than one is installed.
+    const bool ready = state == OllamaClient::SetupState::Ready;
+    const bool checking = state == OllamaClient::SetupState::Checking;
+    m_setupLabel->setVisible(!ready);
+    const bool choosableModels = ready && m_ollama && m_ollama->installedModels().size() > 1;
+    m_setupCard->setVisible((!ready && !checking) || pulling || choosableModels);
     updateActions();
 }
 
@@ -902,6 +1143,37 @@ void StudyLibraryWindow::syncFormatControls()
     m_focusCombo->setCurrentIndex(std::max(0, m_focusCombo->findData(m_settings->studyFocusFormat())));
     m_focusCombo->setEnabled(focus);
     m_syncing = false;
+    updateFormatsSummary();
+}
+
+void StudyLibraryWindow::setFormatsExpanded(bool expanded)
+{
+    m_formatsBody->setVisible(expanded);
+    m_formatsToggle->setIcon(PixelTheme::icon(expanded ? PixelIcon::ChevronDown : PixelIcon::ChevronRight,
+                                              QColor(0xC8, 0xD4, 0xE6), 12));
+    m_formatsToggle->setAccessibleName(expanded ? QStringLiteral("Hide question formats") : QStringLiteral("Show question formats"));
+}
+
+void StudyLibraryWindow::updateFormatsSummary()
+{
+    QString summary;
+    if (m_settings) {
+        const bool focus = m_settings->studyFormatMode() == SettingsDefaults::kStudyFormatModeFocus;
+        if (focus) {
+            const int index = m_focusCombo->findData(m_settings->studyFocusFormat());
+            summary = QStringLiteral("Only %1").arg(index >= 0 ? m_focusCombo->itemText(index).toLower() : QString());
+        } else {
+            const int mask = m_settings->studyFormats();
+            QStringList names;
+            for (int i = 0; i < m_focusCombo->count(); ++i) {
+                if (mask & m_focusCombo->itemData(i).toInt()) {
+                    names.append(m_focusCombo->itemText(i));
+                }
+            }
+            summary = names.size() == m_focusCombo->count() ? QStringLiteral("All formats") : names.join(QStringLiteral(", "));
+        }
+    }
+    m_formatsToggle->setText(QStringLiteral(" Question formats  ·  %1").arg(summary));
 }
 
 void StudyLibraryWindow::applyFormatControls()
@@ -928,6 +1200,7 @@ void StudyLibraryWindow::applyFormatControls()
     m_settings->setStudyFocusFormat(m_focusCombo->currentData().toInt());
     m_settings->save();
     m_focusCombo->setEnabled(m_focusBtn->isChecked());
+    updateFormatsSummary();
     emit preferencesChanged();
 }
 
@@ -971,6 +1244,7 @@ void StudyLibraryWindow::showNear(const QRect& petGlobalGeometry)
                              std::max(avail.top(), avail.bottom() - height + 1));
     move(x, y);
     reloadSets(m_settings ? m_settings->studySetId() : currentSet());
+    showSetList();
     syncFormatControls();
     show();
 #ifdef Q_OS_MACOS
@@ -1051,6 +1325,8 @@ void StudyLibraryWindow::keyPressEvent(QKeyEvent* event)
     if (event->key() == Qt::Key_Escape) {
         if (m_setEditRow->isVisible()) {
             finishSetEdit(false);
+        } else if (isShowingSet()) {
+            showSetList();
         } else {
             hide();
         }

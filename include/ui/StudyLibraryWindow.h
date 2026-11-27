@@ -14,15 +14,19 @@ class PixelIconButton;
 class PixelOptionButton;
 class ProgressTracker;
 class QComboBox;
+class QDragEnterEvent;
+class QDropEvent;
 class QFrame;
 class QLabel;
 class QLineEdit;
 class QProgressBar;
 class QPushButton;
 class QScrollArea;
+class QStackedWidget;
 class QVBoxLayout;
 class QuestionGenerator;
 class StudyLibrary;
+class StudySetList;
 class UISoundManager;
 
 /**
@@ -50,10 +54,19 @@ public:
     void showNear(const QRect& petGlobalGeometry);
 
     [[nodiscard]] qint64 currentSet() const;
+    [[nodiscard]] QString currentSetName() const;
+    /** Opens a set's materials (same as clicking its row). */
+    void openSet(qint64 setId);
     void selectSet(qint64 setId);
+    /** Back to the list of sets. */
+    void showSetList();
+    [[nodiscard]] bool isShowingSet() const;
     /** Creates a study set and selects it; returns its ID or 0. */
     qint64 createSet(const QString& name);
     bool renameCurrentSet(const QString& name);
+    bool renameSet(qint64 id, const QString& name);
+    /** Asks for confirmation unless confirmed is true. */
+    bool removeSet(qint64 id, bool confirmed = false);
     /** Asks for confirmation unless confirmed is true. */
     bool removeCurrentSet(bool confirmed = false);
     void importFiles(const QStringList& paths);
@@ -64,7 +77,17 @@ public:
     void refresh();
 
     // Accessors for tests
-    [[nodiscard]] QComboBox* setCombo() const { return m_setCombo; }
+    [[nodiscard]] StudySetList* setList() const { return m_setList; }
+    [[nodiscard]] QLabel* titleLabel() const { return m_titleLabel; }
+    [[nodiscard]] QPushButton* backButton() const { return m_backBtn; }
+    [[nodiscard]] QPushButton* newSetButton() const { return m_newSetBtn; }
+    [[nodiscard]] QLabel* importTypesLabel() const { return m_importTypes; }
+    [[nodiscard]] QPushButton* importPptxButton() const { return m_importPptxBtn; }
+    [[nodiscard]] QPushButton* importPdfButton() const { return m_importPdfBtn; }
+    [[nodiscard]] QPushButton* importTextButton() const { return m_importTextBtn; }
+    [[nodiscard]] QPushButton* formatsToggle() const { return m_formatsToggle; }
+    [[nodiscard]] bool formatsExpanded() const { return m_formatsBody && !m_formatsBody->isHidden(); }
+    [[nodiscard]] QFrame* setupCard() const { return m_setupCard; }
     [[nodiscard]] QComboBox* modelCombo() const { return m_modelCombo; }
     [[nodiscard]] QLabel* setupLabel() const { return m_setupLabel; }
     [[nodiscard]] QLabel* statusLabel() const { return m_statusLabel; }
@@ -97,18 +120,25 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
 
 private:
     void buildUi();
     void reloadSets(qint64 selectId);
+    void rebuildSetList();
+    void applyView();
+    void setFormatsExpanded(bool expanded);
+    void updateFormatsSummary();
+    [[nodiscard]] QString setName(qint64 id) const;
     void rebuildDocuments();
     void updateActions();
     void updateSetupBanner(OllamaClient::SetupState state);
     void syncFormatControls();
     void applyFormatControls();
-    void onImportClicked();
+    void onImportClicked(const QString& filter);
     void onDownloadClicked();
-    void beginSetEdit(bool rename);
+    void beginSetEdit(bool rename, qint64 id);
     void finishSetEdit(bool accept);
     void click();
     [[nodiscard]] QList<qint64> checkedDocuments() const;
@@ -133,16 +163,31 @@ private:
     QPushButton* m_recheckBtn = nullptr;
     QProgressBar* m_downloadProgress = nullptr;
 
-    // StudySet row
-    QComboBox* m_setCombo = nullptr;
+    // Header and navigation
+    QLabel* m_titleLabel = nullptr;
+    QPushButton* m_backBtn = nullptr;
+    QStackedWidget* m_stack = nullptr;
+    qint64 m_currentSet = 0;
+    bool m_showingSet = false;
+
+    // Study set list
+    StudySetList* m_setList = nullptr;
+    QLabel* m_setsEmpty = nullptr;
     QPushButton* m_newSetBtn = nullptr;
-    QPushButton* m_renameSetBtn = nullptr;
-    QPushButton* m_deleteSetBtn = nullptr;
     QWidget* m_setEditRow = nullptr;
     QLineEdit* m_setEdit = nullptr;
     bool m_renaming = false;
+    qint64 m_editTarget = 0;
+
+    // Importing
+    QLabel* m_importTypes = nullptr;
+    QPushButton* m_importPptxBtn = nullptr;
+    QPushButton* m_importPdfBtn = nullptr;
+    QPushButton* m_importTextBtn = nullptr;
 
     // Formats
+    QPushButton* m_formatsToggle = nullptr;
+    QWidget* m_formatsBody = nullptr;
     QHash<int, PixelCheckBox*> m_formatChecks;
     PixelOptionButton* m_mixedBtn = nullptr;
     PixelOptionButton* m_focusBtn = nullptr;

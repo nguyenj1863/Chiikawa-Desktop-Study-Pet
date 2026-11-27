@@ -66,18 +66,19 @@ inline constexpr int kStudyFormatSingleChoice = 0x1;
 inline constexpr int kStudyFormatMultiSelect = 0x2;
 inline constexpr int kStudyFormatWritten = 0x4;
 inline constexpr int kStudyFormatsAll = 0x7;
-inline constexpr int kStudyFormatsMask = kStudyFormatsAll;
+/** New installs start with multiple choice only; the other formats are opt-in. */
+inline constexpr int kStudyFormatsMask = kStudyFormatSingleChoice;
 
 inline constexpr int kStudyFormatModeMixed = 0;
 inline constexpr int kStudyFormatModeFocus = 1;
 inline constexpr int kStudyFormatMode = kStudyFormatModeMixed;
 inline constexpr int kStudyFocusFormat = kStudyFormatSingleChoice;
 
-/** Keeps only known format bits; an empty set falls back to every format (at least one must be on). */
+/** Keeps only known format bits; an empty set falls back to the default (at least one must be on). */
 inline int clampStudyFormats(int mask)
 {
     const int known = mask & kStudyFormatsAll;
-    return known == 0 ? kStudyFormatsAll : known;
+    return known == 0 ? kStudyFormatsMask : known;
 }
 
 /** A single known format bit for Focus mode. */
