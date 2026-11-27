@@ -28,7 +28,9 @@ This application uses the following Qt 6 open-source modules dynamically linked 
 - `Qt6Gui`
 - `Qt6Widgets`
 - `Qt6Multimedia`
-- `Qt6Network` (runtime dependency)
+- `Qt6Network` (local Ollama connection on 127.0.0.1)
+- `Qt6Sql` with the `qsqlite` driver (local Study Library database)
+- `Qt6Pdf` (PDF text extraction in the Study Library)
 - `Qt6Svg` (icon plugin dependency)
 - `Qt6Test` (automated tests only, not redistributed)
 
@@ -47,6 +49,18 @@ When packaged with `windeployqt`, Qt Multimedia's FFmpeg plugin may deploy dynam
 
 - Qt's official prebuilt Windows Qt 6 Multimedia binaries ship FFmpeg built under the **GNU Lesser General Public License v2.1 or later (LGPLv2.1+)**.
 - FFmpeg remains subject to its own license terms (<https://ffmpeg.org/legal.html>) and is dynamically linked so the DLLs remain replaceable.
+
+---
+
+## SQLite (via Qt Sql)
+
+Qt's `qsqlite` driver embeds SQLite, which is in the **public domain** (<https://sqlite.org/copyright.html>).
+
+---
+
+## PDFium (via Qt PDF)
+
+Qt PDF is built on Google's PDFium library, licensed under the **BSD 3-Clause License** (<https://pdfium.googlesource.com/pdfium/+/main/LICENSE>). PDFium is part of the dynamically linked `Qt6Pdf` library.
 
 ---
 

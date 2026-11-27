@@ -31,7 +31,10 @@ if(APPLE)
     enable_language(OBJCXX)
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Test)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Network Sql Test)
+# QtPdf powers PDF import in the Study Library. Without it the app still builds;
+# PDF import reports that support was not built and PPTX/text import keep working.
+find_package(Qt6 QUIET OPTIONAL_COMPONENTS Pdf)
 
 # -----------------------------------------------------------------------------
 # Sources grouped by module (headers live under include/<module>/)
@@ -154,7 +157,14 @@ target_include_directories(chiikawa_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(chiikawa_core PUBLIC Qt6::Widgets Qt6::Multimedia)
+target_link_libraries(chiikawa_core PUBLIC Qt6::Widgets Qt6::Multimedia Qt6::Network Qt6::Sql)
+if(TARGET Qt6::Pdf)
+    target_link_libraries(chiikawa_core PUBLIC Qt6::Pdf)
+    target_compile_definitions(chiikawa_core PUBLIC CHIIKAWA_HAS_QTPDF=1)
+    message(STATUS "QtPdf found: PDF import enabled")
+else()
+    message(STATUS "QtPdf not found: PDF import disabled")
+endif()
 
 if(WIN32)
     target_link_libraries(chiikawa_core PUBLIC user32 shell32 ole32 advapi32 version)

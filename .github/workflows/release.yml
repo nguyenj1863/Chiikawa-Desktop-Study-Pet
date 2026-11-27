@@ -27,7 +27,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_msvc2022_64
-          modules: qtmultimedia
+          modules: qtmultimedia qtpdf
 
       - name: Setup MSVC developer environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -68,6 +68,10 @@ jobs:
             "ChiikawaStudyPet-Windows-x64/Qt6Core.dll",
             "ChiikawaStudyPet-Windows-x64/Qt6Widgets.dll",
             "ChiikawaStudyPet-Windows-x64/Qt6Multimedia.dll",
+            "ChiikawaStudyPet-Windows-x64/Qt6Network.dll",
+            "ChiikawaStudyPet-Windows-x64/Qt6Sql.dll",
+            "ChiikawaStudyPet-Windows-x64/Qt6Pdf.dll",
+            "ChiikawaStudyPet-Windows-x64/sqldrivers/qsqlite.dll",
             "ChiikawaStudyPet-Windows-x64/platforms/qwindows.dll",
             "ChiikawaStudyPet-Windows-x64/imageformats/qgif.dll",
             "ChiikawaStudyPet-Windows-x64/LICENSE",
@@ -130,7 +134,7 @@ jobs:
           host: mac
           target: desktop
           arch: clang_64
-          modules: qtmultimedia
+          modules: qtmultimedia qtpdf
 
       - name: Configure CMake (arm64)
         run: |
@@ -205,7 +209,7 @@ jobs:
           host: mac
           target: desktop
           arch: clang_64
-          modules: qtmultimedia
+          modules: qtmultimedia qtpdf
 
       - name: Configure CMake (x86_64)
         run: |
