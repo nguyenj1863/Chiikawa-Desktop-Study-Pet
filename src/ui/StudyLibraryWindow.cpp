@@ -181,7 +181,7 @@ StudyLibraryWindow::StudyLibraryWindow(AppSettings* settings, StudyLibrary* libr
             }
         });
     }
-    reloadCourses(m_settings ? m_settings->studyCourseId() : 0);
+    reloadSets(m_settings ? m_settings->studySetId() : 0);
     syncFormatControls();
     updateSetupBanner(m_ollama ? m_ollama->setupState() : OllamaClient::SetupState::NotInstalled);
     hide();
@@ -288,76 +288,76 @@ void StudyLibraryWindow::buildUi()
         }
     });
 
-    // Course row
-    auto* courseRow = new QHBoxLayout();
-    courseRow->setSpacing(6);
-    courseRow->addWidget(makeLabel(QStringLiteral("Course"), "sectionTitle", this));
-    m_courseCombo = new QComboBox(this);
-    m_courseCombo->setObjectName(QStringLiteral("studyCourseCombo"));
-    m_courseCombo->setCursor(Qt::PointingHandCursor);
-    m_courseCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    courseRow->addWidget(m_courseCombo, 1);
-    m_newCourseBtn = makeButton(QStringLiteral("New"), this, "chip");
-    m_renameCourseBtn = makeButton(QStringLiteral("Rename"), this, "chip");
-    m_deleteCourseBtn = makeButton(QStringLiteral("Delete"), this, "chip");
-    m_deleteCourseBtn->setToolTip(QStringLiteral("Delete this course and all of its documents and progress"));
-    for (QPushButton* b : {m_newCourseBtn, m_renameCourseBtn, m_deleteCourseBtn}) {
-        courseRow->addWidget(b);
+    // StudySet row
+    auto* setRow = new QHBoxLayout();
+    setRow->setSpacing(6);
+    setRow->addWidget(makeLabel(QStringLiteral("Study Set"), "sectionTitle", this));
+    m_setCombo = new QComboBox(this);
+    m_setCombo->setObjectName(QStringLiteral("studySetCombo"));
+    m_setCombo->setCursor(Qt::PointingHandCursor);
+    m_setCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setRow->addWidget(m_setCombo, 1);
+    m_newSetBtn = makeButton(QStringLiteral("New"), this, "chip");
+    m_renameSetBtn = makeButton(QStringLiteral("Rename"), this, "chip");
+    m_deleteSetBtn = makeButton(QStringLiteral("Delete"), this, "chip");
+    m_deleteSetBtn->setToolTip(QStringLiteral("Delete this study set and all of its documents and progress"));
+    for (QPushButton* b : {m_newSetBtn, m_renameSetBtn, m_deleteSetBtn}) {
+        setRow->addWidget(b);
     }
-    shell->addLayout(courseRow);
-    connect(m_courseCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+    shell->addLayout(setRow);
+    connect(m_setCombo, &QComboBox::currentIndexChanged, this, [this](int) {
         if (m_syncing) {
             return;
         }
-        const qint64 id = currentCourse();
+        const qint64 id = currentSet();
         if (m_settings) {
-            m_settings->setStudyCourseId(id);
+            m_settings->setStudySetId(id);
             m_settings->save();
         }
         m_expandedDocs.clear();
         rebuildDocuments();
         updateActions();
-        emit courseChanged(id);
+        emit setChanged(id);
     });
-    connect(m_courseCombo, &QComboBox::activated, this, [this](int) { click(); });
-    connect(m_newCourseBtn, &QPushButton::clicked, this, [this]() {
+    connect(m_setCombo, &QComboBox::activated, this, [this](int) { click(); });
+    connect(m_newSetBtn, &QPushButton::clicked, this, [this]() {
         click();
-        beginCourseEdit(false);
+        beginSetEdit(false);
     });
-    connect(m_renameCourseBtn, &QPushButton::clicked, this, [this]() {
+    connect(m_renameSetBtn, &QPushButton::clicked, this, [this]() {
         click();
-        beginCourseEdit(true);
+        beginSetEdit(true);
     });
-    connect(m_deleteCourseBtn, &QPushButton::clicked, this, [this]() {
+    connect(m_deleteSetBtn, &QPushButton::clicked, this, [this]() {
         click();
-        removeCurrentCourse(false);
+        removeCurrentSet(false);
     });
 
-    m_courseEditRow = new QWidget(this);
-    auto* editLayout = new QHBoxLayout(m_courseEditRow);
+    m_setEditRow = new QWidget(this);
+    auto* editLayout = new QHBoxLayout(m_setEditRow);
     editLayout->setContentsMargins(0, 0, 0, 0);
     editLayout->setSpacing(6);
-    m_courseEdit = new QLineEdit(m_courseEditRow);
-    m_courseEdit->setObjectName(QStringLiteral("courseNameEdit"));
-    m_courseEdit->setStyleSheet(PixelTheme::textInputStyleSheet());
-    m_courseEdit->setMaxLength(60);
-    m_courseEdit->setPlaceholderText(QStringLiteral("Course name, e.g. CS 340 Databases"));
-    auto* saveCourse = makeButton(QStringLiteral("Save"), m_courseEditRow, "primary");
-    auto* cancelCourse = makeButton(QStringLiteral("Cancel"), m_courseEditRow);
-    editLayout->addWidget(m_courseEdit, 1);
-    editLayout->addWidget(cancelCourse);
-    editLayout->addWidget(saveCourse);
-    m_courseEditRow->hide();
-    shell->addWidget(m_courseEditRow);
-    connect(saveCourse, &QPushButton::clicked, this, [this]() {
+    m_setEdit = new QLineEdit(m_setEditRow);
+    m_setEdit->setObjectName(QStringLiteral("setNameEdit"));
+    m_setEdit->setStyleSheet(PixelTheme::textInputStyleSheet());
+    m_setEdit->setMaxLength(60);
+    m_setEdit->setPlaceholderText(QStringLiteral("Set name, e.g. CS 340 Databases"));
+    auto* saveSet = makeButton(QStringLiteral("Save"), m_setEditRow, "primary");
+    auto* cancelSet = makeButton(QStringLiteral("Cancel"), m_setEditRow);
+    editLayout->addWidget(m_setEdit, 1);
+    editLayout->addWidget(cancelSet);
+    editLayout->addWidget(saveSet);
+    m_setEditRow->hide();
+    shell->addWidget(m_setEditRow);
+    connect(saveSet, &QPushButton::clicked, this, [this]() {
         click();
-        finishCourseEdit(true);
+        finishSetEdit(true);
     });
-    connect(cancelCourse, &QPushButton::clicked, this, [this]() {
+    connect(cancelSet, &QPushButton::clicked, this, [this]() {
         click();
-        finishCourseEdit(false);
+        finishSetEdit(false);
     });
-    connect(m_courseEdit, &QLineEdit::returnPressed, this, [this]() { finishCourseEdit(true); });
+    connect(m_setEdit, &QLineEdit::returnPressed, this, [this]() { finishSetEdit(true); });
 
     // Question formats
     auto* formatCard = makeCard(this);
@@ -484,80 +484,80 @@ bool StudyLibraryWindow::confirm(const QString& title, const QString& body, cons
     return dialog.exec() == QDialog::Accepted;
 }
 
-qint64 StudyLibraryWindow::currentCourse() const
+qint64 StudyLibraryWindow::currentSet() const
 {
-    return m_courseCombo->currentIndex() >= 0 ? m_courseCombo->currentData().toLongLong() : 0;
+    return m_setCombo->currentIndex() >= 0 ? m_setCombo->currentData().toLongLong() : 0;
 }
 
-void StudyLibraryWindow::selectCourse(qint64 courseId)
+void StudyLibraryWindow::selectSet(qint64 setId)
 {
-    const int index = m_courseCombo->findData(courseId);
+    const int index = m_setCombo->findData(setId);
     if (index >= 0) {
-        m_courseCombo->setCurrentIndex(index);
+        m_setCombo->setCurrentIndex(index);
     }
 }
 
-void StudyLibraryWindow::reloadCourses(qint64 selectId)
+void StudyLibraryWindow::reloadSets(qint64 selectId)
 {
     m_syncing = true;
-    m_courseCombo->clear();
+    m_setCombo->clear();
     if (m_library && m_library->isOpen()) {
-        for (const Course& c : m_library->database()->courses()) {
-            m_courseCombo->addItem(c.name, c.id);
+        for (const StudySet& c : m_library->database()->studySets()) {
+            m_setCombo->addItem(c.name, c.id);
         }
     }
-    int index = m_courseCombo->findData(selectId);
-    if (index < 0 && m_courseCombo->count() > 0) {
+    int index = m_setCombo->findData(selectId);
+    if (index < 0 && m_setCombo->count() > 0) {
         index = 0;
     }
-    m_courseCombo->setCurrentIndex(index);
+    m_setCombo->setCurrentIndex(index);
     m_syncing = false;
-    const qint64 id = currentCourse();
-    if (m_settings && m_settings->studyCourseId() != id) {
-        m_settings->setStudyCourseId(id);
+    const qint64 id = currentSet();
+    if (m_settings && m_settings->studySetId() != id) {
+        m_settings->setStudySetId(id);
         m_settings->save();
-        emit courseChanged(id);
+        emit setChanged(id);
     }
     rebuildDocuments();
     updateActions();
 }
 
-qint64 StudyLibraryWindow::createCourse(const QString& name)
+qint64 StudyLibraryWindow::createSet(const QString& name)
 {
     if (!m_library || !m_library->isOpen()) {
         return 0;
     }
-    const auto id = m_library->database()->addCourse(name);
+    const auto id = m_library->database()->addStudySet(name);
     if (!id) {
-        m_statusLabel->setText(name.trimmed().isEmpty() ? QStringLiteral("Enter a course name.")
-                                                         : QStringLiteral("A course with that name already exists."));
+        m_statusLabel->setText(name.trimmed().isEmpty() ? QStringLiteral("Enter a name for the study set.")
+                                                         : QStringLiteral("A study set with that name already exists."));
         return 0;
     }
-    reloadCourses(*id);
-    emit courseChanged(*id);
+    reloadSets(*id);
+    emit setChanged(*id);
     return *id;
 }
 
-bool StudyLibraryWindow::renameCurrentCourse(const QString& name)
+bool StudyLibraryWindow::renameCurrentSet(const QString& name)
 {
-    const qint64 id = currentCourse();
-    if (!m_library || id <= 0 || !m_library->database()->renameCourse(id, name)) {
+    const qint64 id = currentSet();
+    if (!m_library || id <= 0 || !m_library->database()->renameStudySet(id, name)) {
         m_statusLabel->setText(QStringLiteral("That name is empty or already used."));
         return false;
     }
-    reloadCourses(id);
-    emit courseChanged(id);
+    reloadSets(id);
+    emit setChanged(id);
     return true;
 }
 
-bool StudyLibraryWindow::removeCurrentCourse(bool confirmed)
+bool StudyLibraryWindow::removeCurrentSet(bool confirmed)
 {
-    const qint64 id = currentCourse();
+    const qint64 id = currentSet();
     if (!m_library || id <= 0) {
         return false;
     }
     if (!confirmed
-        && !confirm(QStringLiteral("Delete “%1”?").arg(m_courseCombo->currentText()),
+        && !confirm(QStringLiteral("Delete “%1”?").arg(m_setCombo->currentText()),
                     QStringLiteral("Its documents, questions, and study progress will be deleted from this computer."),
                     QStringLiteral("Delete"))) {
         return false;
@@ -565,41 +565,41 @@ bool StudyLibraryWindow::removeCurrentCourse(bool confirmed)
     if (m_generator && m_generator->isRunning()) {
         m_generator->cancel();
     }
-    const bool ok = m_library->removeCourse(id);
-    reloadCourses(0);
-    emit courseChanged(currentCourse());
+    const bool ok = m_library->removeStudySet(id);
+    reloadSets(0);
+    emit setChanged(currentSet());
     return ok;
 }
 
-void StudyLibraryWindow::beginCourseEdit(bool rename)
+void StudyLibraryWindow::beginSetEdit(bool rename)
 {
     m_renaming = rename;
-    m_courseEdit->setText(rename ? m_courseCombo->currentText() : QString());
-    m_courseEditRow->show();
+    m_setEdit->setText(rename ? m_setCombo->currentText() : QString());
+    m_setEditRow->show();
     activateWindow();
-    m_courseEdit->setFocus();
-    m_courseEdit->selectAll();
+    m_setEdit->setFocus();
+    m_setEdit->selectAll();
 }
 
-void StudyLibraryWindow::finishCourseEdit(bool accept)
+void StudyLibraryWindow::finishSetEdit(bool accept)
 {
     if (accept) {
-        const QString name = m_courseEdit->text();
-        const bool ok = m_renaming ? renameCurrentCourse(name) : createCourse(name) != 0;
+        const QString name = m_setEdit->text();
+        const bool ok = m_renaming ? renameCurrentSet(name) : createSet(name) != 0;
         if (!ok) {
             return;
         }
     }
-    m_courseEditRow->hide();
+    m_setEditRow->hide();
 }
 
 void StudyLibraryWindow::importFiles(const QStringList& paths)
 {
-    if (!m_library || currentCourse() <= 0) {
-        m_statusLabel->setText(QStringLiteral("Create a course first."));
+    if (!m_library || currentSet() <= 0) {
+        m_statusLabel->setText(QStringLiteral("Create a study set first."));
         return;
     }
-    const QList<qint64> ids = m_library->importFiles(currentCourse(), paths);
+    const QList<qint64> ids = m_library->importFiles(currentSet(), paths);
     const qsizetype skipped = paths.size() - ids.size();
     m_statusLabel->setText(skipped > 0 ? QStringLiteral("Importing %1 file(s). %2 skipped: use PDF, PPTX, TXT, or MD.")
                                              .arg(ids.size())
@@ -611,9 +611,9 @@ void StudyLibraryWindow::importFiles(const QStringList& paths)
 void StudyLibraryWindow::onImportClicked()
 {
     click();
-    if (currentCourse() <= 0) {
-        beginCourseEdit(false);
-        m_statusLabel->setText(QStringLiteral("Create a course first, then import its materials."));
+    if (currentSet() <= 0) {
+        beginSetEdit(false);
+        m_statusLabel->setText(QStringLiteral("Create a study set first, then import its materials."));
         return;
     }
     QString filter = DocumentExtractor::pdfSupported()
@@ -717,12 +717,12 @@ void StudyLibraryWindow::rebuildDocuments()
     m_docChecks.clear();
     m_docMeta.clear();
 
-    const qint64 course = currentCourse();
-    const QVector<DocumentRecord> docs = (m_library && course > 0) ? m_library->database()->documents(course)
+    const qint64 studySet = currentSet();
+    const QVector<DocumentRecord> docs = (m_library && studySet > 0) ? m_library->database()->documents(studySet)
                                                                    : QVector<DocumentRecord>();
     m_emptyLabel->setVisible(docs.isEmpty());
-    m_emptyLabel->setText(course > 0 ? QStringLiteral("No documents yet. Import lecture slides (PPTX), PDFs, or notes (TXT, MD).")
-                                     : QStringLiteral("Create a course to start your Study Library."));
+    m_emptyLabel->setText(studySet > 0 ? QStringLiteral("No documents yet. Import lecture slides (PPTX), PDFs, or notes (TXT, MD).")
+                                     : QStringLiteral("Create a study set to start your Study Library."));
     int insertAt = m_docLayout->indexOf(m_emptyLabel) + 1;
     for (const DocumentRecord& d : docs) {
         QFrame* row = makeCard(m_docList);
@@ -809,7 +809,7 @@ void StudyLibraryWindow::rebuildDocuments()
 
 void StudyLibraryWindow::updateActions()
 {
-    const bool hasCourse = currentCourse() > 0;
+    const bool hasSet = currentSet() > 0;
     const bool generating = m_generator && m_generator->isRunning();
     const bool importing = m_library && m_library->isBusy();
     const bool modelReady = m_ollama && m_ollama->setupState() == OllamaClient::SetupState::Ready;
@@ -825,11 +825,11 @@ void StudyLibraryWindow::updateActions()
             anyQuestions = anyQuestions || doc->questionCount > 0;
         }
     }
-    m_renameCourseBtn->setEnabled(hasCourse);
-    m_deleteCourseBtn->setEnabled(hasCourse && !generating);
+    m_renameSetBtn->setEnabled(hasSet);
+    m_deleteSetBtn->setEnabled(hasSet && !generating);
     m_importBtn->setEnabled(true);
-    m_generateBtn->setEnabled(hasCourse && modelReady && anyText && !generating);
-    m_regenerateBtn->setEnabled(hasCourse && modelReady && anyQuestions && !generating);
+    m_generateBtn->setEnabled(hasSet && modelReady && anyText && !generating);
+    m_regenerateBtn->setEnabled(hasSet && modelReady && anyQuestions && !generating);
     m_cancelBtn->setVisible(generating || importing);
     m_generateBtn->setToolTip(modelReady ? QStringLiteral("Write new questions from the checked documents")
                                          : QStringLiteral("Set up the local AI model above to generate questions"));
@@ -970,7 +970,7 @@ void StudyLibraryWindow::showNear(const QRect& petGlobalGeometry)
     const int y = std::clamp(petGlobalGeometry.center().y() - height / 2, avail.top(),
                              std::max(avail.top(), avail.bottom() - height + 1));
     move(x, y);
-    reloadCourses(m_settings ? m_settings->studyCourseId() : currentCourse());
+    reloadSets(m_settings ? m_settings->studySetId() : currentSet());
     syncFormatControls();
     show();
 #ifdef Q_OS_MACOS
@@ -1049,8 +1049,8 @@ void StudyLibraryWindow::closeEvent(QCloseEvent* event)
 void StudyLibraryWindow::keyPressEvent(QKeyEvent* event)
 {
     if (event->key() == Qt::Key_Escape) {
-        if (m_courseEditRow->isVisible()) {
-            finishCourseEdit(false);
+        if (m_setEditRow->isVisible()) {
+            finishSetEdit(false);
         } else {
             hide();
         }

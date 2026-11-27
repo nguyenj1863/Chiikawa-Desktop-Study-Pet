@@ -148,10 +148,10 @@ private:
     void updateCheckInScheduling();
     /** Creates the study stack (database, ingestion thread, local AI client) if not created yet. */
     void ensureStudy();
-    /** Points the study provider at the chosen course and formats. */
+    /** Points the study provider at the chosen study set and formats. */
     void applyStudyPreferences();
     void refreshStudyProgress();
-    void refreshStudyCourses();
+    void refreshStudySets();
     void showNoStudyQuestionsNotice();
 
     std::unique_ptr<AppSettings> m_settings;

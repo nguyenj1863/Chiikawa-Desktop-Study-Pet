@@ -131,7 +131,7 @@ void AppSettings::load()
     m_checkInsEnabled = readKey("study/checkinsEnabled", "trivia/enabled", SettingsDefaults::kCheckInsEnabled).toBool();
     m_checkInMinutes = readKey("study/checkinMinutes", "trivia/intervalMinutes", SettingsDefaults::kCheckInMinutes).toInt();
     m_recentQuestionIds = readKey("study/recentIds", "trivia/recentIds", QStringList()).toStringList();
-    m_studyCourseId = settings.value(QStringLiteral("study/courseId"), 0).toLongLong();
+    m_studySetId = readKey("study/setId", "study/courseId", 0).toLongLong();   // "course" was renamed "study set"
     m_studyFormats = settings.value(QStringLiteral("study/formats"), SettingsDefaults::kStudyFormatsMask).toInt();
     m_studyFormatMode = settings.value(QStringLiteral("study/formatMode"), SettingsDefaults::kStudyFormatMode).toInt();
     m_studyFocusFormat = settings.value(QStringLiteral("study/focusFormat"), SettingsDefaults::kStudyFocusFormat).toInt();
@@ -193,10 +193,10 @@ void AppSettings::save() const
     settings.setValue(QStringLiteral("study/recentIds"), m_recentQuestionIds);
     // Retire the general-trivia and pre-Study-App keys; their values were migrated on load.
     for (const char* legacy : {"trivia/enabled", "trivia/intervalMinutes", "trivia/recentIds", "trivia/totalPoints",
-                               "trivia/answeredCount", "study/mode"}) {
+                               "trivia/answeredCount", "study/mode", "study/courseId"}) {
         settings.remove(QString::fromLatin1(legacy));
     }
-    settings.setValue(QStringLiteral("study/courseId"), m_studyCourseId);
+    settings.setValue(QStringLiteral("study/setId"), m_studySetId);
     settings.setValue(QStringLiteral("study/formats"), m_studyFormats);
     settings.setValue(QStringLiteral("study/formatMode"), m_studyFormatMode);
     settings.setValue(QStringLiteral("study/focusFormat"), m_studyFocusFormat);
@@ -400,9 +400,9 @@ void AppSettings::setRecentQuestionIds(const QStringList& ids)
     m_recentQuestionIds = ids;
 }
 
-void AppSettings::setStudyCourseId(qint64 id)
+void AppSettings::setStudySetId(qint64 id)
 {
-    m_studyCourseId = std::max<qint64>(0, id);
+    m_studySetId = std::max<qint64>(0, id);
 }
 
 bool AppSettings::setStudyFormats(int mask)
@@ -447,7 +447,7 @@ void AppSettings::clampValues()
     m_alarmVolume = std::clamp(m_alarmVolume, SettingsDefaults::kMinAlarmVolume, SettingsDefaults::kMaxAlarmVolume);
     m_snoozeMinutes = SettingsDefaults::clampSnoozeMinutes(m_snoozeMinutes);
     m_checkInMinutes = SettingsDefaults::clampCheckInMinutes(m_checkInMinutes);
-    setStudyCourseId(m_studyCourseId);
+    setStudySetId(m_studySetId);
     m_studyFormats = SettingsDefaults::clampStudyFormats(m_studyFormats);
     setStudyFormatMode(m_studyFormatMode);
     setStudyFocusFormat(m_studyFocusFormat);

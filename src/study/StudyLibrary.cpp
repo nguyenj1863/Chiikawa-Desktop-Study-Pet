@@ -32,10 +32,10 @@ StudyLibrary::~StudyLibrary()
     m_thread.wait();
 }
 
-QList<qint64> StudyLibrary::importFiles(qint64 courseId, const QStringList& paths)
+QList<qint64> StudyLibrary::importFiles(qint64 setId, const QStringList& paths)
 {
     QList<qint64> ids;
-    if (!m_db.isOpen() || courseId <= 0) {
+    if (!m_db.isOpen() || setId <= 0) {
         return ids;
     }
     for (const QString& path : paths) {
@@ -43,7 +43,7 @@ QList<qint64> StudyLibrary::importFiles(qint64 courseId, const QStringList& path
         if (kind == DocumentKind::Unknown) {
             continue;
         }
-        const auto id = m_db.addDocument(courseId, QFileInfo(path).completeBaseName(), path, kind);
+        const auto id = m_db.addDocument(setId, QFileInfo(path).completeBaseName(), path, kind);
         if (id) {
             ids.append(*id);
             m_queue.enqueue(*id);
@@ -88,9 +88,9 @@ bool StudyLibrary::removeDocument(qint64 documentId)
     return ok;
 }
 
-bool StudyLibrary::removeCourse(qint64 courseId)
+bool StudyLibrary::removeStudySet(qint64 setId)
 {
-    const QVector<DocumentRecord> docs = m_db.documents(courseId);
+    const QVector<DocumentRecord> docs = m_db.documents(setId);
     for (const DocumentRecord& d : docs) {
         m_queue.removeAll(d.id);
         if (d.id == m_activeDocument) {
@@ -100,7 +100,7 @@ bool StudyLibrary::removeCourse(qint64 courseId)
             QFile::remove(d.storedPath);
         }
     }
-    const bool ok = m_db.removeCourse(courseId);
+    const bool ok = m_db.removeStudySet(setId);
     emit documentsChanged();
     return ok;
 }

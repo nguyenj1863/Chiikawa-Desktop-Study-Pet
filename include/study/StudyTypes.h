@@ -52,14 +52,14 @@ struct ExtractionResult {
     QList<int> unsupportedUnits;   // pages/slides with no extractable text (scans, images)
 };
 
-struct Course {
+struct StudySet {
     qint64 id = 0;
     QString name;
 };
 
 struct DocumentRecord {
     qint64 id = 0;
-    qint64 courseId = 0;
+    qint64 setId = 0;
     QString title;
     QString originalPath;
     QString storedPath;
@@ -77,7 +77,7 @@ struct DocumentRecord {
 struct Chunk {
     qint64 id = 0;
     qint64 documentId = 0;
-    qint64 courseId = 0;
+    qint64 setId = 0;
     SegmentKind refKind = SegmentKind::Page;
     int refNumber = 0;
     int ordinal = 0;

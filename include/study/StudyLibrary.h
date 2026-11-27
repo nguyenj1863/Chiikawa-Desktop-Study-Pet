@@ -28,7 +28,7 @@ public:
     [[nodiscard]] StudyDatabase* database() { return &m_db; }
 
     /** Queues files for processing; returns the new document IDs (unsupported types are rejected). */
-    QList<qint64> importFiles(qint64 courseId, const QStringList& paths);
+    QList<qint64> importFiles(qint64 setId, const QStringList& paths);
 
     /** Re-runs extraction for a document whose stored copy still exists (or whose original path is reachable). */
     bool reprocess(qint64 documentId);
@@ -36,8 +36,8 @@ public:
     /** Deletes a document, its stored copy, and all derived chunks, questions, and progress. */
     bool removeDocument(qint64 documentId);
 
-    /** Deletes a course and everything in it. */
-    bool removeCourse(qint64 courseId);
+    /** Deletes a study set and everything in it. */
+    bool removeStudySet(qint64 setId);
 
     /** Cancels the running import and clears the queue. */
     void cancelAll();

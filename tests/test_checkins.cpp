@@ -293,17 +293,21 @@ void TestCheckIns::checkInPreferencesPersistClampAndMigrate()
         raw.setValue(QStringLiteral("trivia/recentIds"), QStringList{QStringLiteral("a"), QStringLiteral("b")});
         raw.setValue(QStringLiteral("trivia/totalPoints"), 90);
         raw.setValue(QStringLiteral("study/mode"), 1);
+        raw.setValue(QStringLiteral("study/courseId"), 5);   // "course" was renamed "study set"
         raw.sync();
     }
     AppSettings migrated;
     QVERIFY(migrated.checkInsEnabled());
     QCOMPARE(migrated.checkInMinutes(), 10);
+    QCOMPARE(migrated.studySetId(), 5);
     QCOMPARE(migrated.recentQuestionIds(), (QStringList{QStringLiteral("a"), QStringLiteral("b")}));
     migrated.save();
     QSettings raw(AppSettings::storageOrganization(), AppSettings::storageApplication());
     QVERIFY(!raw.contains(QStringLiteral("trivia/enabled")));
     QVERIFY(!raw.contains(QStringLiteral("trivia/totalPoints")));
     QVERIFY(!raw.contains(QStringLiteral("study/mode")));
+    QVERIFY(!raw.contains(QStringLiteral("study/courseId")));
+    QCOMPARE(raw.value(QStringLiteral("study/setId")).toInt(), 5);
     QVERIFY(raw.value(QStringLiteral("study/checkinsEnabled")).toBool());
     QCOMPARE(raw.value(QStringLiteral("study/checkinMinutes")).toInt(), 10);
 }
@@ -313,12 +317,12 @@ void TestCheckIns::restoreDefaultsResetsCheckIns()
     AppSettings settings;
     settings.setCheckInsEnabled(true);
     settings.setCheckInMinutes(5);
-    settings.setStudyCourseId(7);
+    settings.setStudySetId(7);
     settings.restoreDefaults();
 
     QCOMPARE(settings.checkInsEnabled(), SettingsDefaults::kCheckInsEnabled);
     QCOMPARE(settings.checkInMinutes(), SettingsDefaults::kCheckInMinutes);
-    QCOMPARE(settings.studyCourseId(), 7);   // the chosen course survives Restore Defaults
+    QCOMPARE(settings.studySetId(), 7);   // the chosen study set survives Restore Defaults
 }
 
 void TestCheckIns::popupLayoutStaysOnScreen()
@@ -531,13 +535,13 @@ void TestCheckIns::petShutsDownSafelyWithOpenQuestion()
     // Seed one study question directly (generation itself is covered elsewhere).
     pet->askQuestionNow();   // creates the study stack and shows the empty-library notice
     StudyDatabase* db = pet->studyLibrary()->database();
-    const qint64 course = *db->addCourse(QStringLiteral("Databases"));
-    const qint64 doc = *db->addDocument(course, QStringLiteral("Lecture 6"), QStringLiteral("l6.pptx"), DocumentKind::Pptx);
+    const qint64 studySet = *db->addStudySet(QStringLiteral("Databases"));
+    const qint64 doc = *db->addDocument(studySet, QStringLiteral("Lecture 6"), QStringLiteral("l6.pptx"), DocumentKind::Pptx);
     Question q = joinQuestion();
-    q.courseId = course;
+    q.setId = studySet;
     q.documentId = doc;
     QVERIFY(db->saveQuestion(q, 0, QString()));
-    pet->appSettings()->setStudyCourseId(course);
+    pet->appSettings()->setStudySetId(studySet);
     pet->quizPopup()->dismiss();
     QTRY_VERIFY_WITH_TIMEOUT(!pet->quizPopup()->isVisible(), 1000);
     QTest::qWait(100);

@@ -351,7 +351,7 @@ bool QuestionGenerator::start(const QList<qint64>& documentIds, const QList<Ques
         for (qsizetype i = 0; i < picks.size(); ++i) {
             Job job;
             job.documentId = docId;
-            job.courseId = doc->courseId;
+            job.setId = doc->setId;
             job.title = doc->title;
             job.chunk = picks.at(i);
             job.type = m_formats.at(static_cast<int>((existing.size() + i) % m_formats.size()));
@@ -439,7 +439,7 @@ void QuestionGenerator::onFinished(int requestId, const QString& content)
 
     Question q = *parsed;
     q.documentId = job.documentId;
-    q.courseId = job.courseId;
+    q.setId = job.setId;
     q.id = stableId(job.documentId, q.type, q.prompt);
     q.sources.first().title = job.title;
     q.sources.first().location = StudyText::referenceLabel(job.chunk.refKind, job.chunk.refNumber);

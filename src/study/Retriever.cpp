@@ -45,7 +45,7 @@ QString FtsRetriever::matchExpression(const QString& query)
     return terms.join(QStringLiteral(" OR "));
 }
 
-QVector<SearchHit> FtsRetriever::search(const QString& query, qint64 courseId, int limit,
+QVector<SearchHit> FtsRetriever::search(const QString& query, qint64 setId, int limit,
                                         const QList<qint64>& documentIds)
 {
     QVector<SearchHit> out;
@@ -54,9 +54,9 @@ QVector<SearchHit> FtsRetriever::search(const QString& query, qint64 courseId, i
         return out;
     }
     QString sql = QStringLiteral(
-        "SELECT c.id, c.document_id, c.course_id, c.ref_kind, c.ref_number, c.ordinal, c.text, bm25(chunks_fts)"
+        "SELECT c.id, c.document_id, c.set_id, c.ref_kind, c.ref_number, c.ordinal, c.text, bm25(chunks_fts)"
         " FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid"
-        " WHERE chunks_fts MATCH ? AND c.course_id = ?");
+        " WHERE chunks_fts MATCH ? AND c.set_id = ?");
     if (!documentIds.isEmpty()) {
         QStringList ids;
         for (const qint64 id : documentIds) {
@@ -69,7 +69,7 @@ QVector<SearchHit> FtsRetriever::search(const QString& query, qint64 courseId, i
     QSqlQuery q(m_db->connection());
     q.prepare(sql);
     q.addBindValue(match);
-    q.addBindValue(courseId);
+    q.addBindValue(setId);
     q.addBindValue(limit);
     if (!q.exec()) {
         return out;
@@ -78,7 +78,7 @@ QVector<SearchHit> FtsRetriever::search(const QString& query, qint64 courseId, i
         SearchHit hit;
         hit.chunk.id = q.value(0).toLongLong();
         hit.chunk.documentId = q.value(1).toLongLong();
-        hit.chunk.courseId = q.value(2).toLongLong();
+        hit.chunk.setId = q.value(2).toLongLong();
         hit.chunk.refKind = static_cast<SegmentKind>(q.value(3).toInt());
         hit.chunk.refNumber = q.value(4).toInt();
         hit.chunk.ordinal = q.value(5).toInt();

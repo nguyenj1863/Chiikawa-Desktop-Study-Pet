@@ -51,8 +51,8 @@ public:
     /** Refreshes the study stats and section summary. */
     void refreshStudySummary();
 
-    /** Courses offered in "Questions". */
-    void setStudyCourses(const QVector<Course>& courses);
+    /** Study sets offered in "Questions". */
+    void setStudySets(const QVector<StudySet>& studySets);
     /** Study progress line shown when questions come from the Study Library. */
     void setStudyProgressText(const QString& text);
 
@@ -179,7 +179,7 @@ private:
     CollapsibleSection* m_studySection = nullptr;
     QCheckBox* m_checkInsEnableCheck = nullptr;
     QComboBox* m_studySourceCombo = nullptr;
-    QVector<Course> m_studyCourses;
+    QVector<StudySet> m_studySets;
     QString m_studyProgressText;
     QComboBox* m_checkInFrequencyCombo = nullptr;
     QLabel* m_studyStatsLabel = nullptr;

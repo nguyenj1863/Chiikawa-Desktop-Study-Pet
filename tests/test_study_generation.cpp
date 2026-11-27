@@ -127,7 +127,7 @@ private slots:
 
 private:
     struct Fixture {
-        qint64 course = 0;
+        qint64 studySet = 0;
         qint64 joins = 0;
         qint64 automata = 0;
     };
@@ -149,9 +149,9 @@ void TestStudyGeneration::cleanup()
 TestStudyGeneration::Fixture TestStudyGeneration::seed(StudyDatabase& db)
 {
     Fixture f;
-    f.course = *db.addCourse(QStringLiteral("Databases"));
-    f.joins = *db.addDocument(f.course, QStringLiteral("Lecture 4 Joins"), QStringLiteral("C:/l4.pptx"), DocumentKind::Pptx);
-    f.automata = *db.addDocument(f.course, QStringLiteral("Automata"), QStringLiteral("C:/a.pdf"), DocumentKind::Pdf);
+    f.studySet = *db.addStudySet(QStringLiteral("Databases"));
+    f.joins = *db.addDocument(f.studySet, QStringLiteral("Lecture 4 Joins"), QStringLiteral("C:/l4.pptx"), DocumentKind::Pptx);
+    f.automata = *db.addDocument(f.studySet, QStringLiteral("Automata"), QStringLiteral("C:/a.pdf"), DocumentKind::Pdf);
     db.replaceChunks(f.joins, {{0, 0, 0, SegmentKind::Slide, 4, 0, kJoinsPassage},
                                {0, 0, 0, SegmentKind::Slide, 5, 1, kJoinsPassage + QStringLiteral(" Joins combine tables.")}});
     db.replaceChunks(f.automata, {{0, 0, 0, SegmentKind::Page, 2, 0, kAutomataPassage}});
@@ -367,7 +367,7 @@ void TestStudyGeneration::questionsRoundTripThroughDatabase()
     const Fixture f = seed(db);
     Question q = parsed(QuestionType::MultiSelect, multiSelectJson());
     q.id = QuestionGenerator::stableId(f.automata, q.type, q.prompt);
-    q.courseId = f.course;
+    q.setId = f.studySet;
     q.documentId = f.automata;
     q.sources[0].location = QStringLiteral("p. 2");
     const qint64 chunkId = db.chunks(f.automata).first().id;
@@ -388,13 +388,13 @@ void TestStudyGeneration::questionsRoundTripThroughDatabase()
     QCOMPARE(loaded->sources.first().chunkId, chunkId);
     QVERIFY(loaded->isValid());
 
-    QCOMPARE(db.courseQuestions(f.course).size(), 1);
-    QCOMPARE(db.courseQuestions(f.course, {QuestionType::Written}).size(), 0);
+    QCOMPARE(db.setQuestions(f.studySet).size(), 1);
+    QCOMPARE(db.setQuestions(f.studySet, {QuestionType::Written}).size(), 0);
     QCOMPARE(db.usedChunkIds(f.automata), QSet<qint64>{chunkId});
     QCOMPARE(db.document(f.automata)->questionCount, 1);
     db.setDocumentSelected(f.automata, false);
-    QCOMPARE(db.courseQuestions(f.course).size(), 0);
-    QCOMPARE(db.courseQuestions(f.course, {}, false).size(), 1);
+    QCOMPARE(db.setQuestions(f.studySet).size(), 0);
+    QCOMPARE(db.setQuestions(f.studySet, {}, false).size(), 1);
     QVERIFY(db.removeQuestions(f.automata));
     QVERIFY(db.documentQuestions(f.automata).isEmpty());
 }
@@ -477,7 +477,7 @@ void TestStudyGeneration::multiSelectFallsBackWhenUnsupported()
     QCOMPARE(MockLlmClient::kindOf(llm.requests.at(1)), QStringLiteral("written"));
     QCOMPARE(MockLlmClient::kindOf(llm.requests.at(2)), QStringLiteral("written"));
     // No multi-select question was invented for a passage that cannot support one.
-    QVERIFY(db.courseQuestions(f.course, {QuestionType::MultiSelect}, false).isEmpty());
+    QVERIFY(db.setQuestions(f.studySet, {QuestionType::MultiSelect}, false).isEmpty());
 
     // With only multi-select enabled there is no fallback: the chunk is simply skipped.
     MockLlmClient onlyMulti;
@@ -565,7 +565,7 @@ void TestStudyGeneration::cancelsAndRegenerates()
     // Regenerate replaces existing questions.
     Question old = parsed(QuestionType::MultiSelect, multiSelectJson());
     old.id = QStringLiteral("old-question");
-    old.courseId = f.course;
+    old.setId = f.studySet;
     old.documentId = f.automata;
     QVERIFY(db.saveQuestion(old, db.chunks(f.automata).first().id, QString()));
     MockLlmClient fresh;

@@ -62,7 +62,7 @@ struct Question {
     QVector<QuestionOption> options;   // SingleChoice / MultiSelect
     QString expectedAnswer;            // Written
     QStringList keyConcepts;           // Written: points a correct answer must cover
-    qint64 courseId = 0;
+    qint64 setId = 0;
     qint64 documentId = 0;
 
     [[nodiscard]] bool isValid() const

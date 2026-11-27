@@ -26,9 +26,9 @@ private slots:
     void chunkerKeepsReferencesAndBoundedSizes();
     void chunkerDropsRunningHeadersAndPageNumbers();
     void chunkerJoinsHyphenationAndSplitsLists();
-    void databaseCoursesAndDocuments();
+    void databaseSetsAndDocuments();
     void ftsRetrievalRanksAndScopes();
-    void removingDocumentOrCourseCascades();
+    void removingDocumentOrSetCascades();
     void recoverInterruptedDocuments();
 
     void libraryImportsTextAndSlidesOnWorkerThread();
@@ -129,21 +129,21 @@ void TestStudyPipeline::chunkerJoinsHyphenationAndSplitsLists()
     QVERIFY(cleaned.contains(QStringLiteral("\n\n- First item\n\n- Second item")));
 }
 
-void TestStudyPipeline::databaseCoursesAndDocuments()
+void TestStudyPipeline::databaseSetsAndDocuments()
 {
     StudyDatabase db;
     QVERIFY2(db.open(), qPrintable(db.lastError()));
     QVERIFY(QFile::exists(StudyDatabase::databasePath()));
 
-    const auto bio = db.addCourse(QStringLiteral("  Biology  101 "));
+    const auto bio = db.addStudySet(QStringLiteral("  Biology  101 "));
     QVERIFY(bio);
-    QVERIFY(!db.addCourse(QStringLiteral("biology 101")).has_value());   // names are case-insensitive unique
-    QVERIFY(!db.addCourse(QStringLiteral("   ")).has_value());
-    const auto cs = db.addCourse(QStringLiteral("Algorithms"));
-    QCOMPARE(db.courses().size(), 2);
-    QCOMPARE(db.courses().first().name, QStringLiteral("Algorithms"));
-    QVERIFY(db.renameCourse(*cs, QStringLiteral("Data Structures")));
-    QCOMPARE(db.courses().last().name, QStringLiteral("Data Structures"));
+    QVERIFY(!db.addStudySet(QStringLiteral("biology 101")).has_value());   // names are case-insensitive unique
+    QVERIFY(!db.addStudySet(QStringLiteral("   ")).has_value());
+    const auto cs = db.addStudySet(QStringLiteral("Algorithms"));
+    QCOMPARE(db.studySets().size(), 2);
+    QCOMPARE(db.studySets().first().name, QStringLiteral("Algorithms"));
+    QVERIFY(db.renameStudySet(*cs, QStringLiteral("Data Structures")));
+    QCOMPARE(db.studySets().last().name, QStringLiteral("Data Structures"));
 
     const auto doc = db.addDocument(*bio, QStringLiteral("Cells"), QStringLiteral("C:/notes/cells.pdf"), DocumentKind::Pdf);
     QVERIFY(doc);
@@ -172,10 +172,10 @@ void TestStudyPipeline::ftsRetrievalRanksAndScopes()
 {
     StudyDatabase db;
     QVERIFY(db.open());
-    const auto course = *db.addCourse(QStringLiteral("Databases"));
-    const auto other = *db.addCourse(QStringLiteral("Automata"));
-    const auto doc1 = *db.addDocument(course, QStringLiteral("Joins"), QString(), DocumentKind::Pptx);
-    const auto doc2 = *db.addDocument(course, QStringLiteral("Indexes"), QString(), DocumentKind::Pdf);
+    const auto studySet = *db.addStudySet(QStringLiteral("Databases"));
+    const auto other = *db.addStudySet(QStringLiteral("Automata"));
+    const auto doc1 = *db.addDocument(studySet, QStringLiteral("Joins"), QString(), DocumentKind::Pptx);
+    const auto doc2 = *db.addDocument(studySet, QStringLiteral("Indexes"), QString(), DocumentKind::Pdf);
     const auto doc3 = *db.addDocument(other, QStringLiteral("NFA"), QString(), DocumentKind::Text);
 
     QVERIFY2(db.replaceChunks(doc1, {
@@ -190,54 +190,54 @@ void TestStudyPipeline::ftsRetrievalRanksAndScopes()
     }));
 
     FtsRetriever retriever(&db);
-    QVector<SearchHit> hits = retriever.search(QStringLiteral("What does a left join return?"), course, 5);
+    QVector<SearchHit> hits = retriever.search(QStringLiteral("What does a left join return?"), studySet, 5);
     QVERIFY(hits.size() >= 2);
     QCOMPARE(hits.first().chunk.refNumber, 4);   // stemming: "join" matches, "left" ranks slide 4 first
     QCOMPARE(hits.first().chunk.documentId, doc1);
     QVERIFY(hits.first().score >= hits.last().score);
     for (const SearchHit& h : hits) {
-        QCOMPARE(h.chunk.courseId, course);   // the Automata course is never returned
+        QCOMPARE(h.chunk.setId, studySet);   // the Automata study set is never returned
     }
 
-    hits = retriever.search(QStringLiteral("joins"), course, 5, {doc2});
+    hits = retriever.search(QStringLiteral("joins"), studySet, 5, {doc2});
     QVERIFY(hits.isEmpty());
-    hits = retriever.search(QStringLiteral("range indexes"), course, 5, {doc2});
+    hits = retriever.search(QStringLiteral("range indexes"), studySet, 5, {doc2});
     QCOMPARE(hits.size(), 1);
     QCOMPARE(hits.first().chunk.refKind, SegmentKind::Page);
 
     // Operator characters in user text never break the MATCH syntax.
-    QVERIFY(retriever.search(QStringLiteral("\"left\" AND (join* OR NEAR) -- ;"), course, 5).size() >= 1);
-    QVERIFY(retriever.search(QStringLiteral("the and of ?"), course, 5).isEmpty());
+    QVERIFY(retriever.search(QStringLiteral("\"left\" AND (join* OR NEAR) -- ;"), studySet, 5).size() >= 1);
+    QVERIFY(retriever.search(QStringLiteral("the and of ?"), studySet, 5).isEmpty());
     QCOMPARE(FtsRetriever::matchExpression(QStringLiteral("Left JOIN left")), QStringLiteral("\"left\" OR \"join\""));
 
     // Replacing chunks keeps the FTS index in sync.
     QVERIFY(db.replaceChunks(doc2, {{0, 0, 0, SegmentKind::Page, 7, 0, QStringLiteral("Hash indexes support equality lookups.")}}));
-    QVERIFY(retriever.search(QStringLiteral("range"), course, 5).isEmpty());
-    QCOMPARE(retriever.search(QStringLiteral("equality"), course, 5).first().chunk.refNumber, 7);
+    QVERIFY(retriever.search(QStringLiteral("range"), studySet, 5).isEmpty());
+    QCOMPARE(retriever.search(QStringLiteral("equality"), studySet, 5).first().chunk.refNumber, 7);
 }
 
-void TestStudyPipeline::removingDocumentOrCourseCascades()
+void TestStudyPipeline::removingDocumentOrSetCascades()
 {
     StudyDatabase db;
     QVERIFY(db.open());
-    const auto course = *db.addCourse(QStringLiteral("Chemistry"));
-    const auto doc = *db.addDocument(course, QStringLiteral("Bonds"), QString(), DocumentKind::Text);
+    const auto studySet = *db.addStudySet(QStringLiteral("Chemistry"));
+    const auto doc = *db.addDocument(studySet, QStringLiteral("Bonds"), QString(), DocumentKind::Text);
     QVERIFY(db.replaceChunks(doc, {{0, 0, 0, SegmentKind::Section, 1, 0, QStringLiteral("Covalent bonds share electron pairs between atoms.")}}));
     {
         QSqlQuery q(db.connection());
-        QVERIFY(q.exec(QStringLiteral("INSERT INTO questions(id, document_id, course_id, type, prompt, payload, created_at)"
-                                      " VALUES ('q1', %1, %2, 1, 'p', '{}', 0)").arg(doc).arg(course)));
-        QVERIFY(q.exec(QStringLiteral("INSERT INTO attempts(question_id, document_id, course_id, type, kind, verdict, score, xp, answered_at)"
-                                      " VALUES ('q1', %1, %2, 1, 0, 0, 1, 10, 0)").arg(doc).arg(course)));
-        QVERIFY(q.exec(QStringLiteral("INSERT INTO concept_stats(document_id, course_id, concept) VALUES (%1, %2, 'bonds')").arg(doc).arg(course)));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO questions(id, document_id, set_id, type, prompt, payload, created_at)"
+                                      " VALUES ('q1', %1, %2, 1, 'p', '{}', 0)").arg(doc).arg(studySet)));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO attempts(question_id, document_id, set_id, type, kind, verdict, score, xp, answered_at)"
+                                      " VALUES ('q1', %1, %2, 1, 0, 0, 1, 10, 0)").arg(doc).arg(studySet)));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO concept_stats(document_id, set_id, concept) VALUES (%1, %2, 'bonds')").arg(doc).arg(studySet)));
     }
     FtsRetriever retriever(&db);
-    QCOMPARE(retriever.search(QStringLiteral("covalent"), course, 5).size(), 1);
+    QCOMPARE(retriever.search(QStringLiteral("covalent"), studySet, 5).size(), 1);
 
-    QVERIFY(db.removeCourse(course));
-    QVERIFY(db.documents(course).isEmpty());
+    QVERIFY(db.removeStudySet(studySet));
+    QVERIFY(db.documents(studySet).isEmpty());
     QVERIFY(db.chunks(doc).isEmpty());
-    QVERIFY(retriever.search(QStringLiteral("covalent"), course, 5).isEmpty());
+    QVERIFY(retriever.search(QStringLiteral("covalent"), studySet, 5).isEmpty());
     QSqlQuery q(db.connection());
     for (const char* table : {"questions", "attempts", "concept_stats", "chunks_fts"}) {
         QVERIFY(q.exec(QStringLiteral("SELECT COUNT(*) FROM %1").arg(QLatin1String(table))));
@@ -250,9 +250,9 @@ void TestStudyPipeline::recoverInterruptedDocuments()
 {
     StudyDatabase db;
     QVERIFY(db.open());
-    const auto course = *db.addCourse(QStringLiteral("History"));
-    const auto extracting = *db.addDocument(course, QStringLiteral("a"), QString(), DocumentKind::Text);
-    const auto generating = *db.addDocument(course, QStringLiteral("b"), QString(), DocumentKind::Text);
+    const auto studySet = *db.addStudySet(QStringLiteral("History"));
+    const auto extracting = *db.addDocument(studySet, QStringLiteral("a"), QString(), DocumentKind::Text);
+    const auto generating = *db.addDocument(studySet, QStringLiteral("b"), QString(), DocumentKind::Text);
     db.setDocumentStatus(extracting, DocumentStatus::Extracting);
     db.setDocumentStatus(generating, DocumentStatus::Generating);
     db.recoverInterruptedDocuments();
@@ -264,7 +264,7 @@ void TestStudyPipeline::libraryImportsTextAndSlidesOnWorkerThread()
 {
     StudyLibrary library;
     QVERIFY2(library.isOpen(), qPrintable(library.lastError()));
-    const auto course = *library.database()->addCourse(QStringLiteral("Databases"));
+    const auto studySet = *library.database()->addStudySet(QStringLiteral("Databases"));
     const QString notes = writeFile(QStringLiteral("joins.md"),
                                     "# Joins\nA LEFT JOIN returns all rows from the left table.\n\n# Keys\nA primary key uniquely identifies a row.\n");
     const QString deck = writeFile(QStringLiteral("lecture.pptx"), buildPptx({
@@ -274,7 +274,7 @@ void TestStudyPipeline::libraryImportsTextAndSlidesOnWorkerThread()
 
     QSignalSpy processed(&library, &StudyLibrary::documentProcessed);
     QSignalSpy busy(&library, &StudyLibrary::busyChanged);
-    const QList<qint64> ids = library.importFiles(course, {notes, deck, ignored});
+    const QList<qint64> ids = library.importFiles(studySet, {notes, deck, ignored});
     QCOMPARE(ids.size(), 2);
     QVERIFY(library.isBusy());
     QTRY_COMPARE_WITH_TIMEOUT(processed.count(), 2, 10000);
@@ -309,13 +309,13 @@ void TestStudyPipeline::libraryFlagsUnsupportedDocuments()
 {
     StudyLibrary library;
     QVERIFY2(library.isOpen(), qPrintable(library.lastError()));
-    const auto course = *library.database()->addCourse(QStringLiteral("Art"));
+    const auto studySet = *library.database()->addStudySet(QStringLiteral("Art"));
     TestSlide picture;
     picture.picture = true;
     const QString deck = writeFile(QStringLiteral("paintings.pptx"), buildPptx({picture, picture}));
     const QString corrupt = writeFile(QStringLiteral("corrupt.pptx"), "PK this is not a real archive");
     QSignalSpy processed(&library, &StudyLibrary::documentProcessed);
-    const QList<qint64> ids = library.importFiles(course, {deck, corrupt});
+    const QList<qint64> ids = library.importFiles(studySet, {deck, corrupt});
     QTRY_COMPARE_WITH_TIMEOUT(processed.count(), 2, 10000);
 
     const auto images = library.database()->document(ids.at(0));
@@ -333,10 +333,10 @@ void TestStudyPipeline::libraryRemovesStoredCopyAndCancels()
 {
     StudyLibrary library;
     QVERIFY2(library.isOpen(), qPrintable(library.lastError()));
-    const auto course = *library.database()->addCourse(QStringLiteral("Physics"));
+    const auto studySet = *library.database()->addStudySet(QStringLiteral("Physics"));
     const QString notes = writeFile(QStringLiteral("forces.txt"), "Newton's second law relates force, mass, and acceleration.\n");
     QSignalSpy processed(&library, &StudyLibrary::documentProcessed);
-    const qint64 id = library.importFiles(course, {notes}).first();
+    const qint64 id = library.importFiles(studySet, {notes}).first();
     QTRY_COMPARE_WITH_TIMEOUT(processed.count(), 1, 10000);
     const QString stored = library.database()->document(id)->storedPath;
     QVERIFY(QFile::exists(stored));
@@ -351,7 +351,7 @@ void TestStudyPipeline::libraryRemovesStoredCopyAndCancels()
     for (int i = 0; i < 6; ++i) {
         many.append(writeFile(QStringLiteral("n%1.txt").arg(i), "Some study notes about momentum and energy conservation.\n"));
     }
-    const QList<qint64> ids = library.importFiles(course, many);
+    const QList<qint64> ids = library.importFiles(studySet, many);
     library.cancelAll();
     QTRY_VERIFY_WITH_TIMEOUT(!library.isBusy(), 10000);
     int cancelled = 0;
@@ -366,8 +366,8 @@ void TestStudyPipeline::libraryRemovesStoredCopyAndCancels()
     }
     QVERIFY(cancelled >= static_cast<int>(ids.size()) - 1);
 
-    // Removing a whole course deletes every stored copy.
-    QVERIFY(library.removeCourse(course));
+    // Removing a whole study set deletes every stored copy.
+    QVERIFY(library.removeStudySet(studySet));
     QTRY_VERIFY_WITH_TIMEOUT(QDir(StudyDatabase::filesDirectory()).entryList(QDir::Files).isEmpty(), 5000);
 }
 
@@ -375,7 +375,7 @@ void TestStudyPipeline::libraryKeepsEventLoopResponsive()
 {
     StudyLibrary library;
     QVERIFY2(library.isOpen(), qPrintable(library.lastError()));
-    const auto course = *library.database()->addCourse(QStringLiteral("Literature"));
+    const auto studySet = *library.database()->addStudySet(QStringLiteral("Literature"));
     QByteArray big;
     for (int i = 0; i < 40000; ++i) {
         big += "Paragraph " + QByteArray::number(i) + " discusses themes of ambition and guilt in Macbeth.\n\n";
@@ -389,11 +389,11 @@ void TestStudyPipeline::libraryKeepsEventLoopResponsive()
     QSignalSpy processed(&library, &StudyLibrary::documentProcessed);
     QElapsedTimer clock;
     clock.start();
-    library.importFiles(course, {path});
+    library.importFiles(studySet, {path});
     QTRY_COMPARE_WITH_TIMEOUT(processed.count(), 1, 60000);
     const qint64 elapsed = clock.elapsed();
     ticker.stop();
-    QVERIFY(library.database()->document(library.database()->documents(course).first().id)->chunkCount > 100);
+    QVERIFY(library.database()->document(library.database()->documents(studySet).first().id)->chunkCount > 100);
     // The UI thread kept servicing timers while the worker parsed ~3 MB of text.
     if (elapsed > 200) {
         QVERIFY2(ticks >= elapsed / 10 / 4, qPrintable(QStringLiteral("ticks %1 in %2 ms").arg(ticks).arg(elapsed)));

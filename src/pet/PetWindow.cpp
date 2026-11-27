@@ -946,9 +946,9 @@ void PetWindow::setupCheckIns()
     });
     connect(m_settingsPanel.get(), &SettingsPanel::studyLibraryRequested, this, &PetWindow::openStudyLibrary);
 
-    // Someone who already set up a course gets the study stack (and its course list) right away;
+    // Someone who already set up a study set gets the study stack (and its study set list) right away;
     // everyone else only pays for it when they first use the Study App.
-    if (m_settings->studyCourseId() > 0) {
+    if (m_settings->studySetId() > 0) {
         ensureStudy();
     }
     applyStudyPreferences();
@@ -974,8 +974,8 @@ void PetWindow::ensureStudy()
     m_quizController->setProgressTracker(m_progressTracker.get());
     m_quizController->setWrittenEvaluator(m_writtenEvaluator.get());
 
-    connect(m_studyLibrary.get(), &StudyLibrary::documentsChanged, this, &PetWindow::refreshStudyCourses);
-    refreshStudyCourses();
+    connect(m_studyLibrary.get(), &StudyLibrary::documentsChanged, this, &PetWindow::refreshStudySets);
+    refreshStudySets();
     refreshStudyProgress();
 }
 
@@ -1013,7 +1013,7 @@ void PetWindow::applyStudyPreferences()
         prefs.focus = QuestionType::SingleChoice;
         break;
     }
-    m_studyProvider->setCourse(m_settings->studyCourseId());
+    m_studyProvider->setStudySet(m_settings->studySetId());
     m_studyProvider->setPreferences(prefs);
 }
 
@@ -1022,7 +1022,7 @@ void PetWindow::refreshStudyProgress()
     if (!m_progressTracker || !m_settingsPanel) {
         return;
     }
-    const StudyProgress p = m_progressTracker->progress(m_settings->studyCourseId());
+    const StudyProgress p = m_progressTracker->progress(m_settings->studySetId());
     const int answered = p.attempted + p.selfAssessed;
     QString text = QStringLiteral("%1 XP · %2 answered").arg(p.totalXp()).arg(answered);
     if (!p.reviewTopics.isEmpty()) {
@@ -1031,22 +1031,22 @@ void PetWindow::refreshStudyProgress()
     m_settingsPanel->setStudyProgressText(text);
 }
 
-void PetWindow::refreshStudyCourses()
+void PetWindow::refreshStudySets()
 {
     if (!m_studyLibrary || !m_settingsPanel) {
         return;
     }
-    const QVector<Course> courses = m_studyLibrary->database()->courses();
+    const QVector<StudySet> studySets = m_studyLibrary->database()->studySets();
     bool known = false;
-    for (const Course& c : courses) {
-        known = known || c.id == m_settings->studyCourseId();
+    for (const StudySet& c : studySets) {
+        known = known || c.id == m_settings->studySetId();
     }
     if (!known) {
-        // The selected course was deleted: fall back to the first one (or none).
-        m_settings->setStudyCourseId(courses.isEmpty() ? 0 : courses.first().id);
+        // The selected study set was deleted: fall back to the first one (or none).
+        m_settings->setStudySetId(studySets.isEmpty() ? 0 : studySets.first().id);
         m_settings->save();
     }
-    m_settingsPanel->setStudyCourses(courses);
+    m_settingsPanel->setStudySets(studySets);
     applyStudyPreferences();
     refreshStudyProgress();
 }
@@ -1056,15 +1056,15 @@ void PetWindow::showNoStudyQuestionsNotice()
     if (!m_quizPopup || !m_studyLibrary) {
         return;
     }
-    const qint64 course = m_settings->studyCourseId();
+    const qint64 studySet = m_settings->studySetId();
     QString title;
     QString body;
-    if (course <= 0) {
+    if (studySet <= 0) {
         title = QStringLiteral("Your Study Library is empty");
         body = QStringLiteral("Import lecture slides, PDFs, or notes and Chiikawa will quiz you on them, right on this computer.");
-    } else if (m_studyLibrary->database()->courseQuestions(course, {}).isEmpty()) {
+    } else if (m_studyLibrary->database()->setQuestions(studySet, {}).isEmpty()) {
         title = QStringLiteral("No questions yet");
-        body = QStringLiteral("Import materials for this course and press Generate in the Study Library.");
+        body = QStringLiteral("Import materials for this study set and press Generate in the Study Library.");
     } else {
         title = QStringLiteral("No questions in your chosen formats");
         body = QStringLiteral("Turn on more question formats, or generate questions in these formats.");
@@ -1082,7 +1082,7 @@ void PetWindow::openStudyLibrary()
         m_libraryWindow = std::make_unique<StudyLibraryWindow>(m_settings.get(), m_studyLibrary.get(), m_generator.get(),
                                                                m_ollama.get(), m_progressTracker.get(), m_uiSound.get(),
                                                                nullptr);
-        connect(m_libraryWindow.get(), &StudyLibraryWindow::courseChanged, this, [this](qint64) { refreshStudyCourses(); });
+        connect(m_libraryWindow.get(), &StudyLibraryWindow::setChanged, this, [this](qint64) { refreshStudySets(); });
         connect(m_libraryWindow.get(), &StudyLibraryWindow::preferencesChanged, this, [this]() {
             if (m_ollama && m_ollama->model() != m_settings->studyModel()) {
                 m_ollama->setModel(m_settings->studyModel());

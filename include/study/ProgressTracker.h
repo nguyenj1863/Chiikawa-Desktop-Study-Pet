@@ -16,7 +16,7 @@ struct FormatProgress {
     int partial = 0;
 };
 
-/** Aggregated study progress for one course (or all courses). */
+/** Aggregated study progress for one study set (or all studySets). */
 struct StudyProgress {
     // Automatically graded answers
     int attempted = 0;
@@ -54,15 +54,15 @@ public:
     /** Stores the attempt and updates the concept's review state. Returns the XP awarded. */
     int record(const Question& question, const Evaluation& evaluation);
 
-    /** Progress for a course; courseId 0 aggregates every course. */
-    [[nodiscard]] StudyProgress progress(qint64 courseId);
+    /** Progress for a study set; setId 0 aggregates every study set. */
+    [[nodiscard]] StudyProgress progress(qint64 setId);
 
-    /** "documentId|normalized topic" keys of concepts flagged for review in a course. */
-    [[nodiscard]] QSet<QString> reviewKeys(qint64 courseId);
+    /** "documentId|normalized topic" keys of concepts flagged for review in a study set. */
+    [[nodiscard]] QSet<QString> reviewKeys(qint64 setId);
     [[nodiscard]] static QString topicKey(qint64 documentId, const QString& topic);
 
-    /** Clears attempts and concept progress for a course (0 = all courses). Questions are kept. */
-    bool reset(qint64 courseId);
+    /** Clears attempts and concept progress for a study set (0 = all studySets). Questions are kept. */
+    bool reset(qint64 setId);
 
 private:
     StudyDatabase* m_db = nullptr;

@@ -56,11 +56,11 @@ int ProgressTracker::record(const Question& question, const Evaluation& evaluati
     db.transaction();
 
     QSqlQuery attempt(db);
-    attempt.prepare(QStringLiteral("INSERT INTO attempts(question_id, document_id, course_id, type, kind, verdict, score, xp, answered_at)"
+    attempt.prepare(QStringLiteral("INSERT INTO attempts(question_id, document_id, set_id, type, kind, verdict, score, xp, answered_at)"
                                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     attempt.addBindValue(question.id);
     attempt.addBindValue(question.documentId);
-    attempt.addBindValue(question.courseId);
+    attempt.addBindValue(question.setId);
     attempt.addBindValue(static_cast<int>(question.type));
     attempt.addBindValue(static_cast<int>(evaluation.kind));
     // Self-assessed attempts store the rating; automatic ones store the verdict.
@@ -109,10 +109,10 @@ int ProgressTracker::record(const Question& question, const Evaluation& evaluati
         break;
     }
     QSqlQuery upsert(db);
-    upsert.prepare(QStringLiteral("INSERT OR REPLACE INTO concept_stats(document_id, course_id, concept, seen, correct,"
+    upsert.prepare(QStringLiteral("INSERT OR REPLACE INTO concept_stats(document_id, set_id, concept, seen, correct,"
                                   " partial, incorrect, last_seen, needs_review) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     upsert.addBindValue(question.documentId);
-    upsert.addBindValue(question.courseId);
+    upsert.addBindValue(question.setId);
     upsert.addBindValue(topic);
     upsert.addBindValue(seen);
     upsert.addBindValue(correct);
@@ -128,13 +128,13 @@ int ProgressTracker::record(const Question& question, const Evaluation& evaluati
     return xp;
 }
 
-StudyProgress ProgressTracker::progress(qint64 courseId)
+StudyProgress ProgressTracker::progress(qint64 setId)
 {
     StudyProgress p;
     if (!m_db) {
         return p;
     }
-    const QString where = courseId > 0 ? QStringLiteral(" WHERE course_id = %1").arg(courseId) : QString();
+    const QString where = setId > 0 ? QStringLiteral(" WHERE set_id = %1").arg(setId) : QString();
     QSqlQuery q(m_db->connection());
     q.exec(QStringLiteral("SELECT kind, verdict, type, xp FROM attempts") + where);
     while (q.next()) {
@@ -181,7 +181,7 @@ StudyProgress ProgressTracker::progress(qint64 courseId)
     }
     QSqlQuery r(m_db->connection());
     r.exec(QStringLiteral("SELECT concept FROM concept_stats WHERE needs_review = 1")
-           + (courseId > 0 ? QStringLiteral(" AND course_id = %1").arg(courseId) : QString())
+           + (setId > 0 ? QStringLiteral(" AND set_id = %1").arg(setId) : QString())
            + QStringLiteral(" ORDER BY last_seen DESC"));
     while (r.next()) {
         const QString topic = r.value(0).toString();
@@ -192,15 +192,15 @@ StudyProgress ProgressTracker::progress(qint64 courseId)
     return p;
 }
 
-QSet<QString> ProgressTracker::reviewKeys(qint64 courseId)
+QSet<QString> ProgressTracker::reviewKeys(qint64 setId)
 {
     QSet<QString> keys;
     if (!m_db) {
         return keys;
     }
     QSqlQuery q(m_db->connection());
-    q.prepare(QStringLiteral("SELECT document_id, concept FROM concept_stats WHERE needs_review = 1 AND course_id = ?"));
-    q.addBindValue(courseId);
+    q.prepare(QStringLiteral("SELECT document_id, concept FROM concept_stats WHERE needs_review = 1 AND set_id = ?"));
+    q.addBindValue(setId);
     if (q.exec()) {
         while (q.next()) {
             keys.insert(q.value(0).toString() + QLatin1Char('|') + q.value(1).toString());
@@ -209,12 +209,12 @@ QSet<QString> ProgressTracker::reviewKeys(qint64 courseId)
     return keys;
 }
 
-bool ProgressTracker::reset(qint64 courseId)
+bool ProgressTracker::reset(qint64 setId)
 {
     if (!m_db) {
         return false;
     }
-    const QString where = courseId > 0 ? QStringLiteral(" WHERE course_id = %1").arg(courseId) : QString();
+    const QString where = setId > 0 ? QStringLiteral(" WHERE set_id = %1").arg(setId) : QString();
     QSqlQuery q(m_db->connection());
     return q.exec(QStringLiteral("DELETE FROM attempts") + where) && q.exec(QStringLiteral("DELETE FROM concept_stats") + where);
 }

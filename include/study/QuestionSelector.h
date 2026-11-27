@@ -59,15 +59,15 @@ inline constexpr double kReviewPreference = 0.7;
 } // namespace QuestionSelector
 
 /**
- * QuestionProvider serving cached, pre-generated questions from the selected course.
+ * QuestionProvider serving cached, pre-generated questions from the selected study set.
  * No model call happens at ask time.
  */
 class StudyQuestionProvider : public QuestionProvider {
 public:
     StudyQuestionProvider(StudyDatabase* db, ProgressTracker* progress);
 
-    void setCourse(qint64 courseId) { m_courseId = courseId; }
-    [[nodiscard]] qint64 course() const { return m_courseId; }
+    void setStudySet(qint64 setId) { m_setId = setId; }
+    [[nodiscard]] qint64 studySet() const { return m_setId; }
     void setPreferences(const SelectionPrefs& prefs) { m_prefs = prefs; }
     [[nodiscard]] const SelectionPrefs& preferences() const { return m_prefs; }
     void setSeed(quint32 seed) { m_rng.seed(seed); }
@@ -75,13 +75,13 @@ public:
     [[nodiscard]] QString id() const override { return QStringLiteral("study"); }
     [[nodiscard]] std::optional<Question> nextQuestion(const QStringList& recentIds) override;
 
-    /** Questions currently available for the course and formats (ignores recency). */
+    /** Questions currently available for the study set and formats (ignores recency). */
     [[nodiscard]] int availableCount() const;
 
 private:
     StudyDatabase* m_db = nullptr;
     ProgressTracker* m_progress = nullptr;
-    qint64 m_courseId = 0;
+    qint64 m_setId = 0;
     SelectionPrefs m_prefs;
     QList<QuestionType> m_recentTypes;
     QRandomGenerator m_rng;

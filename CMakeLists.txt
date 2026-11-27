@@ -274,6 +274,7 @@ chiikawa_add_test(test_quick_actions tests/test_quick_actions.cpp resources/reso
 chiikawa_add_test(test_checkins tests/test_checkins.cpp resources/resources.qrc)
 chiikawa_add_test(test_study_extract tests/test_study_extract.cpp tests/StudyTestUtils.h)
 chiikawa_add_test(test_study_pipeline tests/test_study_pipeline.cpp tests/StudyTestUtils.h)
+chiikawa_add_test(test_study_migration tests/test_study_migration.cpp)
 chiikawa_add_test(test_ollama_client tests/test_ollama_client.cpp)
 chiikawa_add_test(test_study_generation tests/test_study_generation.cpp tests/MockLlmClient.h)
 chiikawa_add_test(test_study_answers tests/test_study_answers.cpp tests/MockLlmClient.h)

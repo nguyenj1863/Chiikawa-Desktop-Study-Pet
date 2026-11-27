@@ -796,14 +796,14 @@ void SettingsPanel::buildUi()
     m_studySourceCombo->setObjectName(QStringLiteral("studySourceCombo"));
     m_studySourceCombo->setCursor(Qt::PointingHandCursor);
     m_studySourceCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_studySourceCombo->setToolTip(QStringLiteral("The Study Library course Chiikawa asks questions from"));
+    m_studySourceCombo->setToolTip(QStringLiteral("The study set Chiikawa asks questions from"));
     configureTranslucentPopup(m_studySourceCombo);
     connect(m_studySourceCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
     connect(m_studySourceCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
     sourceRow->addWidget(sourceLabel);
     sourceRow->addWidget(m_studySourceCombo, 1);
     studyBody->addLayout(sourceRow);
-    setStudyCourses({});
+    setStudySets({});
 
     auto* frequencyRow = new QHBoxLayout();
     frequencyRow->setSpacing(6);
@@ -1184,8 +1184,8 @@ void SettingsPanel::syncFromSettings()
     m_notifyCheck->setChecked(m_settings->alarmNotificationEnabled());
     m_checkInsEnableCheck->setChecked(m_settings->checkInsEnabled());
     {
-        const int index = m_studySourceCombo->findData(m_settings->studyCourseId());
-        m_studySourceCombo->setCurrentIndex(std::max(0, index));   // first course, or the placeholder
+        const int index = m_studySourceCombo->findData(m_settings->studySetId());
+        m_studySourceCombo->setCurrentIndex(std::max(0, index));   // first study set, or the placeholder
     }
     const int freqIdx = m_checkInFrequencyCombo->findData(m_settings->checkInMinutes());
     m_checkInFrequencyCombo->setCurrentIndex(freqIdx >= 0 ? freqIdx : 0);
@@ -1697,7 +1697,7 @@ void SettingsPanel::onPreferenceChanged()
     {
         const qint64 source = m_studySourceCombo->currentData().toLongLong();
         if (source > 0) {
-            m_settings->setStudyCourseId(source);
+            m_settings->setStudySetId(source);
         }
     }
     m_settings->setCheckInMinutes(m_checkInFrequencyCombo->currentData().toInt());
@@ -1722,23 +1722,23 @@ void SettingsPanel::refreshStudySummary()
                                     : QStringLiteral("Off"));
 }
 
-void SettingsPanel::setStudyCourses(const QVector<Course>& courses)
+void SettingsPanel::setStudySets(const QVector<StudySet>& studySets)
 {
-    m_studyCourses = courses;
+    m_studySets = studySets;
     if (!m_studySourceCombo) {
         return;
     }
     const bool wasSyncing = m_syncingUi;
     m_syncingUi = true;
     m_studySourceCombo->clear();
-    if (courses.isEmpty()) {
-        m_studySourceCombo->addItem(QStringLiteral("Study Library (no courses yet)"), qint64(0));
+    if (studySets.isEmpty()) {
+        m_studySourceCombo->addItem(QStringLiteral("Study Library (no study sets yet)"), qint64(0));
     }
-    for (const Course& c : courses) {
+    for (const StudySet& c : studySets) {
         m_studySourceCombo->addItem(c.name, c.id);
     }
     if (m_settings) {
-        const int index = m_studySourceCombo->findData(m_settings->studyCourseId());
+        const int index = m_studySourceCombo->findData(m_settings->studySetId());
         m_studySourceCombo->setCurrentIndex(index >= 0 ? index : 0);
     }
     m_syncingUi = wasSyncing;

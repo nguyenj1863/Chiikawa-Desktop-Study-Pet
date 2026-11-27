@@ -117,7 +117,7 @@ private slots:
     void noticeOffersAction();
     void optionButtonsWrapLongText();
 
-    void libraryWindowManagesCoursesFormatsAndDocuments();
+    void libraryWindowManagesSetsFormatsAndDocuments();
     void petStudyFlowWorksWithoutOllama();
     void studyShortcutOpensTheStudyWindow();
 
@@ -373,7 +373,7 @@ void TestStudyUi::optionButtonsWrapLongText()
     QVERIFY(!longOption.autoExclusive());
 }
 
-void TestStudyUi::libraryWindowManagesCoursesFormatsAndDocuments()
+void TestStudyUi::libraryWindowManagesSetsFormatsAndDocuments()
 {
     AppSettings settings;
     StudyLibrary library;
@@ -391,14 +391,14 @@ void TestStudyUi::libraryWindowManagesCoursesFormatsAndDocuments()
     QVERIFY(window.setupLabel()->text().contains(QStringLiteral("ollama.com")));
 
     // Courses
-    QCOMPARE(window.currentCourse(), 0);
-    const qint64 course = window.createCourse(QStringLiteral("CS 340"));
-    QVERIFY(course > 0);
-    QCOMPARE(window.currentCourse(), course);
-    QCOMPARE(settings.studyCourseId(), course);
-    QCOMPARE(window.createCourse(QStringLiteral("cs 340")), 0);   // duplicate name rejected
-    QVERIFY(window.renameCurrentCourse(QStringLiteral("CS 340 Databases")));
-    QCOMPARE(window.courseCombo()->currentText(), QStringLiteral("CS 340 Databases"));
+    QCOMPARE(window.currentSet(), 0);
+    const qint64 studySet = window.createSet(QStringLiteral("CS 340"));
+    QVERIFY(studySet > 0);
+    QCOMPARE(window.currentSet(), studySet);
+    QCOMPARE(settings.studySetId(), studySet);
+    QCOMPARE(window.createSet(QStringLiteral("cs 340")), 0);   // duplicate name rejected
+    QVERIFY(window.renameCurrentSet(QStringLiteral("CS 340 Databases")));
+    QCOMPARE(window.setCombo()->currentText(), QStringLiteral("CS 340 Databases"));
 
     // Formats: at least one stays on; Focus mode is saved.
     window.formatCheck(SettingsDefaults::kStudyFormatMultiSelect)->setChecked(false);
@@ -436,9 +436,9 @@ void TestStudyUi::libraryWindowManagesCoursesFormatsAndDocuments()
 
     QVERIFY(window.removeDocument(doc, true));
     QTRY_VERIFY_WITH_TIMEOUT(window.documentRows().isEmpty(), 2000);
-    QVERIFY(window.removeCurrentCourse(true));
-    QCOMPARE(window.currentCourse(), 0);
-    QCOMPARE(settings.studyCourseId(), 0);
+    QVERIFY(window.removeCurrentSet(true));
+    QCOMPARE(window.currentSet(), 0);
+    QCOMPARE(settings.studySetId(), 0);
 }
 
 void TestStudyUi::studyShortcutOpensTheStudyWindow()
@@ -498,21 +498,21 @@ void TestStudyUi::petStudyFlowWorksWithoutOllama()
     QVERIFY(!pet.canShowCheckIn());   // the library counts as an open dialog
     QTRY_COMPARE_WITH_TIMEOUT(closed.count(), 1, 1000);
 
-    // Set up a course with cached questions directly (generation itself is covered elsewhere).
-    const qint64 course = pet.studyLibraryWindow()->createCourse(QStringLiteral("Databases"));
+    // Set up a study set with cached questions directly (generation itself is covered elsewhere).
+    const qint64 studySet = pet.studyLibraryWindow()->createSet(QStringLiteral("Databases"));
     StudyDatabase* db = pet.studyLibrary()->database();
-    const qint64 doc = *db->addDocument(course, QStringLiteral("Lecture 6"), QStringLiteral("l6.pptx"), DocumentKind::Pptx);
+    const qint64 doc = *db->addDocument(studySet, QStringLiteral("Lecture 6"), QStringLiteral("l6.pptx"), DocumentKind::Pptx);
     Question sc = choiceQuestion();
-    sc.courseId = course;
+    sc.setId = studySet;
     sc.documentId = doc;
     sc.difficulty = Difficulty::Medium;
     Question w = writtenQuestion();
-    w.courseId = course;
+    w.setId = studySet;
     w.documentId = doc;
     QVERIFY(db->saveQuestion(sc, 0, QString()));
     QVERIFY(db->saveQuestion(w, 0, QString()));
     pet.studyLibraryWindow()->hide();
-    QCOMPARE(pet.appSettings()->studyCourseId(), course);
+    QCOMPARE(pet.appSettings()->studySetId(), studySet);
 
     // Focus mode: only multiple choice questions are asked.
     pet.askQuestionNow();
@@ -530,7 +530,7 @@ void TestStudyUi::petStudyFlowWorksWithoutOllama()
     popup->submitButton()->click();
     QVERIFY(popup->isShowingResult());
     QVERIFY(popup->resultLabel()->text().startsWith(QStringLiteral("Correct · +20 XP")));
-    QCOMPARE(pet.progressTracker()->progress(course).xp, 20);
+    QCOMPARE(pet.progressTracker()->progress(studySet).xp, 20);
     popup->closeButton()->click();
     QTRY_COMPARE_WITH_TIMEOUT(pet.quizController()->state(), QuizController::State::Idle, 1000);
 
@@ -556,7 +556,7 @@ void TestStudyUi::petStudyFlowWorksWithoutOllama()
     QCOMPARE(popup->phase(), QuizPopup::Phase::Revealed);
     popup->selfAssessButton(SelfRating::GotIt)->click();
     QVERIFY(popup->isShowingResult());
-    const StudyProgress progress = pet.progressTracker()->progress(course);
+    const StudyProgress progress = pet.progressTracker()->progress(studySet);
     QCOMPARE(progress.selfAssessed, 1);
     QCOMPARE(progress.selfGotIt, 1);
     QCOMPARE(progress.selfXp, 5);   // 25% of a medium question's 20 XP

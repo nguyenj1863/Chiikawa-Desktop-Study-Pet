@@ -138,9 +138,9 @@ public:
     void setRecentQuestionIds(const QStringList& ids);
 
     // Study preferences. Restore Defaults resets formats but keeps
-    // the selected course, the model, and all Study Library data and progress.
-    [[nodiscard]] qint64 studyCourseId() const { return m_studyCourseId; }
-    void setStudyCourseId(qint64 id);
+    // the selected study set, the model, and all Study Library data and progress.
+    [[nodiscard]] qint64 studySetId() const { return m_studySetId; }
+    void setStudySetId(qint64 id);
 
     /** Bit mask of SettingsDefaults::kStudyFormat* values; never empty. */
     [[nodiscard]] int studyFormats() const { return m_studyFormats; }
@@ -192,7 +192,7 @@ private:
     int m_checkInMinutes = SettingsDefaults::kCheckInMinutes;
     QStringList m_recentQuestionIds;
 
-    qint64 m_studyCourseId = 0;
+    qint64 m_studySetId = 0;
     int m_studyFormats = SettingsDefaults::kStudyFormatsMask;
     int m_studyFormatMode = SettingsDefaults::kStudyFormatMode;
     int m_studyFocusFormat = SettingsDefaults::kStudyFocusFormat;

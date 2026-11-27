@@ -128,7 +128,7 @@ private slots:
     void selectorRespectsFormatPreferences();
     void selectorVariesFormatsInMixedMode();
     void selectorPrefersReviewAndAvoidsRecent();
-    void providerServesCachedCourseQuestions();
+    void providerServesCachedSetQuestions();
 
 private:
     QTemporaryDir m_storage;
@@ -396,21 +396,21 @@ void TestStudyAnswers::progressTracksFormatsReviewAndReset()
 {
     StudyDatabase db;
     QVERIFY(db.open());
-    const qint64 course = *db.addCourse(QStringLiteral("Databases"));
-    const qint64 other = *db.addCourse(QStringLiteral("Other"));
-    const qint64 doc = *db.addDocument(course, QStringLiteral("Joins"), QStringLiteral("x"), DocumentKind::Text);
+    const qint64 studySet = *db.addStudySet(QStringLiteral("Databases"));
+    const qint64 other = *db.addStudySet(QStringLiteral("Other"));
+    const qint64 doc = *db.addDocument(studySet, QStringLiteral("Joins"), QStringLiteral("x"), DocumentKind::Text);
     const qint64 doc2 = *db.addDocument(other, QStringLiteral("Misc"), QStringLiteral("y"), DocumentKind::Text);
     Question sc = singleChoice();
-    sc.courseId = course;
+    sc.setId = studySet;
     sc.documentId = doc;
     Question ms = multiSelect();
-    ms.courseId = course;
+    ms.setId = studySet;
     ms.documentId = doc;
     Question w = longWritten();
-    w.courseId = course;
+    w.setId = studySet;
     w.documentId = doc;
     Question elsewhere = singleChoice(QStringLiteral("sc-other"));
-    elsewhere.courseId = other;
+    elsewhere.setId = other;
     elsewhere.documentId = doc2;
     for (const Question& q : {sc, ms, w, elsewhere}) {
         QVERIFY(db.saveQuestion(q, 0, QString()));
@@ -425,7 +425,7 @@ void TestStudyAnswers::progressTracksFormatsReviewAndReset()
     tracker.record(w, unsure);
     tracker.record(elsewhere, SingleChoiceEvaluator::evaluate(elsewhere, QStringLiteral("b")));
 
-    StudyProgress p = tracker.progress(course);
+    StudyProgress p = tracker.progress(studySet);
     QCOMPARE(p.attempted, 3);   // the self-assessment is counted separately
     QCOMPARE(p.correct, 0);
     QCOMPARE(p.partial, 1);
@@ -441,23 +441,23 @@ void TestStudyAnswers::progressTracksFormatsReviewAndReset()
     QVERIFY(p.reviewTopics.contains(QStringLiteral("left join")));
     QVERIFY(p.reviewTopics.contains(QStringLiteral("nfa properties")));
     QVERIFY(!p.reviewTopics.contains(QStringLiteral("inner vs left join")));   // "Got it" clears it
-    QCOMPARE(tracker.reviewKeys(course), (QSet<QString>{ProgressTracker::topicKey(doc, sc.topic), ProgressTracker::topicKey(doc, ms.topic)}));
+    QCOMPARE(tracker.reviewKeys(studySet), (QSet<QString>{ProgressTracker::topicKey(doc, sc.topic), ProgressTracker::topicKey(doc, ms.topic)}));
 
     // Getting it right later clears the review flag.
     tracker.record(sc, SingleChoiceEvaluator::evaluate(sc, QStringLiteral("b")));
-    QVERIFY(!tracker.progress(course).reviewTopics.contains(QStringLiteral("left join")));
+    QVERIFY(!tracker.progress(studySet).reviewTopics.contains(QStringLiteral("left join")));
 
-    QCOMPARE(tracker.progress(0).attempted, 5);   // all courses
-    QVERIFY(tracker.reset(course));
-    QCOMPARE(tracker.progress(course).attempted, 0);
+    QCOMPARE(tracker.progress(0).attempted, 5);   // all studySets
+    QVERIFY(tracker.reset(studySet));
+    QCOMPARE(tracker.progress(studySet).attempted, 0);
     QCOMPARE(tracker.progress(other).attempted, 1);
-    QCOMPARE(db.courseQuestions(course).size(), 3);   // questions survive a progress reset
+    QCOMPARE(db.setQuestions(studySet).size(), 3);   // questions survive a progress reset
 
     // Removing the document removes its attempts and concept progress.
     tracker.record(sc, SingleChoiceEvaluator::evaluate(sc, QStringLiteral("a")));
     QVERIFY(db.removeDocument(doc));
-    QCOMPARE(tracker.progress(course).attempted, 0);
-    QVERIFY(tracker.reviewKeys(course).isEmpty());
+    QCOMPARE(tracker.progress(studySet).attempted, 0);
+    QVERIFY(tracker.reviewKeys(studySet).isEmpty());
 }
 
 void TestStudyAnswers::selectorRespectsFormatPreferences()
@@ -546,17 +546,17 @@ void TestStudyAnswers::selectorPrefersReviewAndAvoidsRecent()
     QCOMPARE(QuestionSelector::pick(pool, prefs, allRecent, {}, {}, rng)->id, QStringLiteral("q3"));
 }
 
-void TestStudyAnswers::providerServesCachedCourseQuestions()
+void TestStudyAnswers::providerServesCachedSetQuestions()
 {
     StudyDatabase db;
     QVERIFY(db.open());
-    const qint64 course = *db.addCourse(QStringLiteral("Lit"));
-    const qint64 doc = *db.addDocument(course, QStringLiteral("Plays"), QStringLiteral("p"), DocumentKind::Text);
+    const qint64 studySet = *db.addStudySet(QStringLiteral("Lit"));
+    const qint64 doc = *db.addDocument(studySet, QStringLiteral("Plays"), QStringLiteral("p"), DocumentKind::Text);
     Question w = written();
-    w.courseId = course;
+    w.setId = studySet;
     w.documentId = doc;
     Question sc = singleChoice();
-    sc.courseId = course;
+    sc.setId = studySet;
     sc.documentId = doc;
     QVERIFY(db.saveQuestion(w, 0, QString()));
     QVERIFY(db.saveQuestion(sc, 0, QString()));
@@ -565,8 +565,8 @@ void TestStudyAnswers::providerServesCachedCourseQuestions()
     StudyQuestionProvider provider(&db, &tracker);
     provider.setSeed(11);
     QCOMPARE(provider.id(), QStringLiteral("study"));
-    QVERIFY(!provider.nextQuestion({}));   // no course selected yet
-    provider.setCourse(course);
+    QVERIFY(!provider.nextQuestion({}));   // no study set selected yet
+    provider.setStudySet(studySet);
     QCOMPARE(provider.availableCount(), 2);
     SelectionPrefs prefs;
     prefs.enabled = {QuestionType::Written};

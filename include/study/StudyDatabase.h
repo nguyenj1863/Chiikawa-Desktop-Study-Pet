@@ -9,7 +9,7 @@
 #include <optional>
 
 /**
- * Local SQLite store for the Study Library: courses, documents, chunks (with an
+ * Local SQLite store for the Study Library: studySets, documents, chunks (with an
  * FTS5 index), generated questions, attempts, and per-concept progress.
  *
  * Each instance owns its own named connection and must be used only on the thread
@@ -18,7 +18,13 @@
  */
 class StudyDatabase {
 public:
-    static constexpr int kSchemaVersion = 1;
+    /**
+     * 1: original Study Library tables (courses). 2: courses become study sets with optional
+     * parent sets, and review scheduling, practice sessions, and saved filters are added.
+     */
+    static constexpr int kSchemaVersion = 2;
+    /** Copy of the database made before upgrading from version 1, kept next to library.db. */
+    static constexpr auto kVersion1BackupName = "library.v1.bak";
 
     StudyDatabase();
     ~StudyDatabase();
@@ -41,23 +47,23 @@ public:
     [[nodiscard]] QString lastError() const { return m_lastError; }
     [[nodiscard]] QSqlDatabase connection() const;
 
-    // Courses
-    [[nodiscard]] std::optional<qint64> addCourse(const QString& name);
-    bool renameCourse(qint64 id, const QString& name);
-    /** Deletes the course and, by cascade, its documents, chunks, questions, attempts, and stats. */
-    bool removeCourse(qint64 id);
-    [[nodiscard]] QVector<Course> courses();
+    // Study sets
+    [[nodiscard]] std::optional<qint64> addStudySet(const QString& name);
+    bool renameStudySet(qint64 id, const QString& name);
+    /** Deletes the study set and, by cascade, its documents, chunks, questions, attempts, and stats. */
+    bool removeStudySet(qint64 id);
+    [[nodiscard]] QVector<StudySet> studySets();
 
     // Documents
-    [[nodiscard]] std::optional<qint64> addDocument(qint64 courseId, const QString& title,
+    [[nodiscard]] std::optional<qint64> addDocument(qint64 setId, const QString& title,
                                                     const QString& originalPath, DocumentKind kind);
     bool setDocumentStoredPath(qint64 id, const QString& storedPath);
     bool setDocumentStatus(qint64 id, DocumentStatus status, const QString& error = QString());
     bool setDocumentExtraction(qint64 id, int unitCount, const QList<int>& unsupportedUnits);
     bool setDocumentSelected(qint64 id, bool selected);
     [[nodiscard]] std::optional<DocumentRecord> document(qint64 id);
-    /** Documents in a course with chunk and question counts; all courses when courseId is 0. */
-    [[nodiscard]] QVector<DocumentRecord> documents(qint64 courseId);
+    /** Documents in a study set with chunk and question counts; all studySets when setId is 0. */
+    [[nodiscard]] QVector<DocumentRecord> documents(qint64 setId);
     bool removeDocument(qint64 id);
 
     // Chunks
@@ -72,10 +78,10 @@ public:
     [[nodiscard]] std::optional<Question> question(const QString& id);
     [[nodiscard]] QVector<Question> documentQuestions(qint64 documentId);
     /**
-     * Questions from a course, optionally limited to some formats. When selectedOnly is
+     * Questions from a study set, optionally limited to some formats. When selectedOnly is
      * set, only documents the student selected for studying contribute.
      */
-    [[nodiscard]] QVector<Question> courseQuestions(qint64 courseId, const QList<QuestionType>& types = {},
+    [[nodiscard]] QVector<Question> setQuestions(qint64 setId, const QList<QuestionType>& types = {},
                                                     bool selectedOnly = true);
     bool removeQuestions(qint64 documentId);
     [[nodiscard]] QSet<qint64> usedChunkIds(qint64 documentId);

@@ -2,6 +2,7 @@
 
 #include <QAtomicInteger>
 #include <QDateTime>
+#include <QFile>
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -63,7 +64,7 @@ DocumentRecord readDocument(const QSqlQuery& q)
 {
     DocumentRecord d;
     d.id = q.value(0).toLongLong();
-    d.courseId = q.value(1).toLongLong();
+    d.setId = q.value(1).toLongLong();
     d.title = q.value(2).toString();
     d.originalPath = q.value(3).toString();
     d.storedPath = q.value(4).toString();
@@ -79,7 +80,7 @@ DocumentRecord readDocument(const QSqlQuery& q)
 }
 
 const QString kDocumentColumns = QStringLiteral(
-    "d.id, d.course_id, d.title, d.original_path, d.stored_path, d.kind, d.status, d.error, "
+    "d.id, d.set_id, d.title, d.original_path, d.stored_path, d.kind, d.status, d.error, "
     "d.unit_count, d.unsupported, d.selected, "
     "(SELECT COUNT(*) FROM chunks c WHERE c.document_id = d.id), "
     "(SELECT COUNT(*) FROM questions qn WHERE qn.document_id = d.id)");
@@ -112,18 +113,18 @@ QJsonObject questionPayload(const Question& q)
 }
 
 const QString kQuestionColumns = QStringLiteral(
-    "qn.id, qn.document_id, qn.course_id, qn.chunk_id, qn.type, qn.prompt, qn.concept, qn.difficulty, "
+    "qn.id, qn.document_id, qn.set_id, qn.chunk_id, qn.type, qn.prompt, qn.concept, qn.difficulty, "
     "qn.payload, d.title, co.name");
 
 const QString kQuestionFrom = QStringLiteral(
-    " FROM questions qn JOIN documents d ON d.id = qn.document_id JOIN courses co ON co.id = qn.course_id");
+    " FROM questions qn JOIN documents d ON d.id = qn.document_id JOIN study_sets co ON co.id = qn.set_id");
 
 Question readQuestion(const QSqlQuery& q)
 {
     Question out;
     out.id = q.value(0).toString();
     out.documentId = q.value(1).toLongLong();
-    out.courseId = q.value(2).toLongLong();
+    out.setId = q.value(2).toLongLong();
     const qint64 chunkId = q.value(3).toLongLong();
     out.type = static_cast<QuestionType>(q.value(4).toInt());
     out.prompt = q.value(5).toString();
@@ -260,11 +261,12 @@ bool StudyDatabase::migrate()
     QSqlQuery v(connection());
     v.exec(QStringLiteral("PRAGMA user_version"));
     const int version = v.next() ? v.value(0).toInt() : 0;
+    v.finish();   // an open read statement would lock the tables the upgrade rebuilds
     if (version >= kSchemaVersion) {
         return true;
     }
 
-    const QStringList schema = {
+    const QStringList schemaV1 = {
         QStringLiteral("CREATE TABLE IF NOT EXISTS courses ("
                        " id INTEGER PRIMARY KEY,"
                        " name TEXT NOT NULL UNIQUE COLLATE NOCASE,"
@@ -344,30 +346,121 @@ bool StudyDatabase::migrate()
                        " PRIMARY KEY (document_id, concept))"),
     };
 
-    QSqlDatabase db = connection();
-    db.transaction();
-    for (const QString& sql : schema) {
-        if (!exec(sql)) {
-            db.rollback();
+    // Upgrading real data: keep a copy of the version 1 file before touching it.
+    if (version == 1) {
+        exec(QStringLiteral("PRAGMA wal_checkpoint(TRUNCATE)"));
+        const QString backup = storageDirectory() + QLatin1Char('/') + QString::fromLatin1(kVersion1BackupName);
+        QFile::remove(backup);
+        if (!QFile::copy(databasePath(), backup)) {
+            m_lastError = QStringLiteral("Could not back up the Study Library before upgrading it.");
             return false;
         }
     }
-    if (!exec(QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion))) {
+
+    // Table rebuilds need foreign keys off; the pragma has no effect inside a transaction.
+    exec(QStringLiteral("PRAGMA foreign_keys = OFF"));
+    QSqlDatabase db = connection();
+    db.transaction();
+    const auto fail = [&]() {
         db.rollback();
+        exec(QStringLiteral("PRAGMA foreign_keys = ON"));
         return false;
+    };
+
+    if (version < 1) {
+        for (const QString& sql : schemaV1) {
+            if (!exec(sql)) {
+                return fail();
+            }
+        }
     }
-    return db.commit();
+    if (version < 2) {
+        const QStringList upgradeV2 = {
+            // courses -> study_sets (child foreign keys are rewritten by the rename)
+            QStringLiteral("ALTER TABLE courses RENAME TO study_sets"),
+            QStringLiteral("ALTER TABLE documents RENAME COLUMN course_id TO set_id"),
+            QStringLiteral("ALTER TABLE chunks RENAME COLUMN course_id TO set_id"),
+            QStringLiteral("ALTER TABLE questions RENAME COLUMN course_id TO set_id"),
+            QStringLiteral("ALTER TABLE attempts RENAME COLUMN course_id TO set_id"),
+            QStringLiteral("ALTER TABLE concept_stats RENAME COLUMN course_id TO set_id"),
+            // Rebuild study_sets with parents and per-parent unique names (names were globally unique).
+            QStringLiteral("CREATE TABLE study_sets_new ("
+                           " id INTEGER PRIMARY KEY,"
+                           " name TEXT NOT NULL COLLATE NOCASE,"
+                           " parent_id INTEGER REFERENCES study_sets(id) ON DELETE CASCADE,"
+                           " sort_order INTEGER NOT NULL DEFAULT 0,"
+                           " created_at INTEGER NOT NULL)"),
+            QStringLiteral("INSERT INTO study_sets_new(id, name, parent_id, sort_order, created_at)"
+                           " SELECT id, name, NULL, 0, created_at FROM study_sets"),
+            QStringLiteral("DROP TABLE study_sets"),
+            QStringLiteral("ALTER TABLE study_sets_new RENAME TO study_sets"),
+            QStringLiteral("CREATE UNIQUE INDEX IF NOT EXISTS study_sets_unique_name"
+                           " ON study_sets(COALESCE(parent_id, 0), name COLLATE NOCASE)"),
+            QStringLiteral("CREATE INDEX IF NOT EXISTS study_sets_parent ON study_sets(parent_id)"),
+            // Self-assessment and automatic grading both record the 4-level rating that schedules reviews.
+            QStringLiteral("ALTER TABLE attempts ADD COLUMN rating INTEGER"),
+            QStringLiteral("ALTER TABLE attempts ADD COLUMN rating_source INTEGER NOT NULL DEFAULT 0"),
+            // Spaced repetition state, one row per question (state 0 new, 1 learning, 2 review).
+            QStringLiteral("CREATE TABLE IF NOT EXISTS card_schedule ("
+                           " question_id TEXT PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,"
+                           " set_id INTEGER NOT NULL,"
+                           " state INTEGER NOT NULL DEFAULT 0,"
+                           " due_day INTEGER,"
+                           " due_at INTEGER,"
+                           " interval_days REAL NOT NULL DEFAULT 0,"
+                           " ease REAL NOT NULL DEFAULT 2.5,"
+                           " reps INTEGER NOT NULL DEFAULT 0,"
+                           " lapses INTEGER NOT NULL DEFAULT 0,"
+                           " last_review INTEGER)"),
+            QStringLiteral("CREATE INDEX IF NOT EXISTS card_schedule_due ON card_schedule(set_id, due_day)"),
+            QStringLiteral("CREATE TABLE IF NOT EXISTS practice_sessions ("
+                           " id INTEGER PRIMARY KEY,"
+                           " set_id INTEGER NOT NULL DEFAULT 0,"
+                           " mode INTEGER NOT NULL,"
+                           " started_at INTEGER NOT NULL,"
+                           " ended_at INTEGER,"
+                           " answered INTEGER NOT NULL DEFAULT 0,"
+                           " correct INTEGER NOT NULL DEFAULT 0)"),
+            QStringLiteral("CREATE INDEX IF NOT EXISTS practice_sessions_time ON practice_sessions(started_at)"),
+            QStringLiteral("CREATE TABLE IF NOT EXISTS filtered_sets ("
+                           " id INTEGER PRIMARY KEY,"
+                           " name TEXT NOT NULL COLLATE NOCASE,"
+                           " parent_id INTEGER REFERENCES study_sets(id) ON DELETE CASCADE,"
+                           " spec_json TEXT NOT NULL,"
+                           " reschedule INTEGER NOT NULL DEFAULT 1,"
+                           " created_at INTEGER NOT NULL)"),
+        };
+        for (const QString& sql : upgradeV2) {
+            if (!exec(sql)) {
+                return fail();
+            }
+        }
+        // Every reference must still resolve after the rebuild; otherwise keep the old file untouched.
+        QSqlQuery check(db);
+        const bool consistent = check.exec(QStringLiteral("PRAGMA foreign_key_check")) && !check.next();
+        check.finish();
+        if (!consistent) {
+            m_lastError = QStringLiteral("The Study Library upgrade found inconsistent data.");
+            return fail();
+        }
+    }
+    if (!exec(QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion))) {
+        return fail();
+    }
+    const bool committed = db.commit();
+    exec(QStringLiteral("PRAGMA foreign_keys = ON"));
+    return committed;
 }
 
-std::optional<qint64> StudyDatabase::addCourse(const QString& name)
+std::optional<qint64> StudyDatabase::addStudySet(const QString& name)
 {
     const QString trimmed = name.simplified();
     if (trimmed.isEmpty()) {
-        m_lastError = QStringLiteral("Course name is empty.");
+        m_lastError = QStringLiteral("Study set name is empty.");
         return std::nullopt;
     }
     QSqlQuery q(connection());
-    q.prepare(QStringLiteral("INSERT INTO courses(name, created_at) VALUES (?, ?)"));
+    q.prepare(QStringLiteral("INSERT INTO study_sets(name, created_at) VALUES (?, ?)"));
     q.addBindValue(text(trimmed));
     q.addBindValue(nowMs());
     if (!q.exec()) {
@@ -377,14 +470,14 @@ std::optional<qint64> StudyDatabase::addCourse(const QString& name)
     return q.lastInsertId().toLongLong();
 }
 
-bool StudyDatabase::renameCourse(qint64 id, const QString& name)
+bool StudyDatabase::renameStudySet(qint64 id, const QString& name)
 {
     const QString trimmed = name.simplified();
     if (trimmed.isEmpty()) {
         return false;
     }
     QSqlQuery q(connection());
-    q.prepare(QStringLiteral("UPDATE courses SET name = ? WHERE id = ?"));
+    q.prepare(QStringLiteral("UPDATE study_sets SET name = ? WHERE id = ?"));
     q.addBindValue(text(trimmed));
     q.addBindValue(id);
     if (!q.exec()) {
@@ -394,10 +487,10 @@ bool StudyDatabase::renameCourse(qint64 id, const QString& name)
     return q.numRowsAffected() == 1;
 }
 
-bool StudyDatabase::removeCourse(qint64 id)
+bool StudyDatabase::removeStudySet(qint64 id)
 {
     QSqlQuery q(connection());
-    q.prepare(QStringLiteral("DELETE FROM courses WHERE id = ?"));
+    q.prepare(QStringLiteral("DELETE FROM study_sets WHERE id = ?"));
     q.addBindValue(id);
     if (!q.exec()) {
         m_lastError = q.lastError().text();
@@ -406,24 +499,24 @@ bool StudyDatabase::removeCourse(qint64 id)
     return q.numRowsAffected() == 1;
 }
 
-QVector<Course> StudyDatabase::courses()
+QVector<StudySet> StudyDatabase::studySets()
 {
-    QVector<Course> out;
+    QVector<StudySet> out;
     QSqlQuery q(connection());
-    q.exec(QStringLiteral("SELECT id, name FROM courses ORDER BY name COLLATE NOCASE"));
+    q.exec(QStringLiteral("SELECT id, name FROM study_sets ORDER BY name COLLATE NOCASE"));
     while (q.next()) {
         out.append({q.value(0).toLongLong(), q.value(1).toString()});
     }
     return out;
 }
 
-std::optional<qint64> StudyDatabase::addDocument(qint64 courseId, const QString& title,
+std::optional<qint64> StudyDatabase::addDocument(qint64 setId, const QString& title,
                                                  const QString& originalPath, DocumentKind kind)
 {
     QSqlQuery q(connection());
-    q.prepare(QStringLiteral("INSERT INTO documents(course_id, title, original_path, kind, status, created_at, updated_at)"
+    q.prepare(QStringLiteral("INSERT INTO documents(set_id, title, original_path, kind, status, created_at, updated_at)"
                              " VALUES (?, ?, ?, ?, ?, ?, ?)"));
-    q.addBindValue(courseId);
+    q.addBindValue(setId);
     q.addBindValue(text(title));
     q.addBindValue(text(originalPath));
     q.addBindValue(static_cast<int>(kind));
@@ -493,14 +586,14 @@ std::optional<DocumentRecord> StudyDatabase::document(qint64 id)
     return std::nullopt;
 }
 
-QVector<DocumentRecord> StudyDatabase::documents(qint64 courseId)
+QVector<DocumentRecord> StudyDatabase::documents(qint64 setId)
 {
     QVector<DocumentRecord> out;
     QSqlQuery q(connection());
-    if (courseId > 0) {
-        q.prepare(QStringLiteral("SELECT %1 FROM documents d WHERE d.course_id = ? ORDER BY d.created_at, d.id")
+    if (setId > 0) {
+        q.prepare(QStringLiteral("SELECT %1 FROM documents d WHERE d.set_id = ? ORDER BY d.created_at, d.id")
                       .arg(kDocumentColumns));
-        q.addBindValue(courseId);
+        q.addBindValue(setId);
     } else {
         q.prepare(QStringLiteral("SELECT %1 FROM documents d ORDER BY d.created_at, d.id").arg(kDocumentColumns));
     }
@@ -545,11 +638,11 @@ bool StudyDatabase::replaceChunks(qint64 documentId, const QVector<Chunk>& chunk
         return false;
     }
     QSqlQuery ins(db);
-    ins.prepare(QStringLiteral("INSERT INTO chunks(document_id, course_id, ref_kind, ref_number, ordinal, text)"
+    ins.prepare(QStringLiteral("INSERT INTO chunks(document_id, set_id, ref_kind, ref_number, ordinal, text)"
                                " VALUES (?, ?, ?, ?, ?, ?)"));
     for (const Chunk& c : chunks) {
         ins.addBindValue(documentId);
-        ins.addBindValue(doc->courseId);
+        ins.addBindValue(doc->setId);
         ins.addBindValue(static_cast<int>(c.refKind));
         ins.addBindValue(c.refNumber);
         ins.addBindValue(c.ordinal);
@@ -572,7 +665,7 @@ QVector<Chunk> StudyDatabase::chunks(qint64 documentId)
 {
     QVector<Chunk> out;
     QSqlQuery q(connection());
-    q.prepare(QStringLiteral("SELECT id, document_id, course_id, ref_kind, ref_number, ordinal, text"
+    q.prepare(QStringLiteral("SELECT id, document_id, set_id, ref_kind, ref_number, ordinal, text"
                              " FROM chunks WHERE document_id = ? ORDER BY ordinal"));
     q.addBindValue(documentId);
     if (q.exec()) {
@@ -580,7 +673,7 @@ QVector<Chunk> StudyDatabase::chunks(qint64 documentId)
             Chunk c;
             c.id = q.value(0).toLongLong();
             c.documentId = q.value(1).toLongLong();
-            c.courseId = q.value(2).toLongLong();
+            c.setId = q.value(2).toLongLong();
             c.refKind = static_cast<SegmentKind>(q.value(3).toInt());
             c.refNumber = q.value(4).toInt();
             c.ordinal = q.value(5).toInt();
@@ -594,14 +687,14 @@ QVector<Chunk> StudyDatabase::chunks(qint64 documentId)
 std::optional<Chunk> StudyDatabase::chunk(qint64 chunkId)
 {
     QSqlQuery q(connection());
-    q.prepare(QStringLiteral("SELECT id, document_id, course_id, ref_kind, ref_number, ordinal, text"
+    q.prepare(QStringLiteral("SELECT id, document_id, set_id, ref_kind, ref_number, ordinal, text"
                              " FROM chunks WHERE id = ?"));
     q.addBindValue(chunkId);
     if (q.exec() && q.next()) {
         Chunk c;
         c.id = q.value(0).toLongLong();
         c.documentId = q.value(1).toLongLong();
-        c.courseId = q.value(2).toLongLong();
+        c.setId = q.value(2).toLongLong();
         c.refKind = static_cast<SegmentKind>(q.value(3).toInt());
         c.refNumber = q.value(4).toInt();
         c.ordinal = q.value(5).toInt();
@@ -614,11 +707,11 @@ std::optional<Chunk> StudyDatabase::chunk(qint64 chunkId)
 bool StudyDatabase::saveQuestion(const Question& question, qint64 chunkId, const QString& model)
 {
     QSqlQuery q(connection());
-    q.prepare(QStringLiteral("INSERT OR REPLACE INTO questions(id, document_id, course_id, chunk_id, type, prompt,"
+    q.prepare(QStringLiteral("INSERT OR REPLACE INTO questions(id, document_id, set_id, chunk_id, type, prompt,"
                              " concept, difficulty, payload, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     q.addBindValue(question.id);
     q.addBindValue(question.documentId);
-    q.addBindValue(question.courseId);
+    q.addBindValue(question.setId);
     q.addBindValue(chunkId > 0 ? QVariant(chunkId) : QVariant(QMetaType::fromType<qint64>()));
     q.addBindValue(static_cast<int>(question.type));
     q.addBindValue(text(question.prompt));
@@ -660,10 +753,10 @@ QVector<Question> StudyDatabase::documentQuestions(qint64 documentId)
     return out;
 }
 
-QVector<Question> StudyDatabase::courseQuestions(qint64 courseId, const QList<QuestionType>& types, bool selectedOnly)
+QVector<Question> StudyDatabase::setQuestions(qint64 setId, const QList<QuestionType>& types, bool selectedOnly)
 {
     QVector<Question> out;
-    QString sql = QStringLiteral("SELECT ") + kQuestionColumns + kQuestionFrom + QStringLiteral(" WHERE qn.course_id = ?");
+    QString sql = QStringLiteral("SELECT ") + kQuestionColumns + kQuestionFrom + QStringLiteral(" WHERE qn.set_id = ?");
     if (selectedOnly) {
         sql += QStringLiteral(" AND d.selected = 1");
     }
@@ -677,7 +770,7 @@ QVector<Question> StudyDatabase::courseQuestions(qint64 courseId, const QList<Qu
     sql += QStringLiteral(" ORDER BY qn.created_at, qn.id");
     QSqlQuery q(connection());
     q.prepare(sql);
-    q.addBindValue(courseId);
+    q.addBindValue(setId);
     if (q.exec()) {
         while (q.next()) {
             out.append(readQuestion(q));

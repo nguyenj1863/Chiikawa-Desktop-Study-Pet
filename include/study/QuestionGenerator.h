@@ -69,7 +69,7 @@ signals:
 private:
     struct Job {
         qint64 documentId = 0;
-        qint64 courseId = 0;
+        qint64 setId = 0;
         QString title;
         Chunk chunk;
         QuestionType type = QuestionType::SingleChoice;

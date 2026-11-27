@@ -26,7 +26,7 @@ class StudyLibrary;
 class UISoundManager;
 
 /**
- * Compact smoked-glass window for managing study materials: courses, imported
+ * Compact smoked-glass window for managing study materials: studySets, imported
  * documents (with processing status and unsupported pages), question generation,
  * question-format preferences, and the local AI (Ollama) setup. Everything runs
  * locally; the only network actions are opening the Ollama download page in the
@@ -49,13 +49,13 @@ public:
     /** Shows the window beside the pet (clamped to its screen) and re-checks the AI setup. */
     void showNear(const QRect& petGlobalGeometry);
 
-    [[nodiscard]] qint64 currentCourse() const;
-    void selectCourse(qint64 courseId);
-    /** Creates a course and selects it; returns its ID or 0. */
-    qint64 createCourse(const QString& name);
-    bool renameCurrentCourse(const QString& name);
+    [[nodiscard]] qint64 currentSet() const;
+    void selectSet(qint64 setId);
+    /** Creates a study set and selects it; returns its ID or 0. */
+    qint64 createSet(const QString& name);
+    bool renameCurrentSet(const QString& name);
     /** Asks for confirmation unless confirmed is true. */
-    bool removeCurrentCourse(bool confirmed = false);
+    bool removeCurrentSet(bool confirmed = false);
     void importFiles(const QStringList& paths);
     /** Generates for checked documents. Regenerate asks for confirmation unless confirmed is true. */
     bool generate(bool regenerate, bool confirmed = false);
@@ -64,7 +64,7 @@ public:
     void refresh();
 
     // Accessors for tests
-    [[nodiscard]] QComboBox* courseCombo() const { return m_courseCombo; }
+    [[nodiscard]] QComboBox* setCombo() const { return m_setCombo; }
     [[nodiscard]] QComboBox* modelCombo() const { return m_modelCombo; }
     [[nodiscard]] QLabel* setupLabel() const { return m_setupLabel; }
     [[nodiscard]] QLabel* statusLabel() const { return m_statusLabel; }
@@ -86,7 +86,7 @@ public:
     [[nodiscard]] QLabel* documentMeta(qint64 documentId) const;
 
 signals:
-    void courseChanged(qint64 courseId);
+    void setChanged(qint64 setId);
     void preferencesChanged();
     void buttonActivated();
 
@@ -100,7 +100,7 @@ protected:
 
 private:
     void buildUi();
-    void reloadCourses(qint64 selectId);
+    void reloadSets(qint64 selectId);
     void rebuildDocuments();
     void updateActions();
     void updateSetupBanner(OllamaClient::SetupState state);
@@ -108,8 +108,8 @@ private:
     void applyFormatControls();
     void onImportClicked();
     void onDownloadClicked();
-    void beginCourseEdit(bool rename);
-    void finishCourseEdit(bool accept);
+    void beginSetEdit(bool rename);
+    void finishSetEdit(bool accept);
     void click();
     [[nodiscard]] QList<qint64> checkedDocuments() const;
     [[nodiscard]] bool confirm(const QString& title, const QString& body, const QString& confirmText);
@@ -133,13 +133,13 @@ private:
     QPushButton* m_recheckBtn = nullptr;
     QProgressBar* m_downloadProgress = nullptr;
 
-    // Course row
-    QComboBox* m_courseCombo = nullptr;
-    QPushButton* m_newCourseBtn = nullptr;
-    QPushButton* m_renameCourseBtn = nullptr;
-    QPushButton* m_deleteCourseBtn = nullptr;
-    QWidget* m_courseEditRow = nullptr;
-    QLineEdit* m_courseEdit = nullptr;
+    // StudySet row
+    QComboBox* m_setCombo = nullptr;
+    QPushButton* m_newSetBtn = nullptr;
+    QPushButton* m_renameSetBtn = nullptr;
+    QPushButton* m_deleteSetBtn = nullptr;
+    QWidget* m_setEditRow = nullptr;
+    QLineEdit* m_setEdit = nullptr;
     bool m_renaming = false;
 
     // Formats

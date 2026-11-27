@@ -119,11 +119,11 @@ StudyQuestionProvider::StudyQuestionProvider(StudyDatabase* db, ProgressTracker*
 
 std::optional<Question> StudyQuestionProvider::nextQuestion(const QStringList& recentIds)
 {
-    if (!m_db || m_courseId <= 0) {
+    if (!m_db || m_setId <= 0) {
         return std::nullopt;
     }
-    const QVector<Question> candidates = m_db->courseQuestions(m_courseId, QuestionSelector::activeFormats(m_prefs));
-    const QSet<QString> review = m_progress ? m_progress->reviewKeys(m_courseId) : QSet<QString>();
+    const QVector<Question> candidates = m_db->setQuestions(m_setId, QuestionSelector::activeFormats(m_prefs));
+    const QSet<QString> review = m_progress ? m_progress->reviewKeys(m_setId) : QSet<QString>();
     std::optional<Question> q = QuestionSelector::pick(candidates, m_prefs, recentIds, review, m_recentTypes, m_rng);
     if (q) {
         m_recentTypes.append(q->type);
@@ -136,8 +136,8 @@ std::optional<Question> StudyQuestionProvider::nextQuestion(const QStringList& r
 
 int StudyQuestionProvider::availableCount() const
 {
-    if (!m_db || m_courseId <= 0) {
+    if (!m_db || m_setId <= 0) {
         return 0;
     }
-    return static_cast<int>(m_db->courseQuestions(m_courseId, QuestionSelector::activeFormats(m_prefs)).size());
+    return static_cast<int>(m_db->setQuestions(m_setId, QuestionSelector::activeFormats(m_prefs)).size());
 }

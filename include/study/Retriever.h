@@ -17,11 +17,11 @@ public:
     virtual ~Retriever() = default;
 
     /**
-     * Returns up to limit chunks from the course, best first. When documentIds is
+     * Returns up to limit chunks from the study set, best first. When documentIds is
      * non-empty, results are restricted to those documents.
      */
     [[nodiscard]] virtual QVector<SearchHit> search(const QString& query,
-                                                    qint64 courseId,
+                                                    qint64 setId,
                                                     int limit,
                                                     const QList<qint64>& documentIds = {}) = 0;
 };
@@ -32,7 +32,7 @@ public:
     explicit FtsRetriever(StudyDatabase* db) : m_db(db) {}
 
     [[nodiscard]] QVector<SearchHit> search(const QString& query,
-                                            qint64 courseId,
+                                            qint64 setId,
                                             int limit,
                                             const QList<qint64>& documentIds = {}) override;
 
