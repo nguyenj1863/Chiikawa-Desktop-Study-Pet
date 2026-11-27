@@ -14,7 +14,8 @@ enum class DocumentKind {
     Pdf,
     Pptx,
     Text,
-    Unknown
+    Unknown,
+    Manual    // "My questions": questions the student wrote; no file, no text to generate from
 };
 
 /** Processing lifecycle of an imported document. Values are persisted; append only. */

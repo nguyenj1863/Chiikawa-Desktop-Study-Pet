@@ -84,6 +84,12 @@ public:
     [[nodiscard]] QVector<Question> setQuestions(qint64 setId, const QList<QuestionType>& types = {},
                                                     bool selectedOnly = true);
     bool removeQuestions(qint64 documentId);
+    /** Updates a question in place (keeps its ID, attempts, and review schedule). */
+    bool updateQuestion(const Question& question);
+    bool removeQuestion(const QString& id);
+
+    /** The set's "My questions" document, created on first use; holds questions the student wrote. */
+    [[nodiscard]] std::optional<qint64> manualDocument(qint64 setId);
     [[nodiscard]] QSet<qint64> usedChunkIds(qint64 documentId);
 
     /** Marks documents left mid-processing by a previous run as failed so they can be retried. */

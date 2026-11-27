@@ -156,6 +156,7 @@ set(CHIIKAWA_UI_SOURCES
     src/ui/StudyPreferencesPage.cpp
     src/ui/StudySetList.cpp
     src/ui/PixelSegmentedControl.cpp
+    src/ui/QuestionEditor.cpp
     include/ui/CollapsibleSection.h
     include/ui/OnboardingPreview.h
     include/ui/OnboardingWindow.h
@@ -168,6 +169,7 @@ set(CHIIKAWA_UI_SOURCES
     include/ui/StudySetList.h
     include/ui/StudyUiHelpers.h
     include/ui/PixelSegmentedControl.h
+    include/ui/QuestionEditor.h
 )
 
 set(CHIIKAWA_PLATFORM_SOURCES

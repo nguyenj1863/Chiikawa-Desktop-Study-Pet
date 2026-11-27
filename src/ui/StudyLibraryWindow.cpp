@@ -13,6 +13,7 @@
 #include "study/StudyLibrary.h"
 #include "ui/PixelTheme.h"
 #include "ui/PixelSegmentedControl.h"
+#include "ui/QuestionEditor.h"
 #include "ui/StudyPracticeView.h"
 #include "ui/StudyPreferencesPage.h"
 #include "ui/StudySetList.h"
@@ -43,6 +44,7 @@
 #include <QScrollBar>
 #include <QStackedWidget>
 #include <QStandardPaths>
+#include <QUuid>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -407,7 +409,34 @@ void StudyLibraryWindow::buildUi()
     importRow->addWidget(m_importBtn);
     importLayout->addLayout(importRow);
     importLayout->addWidget(makeLabel(QStringLiteral("Or drop files anywhere on this window."), "muted", importCard));
+    importLayout->addWidget(makeLabel(QStringLiteral("Prefer your own words? Write questions yourself and they are practised with the rest."),
+                                      "muted", importCard));
+    m_writeBtn = makeButton(QStringLiteral("Write a question"), importCard, "chip");
+    m_writeBtn->setToolTip(QStringLiteral("Add a multiple choice, multiple select, or written question of your own"));
+    importLayout->addWidget(m_writeBtn, 0, Qt::AlignLeft);
+    m_importCard = importCard;
     detail->addWidget(importCard);
+
+    m_editorPage = new QWidget(detailPage);
+    auto* editorLayout = new QVBoxLayout(m_editorPage);
+    editorLayout->setContentsMargins(0, 0, 0, 0);
+    m_editor = new QuestionEditor(m_editorPage);
+    editorLayout->addWidget(m_editor);
+    editorLayout->addStretch(1);   // the form stays compact at the top of the page
+    m_editorPage->hide();
+    detail->addWidget(m_editorPage, 1);
+    connect(m_writeBtn, &QPushButton::clicked, this, [this]() {
+        click();
+        m_editor->startNew();
+        setEditing(true);
+    });
+    connect(m_editor, &QuestionEditor::cancelled, this, [this]() { setEditing(false); });
+    connect(m_editor, &QuestionEditor::buttonActivated, this, [this]() { click(); });
+    connect(m_editor, &QuestionEditor::saveRequested, this, [this](const Question& q, bool addAnother, bool isEdit) {
+        if (saveOwnQuestion(q, isEdit) && !addAnother) {
+            setEditing(false);
+        }
+    });
     connect(m_importBtn, &QPushButton::clicked, this, [this]() { onImportClicked(QString()); });
     connect(m_importPptxBtn, &QPushButton::clicked, this, [this]() { onImportClicked(QStringLiteral("PowerPoint (*.pptx)")); });
     connect(m_importPdfBtn, &QPushButton::clicked, this, [this]() { onImportClicked(QStringLiteral("PDF (*.pdf)")); });
@@ -438,7 +467,9 @@ void StudyLibraryWindow::buildUi()
     m_docScroll->setMinimumHeight(120);
     detail->addWidget(m_docScroll, 1);
 
-    auto* actions = new QHBoxLayout();
+    m_actionBar = new QWidget(detailPage);
+    auto* actions = new QHBoxLayout(m_actionBar);
+    actions->setContentsMargins(0, 0, 0, 0);
     actions->setSpacing(6);
     m_cancelBtn = makeButton(QStringLiteral("Cancel"), detailPage);
     m_regenerateBtn = makeButton(QStringLiteral("Regenerate"), detailPage);
@@ -451,7 +482,7 @@ void StudyLibraryWindow::buildUi()
     actions->addWidget(m_cancelBtn);
     actions->addWidget(m_regenerateBtn);
     actions->addWidget(m_generateBtn);
-    detail->addLayout(actions);
+    detail->addWidget(m_actionBar);
     m_stack->addWidget(detailPage);
 
     // Page 2: practising the open set
@@ -584,6 +615,9 @@ void StudyLibraryWindow::applyView()
 
 void StudyLibraryWindow::showSetList()
 {
+    if (m_editor && m_editor->isVisible()) {
+        m_editor->cancel();
+    }
     if (m_practicing) {
         m_practice->abandon();
     }
@@ -617,6 +651,9 @@ void StudyLibraryWindow::openSet(qint64 setId)
     if (changed && m_practicing) {
         m_practice->abandon();
         m_practicing = false;
+    }
+    if (changed && m_editor && m_editor->isVisible()) {
+        m_editor->cancel();
     }
     m_currentSet = setId;
     m_showingSet = true;
@@ -842,7 +879,7 @@ QList<qint64> StudyLibraryWindow::checkedDocuments() const
 {
     QList<qint64> ids;
     for (auto it = m_docChecks.cbegin(); it != m_docChecks.cend(); ++it) {
-        if (it.value()->isChecked()) {
+        if (it.value()->isChecked() && !m_manualDocs.contains(it.key())) {   // nothing to generate from
             ids.append(it.key());
         }
     }
@@ -891,8 +928,8 @@ bool StudyLibraryWindow::removeDocument(qint64 documentId, bool confirmed)
         return false;
     }
     const auto doc = m_library->database()->document(documentId);
-    if (!doc) {
-        return false;
+    if (!doc || doc->kind == DocumentKind::Manual) {
+        return false;   // questions you wrote are deleted one by one
     }
     if (!confirmed
         && !confirm(QStringLiteral("Remove “%1”?").arg(doc->title),
@@ -928,6 +965,7 @@ void StudyLibraryWindow::rebuildDocuments()
     m_docRows.clear();
     m_docChecks.clear();
     m_docMeta.clear();
+    m_manualDocs.clear();
 
     const qint64 studySet = currentSet();
     const QVector<DocumentRecord> docs = (m_library && studySet > 0) ? m_library->database()->documents(studySet)
@@ -960,21 +998,33 @@ void StudyLibraryWindow::rebuildDocuments()
         title->setToolTip(d.originalPath);
         auto* viewBtn = makeButton(m_expandedDocs.contains(d.id) ? QStringLiteral("Hide") : QStringLiteral("Questions"), row, "chip");
         viewBtn->setEnabled(d.questionCount > 0);
+        const bool manual = d.kind == DocumentKind::Manual;
+        if (manual) {
+            m_manualDocs.insert(d.id);
+        }
         auto* removeBtn = new PixelIconButton(PixelIcon::Close, 22, 9, false, row);
         removeBtn->setToolTip(QStringLiteral("Remove document"));
         removeBtn->setAccessibleName(QStringLiteral("Remove %1").arg(d.title));
+        removeBtn->setVisible(!manual);
         top->addWidget(check);
         top->addWidget(title, 1);
         top->addWidget(viewBtn);
-        top->addWidget(removeBtn);
+        if (!manual) {
+            top->addWidget(removeBtn);
+        }
         layout->addLayout(top);
 
         QString meta = StudyText::kindLabel(d.kind);
+        if (manual) {
+            meta = QStringLiteral("Written by you");
+        }
         if (d.unitCount > 0) {
             meta += QStringLiteral(" · %1 %2").arg(d.unitCount).arg(unitName(d.kind, d.unitCount));
         }
         meta += QStringLiteral(" · %1 question%2").arg(d.questionCount).arg(d.questionCount == 1 ? QString() : QStringLiteral("s"));
-        meta += QStringLiteral(" · %1").arg(StudyText::statusLabel(d.status));
+        if (!manual) {
+            meta += QStringLiteral(" · %1").arg(StudyText::statusLabel(d.status));
+        }
         auto* metaLabel = makeLabel(meta, "muted", row);
         layout->addWidget(metaLabel);
         QString note = d.error;
@@ -991,12 +1041,31 @@ void StudyLibraryWindow::rebuildDocuments()
         }
         if (m_expandedDocs.contains(d.id)) {
             for (const Question& q : m_library->database()->documentQuestions(d.id)) {
-                auto* qLabel = makeLabel(QStringLiteral("[%1] %2  (%3)")
-                                             .arg(typeTag(q.type), q.prompt,
-                                                  q.sources.isEmpty() ? QString() : q.sources.first().location),
+                const QString location = q.sources.isEmpty() ? QString() : q.sources.first().location;
+                auto* qLabel = makeLabel(location.isEmpty() ? QStringLiteral("[%1] %2").arg(typeTag(q.type), q.prompt)
+                                                            : QStringLiteral("[%1] %2  (%3)").arg(typeTag(q.type), q.prompt, location),
                                          "muted", row);
                 qLabel->setToolTip(q.sources.isEmpty() ? QString() : q.sources.first().excerpt);
-                layout->addWidget(qLabel);
+                if (!manual) {
+                    layout->addWidget(qLabel);
+                    continue;
+                }
+                auto* line = new QHBoxLayout();
+                line->setSpacing(4);
+                line->addWidget(qLabel, 1);
+                auto* editBtn = makeButton(QStringLiteral("Edit"), row, "chip");
+                auto* deleteBtn = makeButton(QStringLiteral("Delete"), row, "chip");
+                line->addWidget(editBtn, 0, Qt::AlignTop);
+                line->addWidget(deleteBtn, 0, Qt::AlignTop);
+                layout->addLayout(line);
+                connect(editBtn, &QPushButton::clicked, this, [this, id = q.id]() {
+                    click();
+                    editOwnQuestion(id);
+                });
+                connect(deleteBtn, &QPushButton::clicked, this, [this, id = q.id]() {
+                    click();
+                    removeOwnQuestion(id, false);
+                });
             }
         }
         connect(viewBtn, &QPushButton::clicked, this, [this, id = d.id]() {
@@ -1051,6 +1120,7 @@ void StudyLibraryWindow::updateActions()
                                               : QStringLiteral("No questions yet. Generate some from your documents first."));
     }
     m_importBtn->setEnabled(hasSet);
+    m_writeBtn->setEnabled(hasSet);
     m_importPptxBtn->setEnabled(hasSet);
     m_importPdfBtn->setEnabled(hasSet && DocumentExtractor::pdfSupported());
     m_importTextBtn->setEnabled(hasSet);
@@ -1137,6 +1207,94 @@ CollapsibleSection* StudyLibraryWindow::formatsSection() const
 bool StudyLibraryWindow::formatsExpanded() const
 {
     return m_prefs->formatsExpanded();
+}
+
+void StudyLibraryWindow::setEditing(bool editing)
+{
+    // The editor takes the whole page so the form never has to scroll or push the window taller.
+    m_importCard->setVisible(!editing);
+    m_practiceHint->setVisible(!editing);
+    m_docScroll->setVisible(!editing);
+    m_actionBar->setVisible(!editing);
+    m_editorPage->setVisible(editing);
+    m_editor->setVisible(editing);
+}
+
+bool StudyLibraryWindow::saveOwnQuestion(const Question& question, bool isEdit)
+{
+    if (!m_library || !m_library->isOpen() || m_currentSet <= 0) {
+        return false;
+    }
+    StudyDatabase* db = m_library->database();
+    Question q = question;
+    bool ok = false;
+    qint64 documentId = 0;
+    if (isEdit) {
+        const auto existing = db->question(q.id);
+        if (!existing) {
+            m_statusLabel->setText(QStringLiteral("That question no longer exists."));
+            return false;
+        }
+        q.setId = existing->setId;
+        q.documentId = existing->documentId;
+        documentId = q.documentId;
+        ok = db->updateQuestion(q);
+    } else {
+        const auto doc = db->manualDocument(m_currentSet);
+        if (!doc) {
+            m_statusLabel->setText(QStringLiteral("Could not save the question."));
+            return false;
+        }
+        documentId = *doc;
+        q.id = QStringLiteral("m-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+        q.setId = m_currentSet;
+        q.documentId = documentId;
+        ok = db->saveQuestion(q, 0, QStringLiteral("manual"));
+    }
+    if (!ok) {
+        m_statusLabel->setText(QStringLiteral("Could not save the question."));
+        return false;
+    }
+    m_expandedDocs.insert(documentId);
+    m_statusLabel->setText(isEdit ? QStringLiteral("Question updated.") : QStringLiteral("Question added to My questions."));
+    refresh();
+    emit preferencesChanged();   // the pet's question pool changed
+    return true;
+}
+
+bool StudyLibraryWindow::editOwnQuestion(const QString& questionId)
+{
+    if (!m_library) {
+        return false;
+    }
+    const auto q = m_library->database()->question(questionId);
+    if (!q) {
+        return false;
+    }
+    m_editor->startEdit(*q);
+    setEditing(true);
+    return true;
+}
+
+bool StudyLibraryWindow::removeOwnQuestion(const QString& questionId, bool confirmed)
+{
+    if (!m_library) {
+        return false;
+    }
+    const auto q = m_library->database()->question(questionId);
+    if (!q) {
+        return false;
+    }
+    if (!confirmed
+        && !confirm(QStringLiteral("Delete this question?"),
+                    QStringLiteral("The question and your answers to it are removed from this computer."),
+                    QStringLiteral("Delete"))) {
+        return false;
+    }
+    const bool ok = m_library->database()->removeQuestion(questionId);
+    refresh();
+    emit preferencesChanged();
+    return ok;
 }
 
 void StudyLibraryWindow::updateFormatsHint()

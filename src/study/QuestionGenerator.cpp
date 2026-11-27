@@ -335,8 +335,8 @@ bool QuestionGenerator::start(const QList<qint64>& documentIds, const QList<Ques
 
     for (const qint64 docId : documentIds) {
         const auto doc = m_db->document(docId);
-        if (!doc || doc->chunkCount == 0) {
-            continue;
+        if (!doc || doc->chunkCount == 0 || doc->kind == DocumentKind::Manual) {
+            continue;   // nothing to generate from, and a student's own questions are never replaced
         }
         if (regenerate) {
             m_db->removeQuestions(docId);

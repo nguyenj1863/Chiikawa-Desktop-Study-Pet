@@ -787,8 +787,63 @@ QVector<Question> StudyDatabase::setQuestions(qint64 setId, const QList<Question
     return out;
 }
 
+bool StudyDatabase::updateQuestion(const Question& question)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("UPDATE questions SET type = ?, prompt = ?, concept = ?, difficulty = ?, payload = ? WHERE id = ?"));
+    q.addBindValue(static_cast<int>(question.type));
+    q.addBindValue(text(question.prompt));
+    q.addBindValue(text(question.topic));
+    q.addBindValue(static_cast<int>(question.difficulty));
+    q.addBindValue(QString::fromUtf8(QJsonDocument(questionPayload(question)).toJson(QJsonDocument::Compact)));
+    q.addBindValue(question.id);
+    if (!q.exec()) {
+        m_lastError = q.lastError().text();
+        return false;
+    }
+    return q.numRowsAffected() > 0;
+}
+
+bool StudyDatabase::removeQuestion(const QString& id)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("DELETE FROM questions WHERE id = ?"));
+    q.addBindValue(id);
+    if (!q.exec()) {
+        m_lastError = q.lastError().text();
+        return false;
+    }
+    return q.numRowsAffected() > 0;
+}
+
+std::optional<qint64> StudyDatabase::manualDocument(qint64 setId)
+{
+    {
+        QSqlQuery q(connection());
+        q.prepare(QStringLiteral("SELECT id FROM documents WHERE set_id = ? AND kind = ? ORDER BY id LIMIT 1"));
+        q.addBindValue(setId);
+        q.addBindValue(static_cast<int>(DocumentKind::Manual));
+        if (q.exec() && q.next()) {
+            return q.value(0).toLongLong();
+        }
+    }
+    const auto id = addDocument(setId, QStringLiteral("My questions"), QString(), DocumentKind::Manual);
+    if (id) {
+        setDocumentStatus(*id, DocumentStatus::Ready);
+    }
+    return id;
+}
+
 bool StudyDatabase::removeQuestions(qint64 documentId)
 {
+    QSqlQuery check(connection());
+    check.prepare(QStringLiteral("SELECT kind FROM documents WHERE id = ?"));
+    check.addBindValue(documentId);
+    if (check.exec() && check.next() && check.value(0).toInt() == static_cast<int>(DocumentKind::Manual)) {
+        return false;   // never bulk-delete what the student wrote; use removeQuestion
+    }
+    check.finish();
+
     QSqlQuery q(connection());
     q.prepare(QStringLiteral("DELETE FROM questions WHERE document_id = ?"));
     q.addBindValue(documentId);

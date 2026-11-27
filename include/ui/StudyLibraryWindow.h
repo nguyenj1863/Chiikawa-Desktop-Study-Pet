@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ai/OllamaClient.h"
+#include "study/Question.h"
 #include "study/StudyTypes.h"
 
 #include <QHash>
@@ -24,6 +25,7 @@ class QLineEdit;
 class QProgressBar;
 class QPushButton;
 class QScrollArea;
+class QuestionEditor;
 class QStackedWidget;
 class QVBoxLayout;
 class QuestionGenerator;
@@ -106,6 +108,15 @@ public:
     [[nodiscard]] bool isPracticing() const { return m_practicing; }
     /** Starts a practice session over the open set; false when it has no questions to ask. */
     bool startPractice();
+
+    /** Stores a question the student wrote in the open set's "My questions" (or updates an edited one). */
+    bool saveOwnQuestion(const Question& question, bool isEdit);
+    /** Opens the editor on one of the student's own questions. */
+    bool editOwnQuestion(const QString& questionId);
+    /** Deletes one of the student's own questions; asks for confirmation unless confirmed. */
+    bool removeOwnQuestion(const QString& questionId, bool confirmed = false);
+    [[nodiscard]] QuestionEditor* questionEditor() const { return m_editor; }
+    [[nodiscard]] QPushButton* writeQuestionButton() const { return m_writeBtn; }
     [[nodiscard]] QLabel* setupLabel() const { return m_setupLabel; }
     [[nodiscard]] QLabel* statusLabel() const { return m_statusLabel; }
     [[nodiscard]] QPushButton* importButton() const { return m_importBtn; }
@@ -148,6 +159,7 @@ private:
     void rebuildSetList();
     void applyView();
     void updateFormatsHint();
+    void setEditing(bool editing);
     [[nodiscard]] QString setName(qint64 id) const;
     void rebuildDocuments();
     void updateActions();
@@ -205,6 +217,12 @@ private:
     StudyPreferencesPage* m_prefs = nullptr;
     QLabel* m_practiceHint = nullptr;
     QPushButton* m_practiceBtn = nullptr;
+    QPushButton* m_writeBtn = nullptr;
+    QuestionEditor* m_editor = nullptr;
+    QWidget* m_importCard = nullptr;
+    QWidget* m_editorPage = nullptr;
+    QWidget* m_actionBar = nullptr;
+    QSet<qint64> m_manualDocs;
     StudyPracticeView* m_practice = nullptr;
     bool m_practicing = false;
 

@@ -77,6 +77,8 @@ QString kindLabel(DocumentKind kind)
         return QStringLiteral("Slides");
     case DocumentKind::Text:
         return QStringLiteral("Notes");
+    case DocumentKind::Manual:
+        return QStringLiteral("Your questions");
     case DocumentKind::Unknown:
         break;
     }
@@ -297,6 +299,7 @@ ExtractionResult extractFile(const QString& path)
         const QString suffix = info.suffix().toLower();
         return extractText(file.readAll(), suffix == QStringLiteral("md") || suffix == QStringLiteral("markdown"));
     }
+    case DocumentKind::Manual:
     case DocumentKind::Unknown:
         break;
     }

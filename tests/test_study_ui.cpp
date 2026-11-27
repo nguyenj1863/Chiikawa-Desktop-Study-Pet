@@ -15,6 +15,7 @@
 #include "ui/QuizPopup.h"
 #include "ui/PixelTheme.h"
 #include "ui/CollapsibleSection.h"
+#include "ui/QuestionEditor.h"
 #include "ui/PixelSegmentedControl.h"
 #include "ui/StudyLibraryWindow.h"
 #include "ui/StudyPracticeView.h"
@@ -167,6 +168,8 @@ private slots:
     void studyTypographyMatchesTheSharedTheme();
     void practiceSkipEndAndFormatRules();
     void practicingEarlyKeepsTheReviewSchedule();
+    void questionEditorValidatesEveryFormat();
+    void ownQuestionsCanBeWrittenEditedPracticedAndDeleted();
     void petStudyFlowWorksWithoutOllama();
     void studyShortcutOpensTheStudyWindow();
 
@@ -970,6 +973,201 @@ void TestStudyUi::studyTypographyMatchesTheSharedTheme()
         check(chip, refButton, "chip");
     }
     QVERIFY(window.removeSet(set, true));
+}
+
+void TestStudyUi::questionEditorValidatesEveryFormat()
+{
+    using Input = QuestionEditor::Input;
+    Question q;
+    QString error;
+
+    Input in;
+    QVERIFY(!QuestionEditor::build(in, q, error));
+    QVERIFY(error.contains(QStringLiteral("question")));
+
+    // Multiple choice
+    in.prompt = QStringLiteral("What does a LEFT JOIN keep?");
+    in.options = {QStringLiteral("Left rows"), QString(), QString(), QString()};
+    in.correct = {true, false, false, false};
+    QVERIFY(!QuestionEditor::build(in, q, error));   // only one answer
+    QVERIFY(error.contains(QStringLiteral("two answers")));
+    in.options = {QStringLiteral("Left rows"), QStringLiteral("Right rows"), QString(), QString()};
+    in.correct = {false, false, false, false};
+    QVERIFY(!QuestionEditor::build(in, q, error));   // nothing ticked
+    in.correct = {true, true, false, false};
+    QVERIFY(!QuestionEditor::build(in, q, error));   // two correct for single choice
+    in.options = {QStringLiteral("Left rows"), QStringLiteral(" left  ROWS "), QString(), QString()};
+    in.correct = {true, false, false, false};
+    QVERIFY(!QuestionEditor::build(in, q, error));   // duplicate answers
+    QVERIFY(error.contains(QStringLiteral("same")));
+    in.options = {QStringLiteral("Left rows"), QStringLiteral("Right rows"), QString(), QStringLiteral("All rows")};
+    in.correct = {true, false, false, false};
+    QVERIFY2(QuestionEditor::build(in, q, error), qPrintable(error));
+    QCOMPARE(q.options.size(), 3);   // blank rows are skipped
+    QCOMPARE(q.options.at(2).id, QStringLiteral("c"));
+    QCOMPARE(q.type, QuestionType::SingleChoice);
+    QVERIFY(q.isValid() == false);   // the id is assigned by the library, not the editor
+    QVERIFY(!q.topic.isEmpty());     // defaults to the start of the question
+
+    // Multiple select: at least one, but not all, correct
+    in.type = QuestionType::MultiSelect;
+    in.correct = {true, true, false, true};
+    QVERIFY(!QuestionEditor::build(in, q, error));
+    in.correct = {false, false, false, false};
+    QVERIFY(!QuestionEditor::build(in, q, error));
+    in.correct = {true, false, false, true};
+    QVERIFY2(QuestionEditor::build(in, q, error), qPrintable(error));
+    QCOMPARE(q.type, QuestionType::MultiSelect);
+
+    // Written answer
+    Input written;
+    written.type = QuestionType::Written;
+    written.prompt = QStringLiteral("Which join keeps unmatched left rows?");
+    QVERIFY(!QuestionEditor::build(written, q, error));
+    written.expected = QStringLiteral("LEFT JOIN");
+    written.alsoAccept = {QStringLiteral("left outer join"), QStringLiteral("LEFT JOIN"), QStringLiteral("left outer join")};
+    QVERIFY2(QuestionEditor::build(written, q, error), qPrintable(error));
+    QCOMPARE(q.expectedAnswer, QStringLiteral("LEFT JOIN"));
+    QCOMPARE(q.answers.size(), 1);
+    QCOMPARE(q.answers.first().aliases, QStringList{QStringLiteral("left outer join")});
+    QCOMPARE(q.keyConcepts, QStringList{QStringLiteral("LEFT JOIN")});   // defaults to the answer
+    written.keyPoints = {QStringLiteral("keeps unmatched left rows")};
+    QVERIFY(QuestionEditor::build(written, q, error));
+    QCOMPARE(q.keyConcepts, QStringList{QStringLiteral("keeps unmatched left rows")});
+}
+
+void TestStudyUi::ownQuestionsCanBeWrittenEditedPracticedAndDeleted()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    QuestionGenerator generator(library.database(), &ollama);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+    StudyDatabase* db = library.database();
+
+    const qint64 set = window.createSet(QStringLiteral("Mine"));
+    QVERIFY(set > 0);
+    QVERIFY(window.writeQuestionButton()->isEnabled());
+    QVERIFY(!window.practiceButton()->isEnabled());   // nothing to practise yet
+
+    // The editor takes over the page; cancelling brings the documents back.
+    QVERIFY(!window.questionEditor()->isVisibleTo(&window));
+    window.writeQuestionButton()->click();
+    QVERIFY(window.questionEditor()->isVisibleTo(&window));
+    QVERIFY(!window.importButton()->isVisibleTo(&window));
+    window.questionEditor()->cancelButton()->click();
+    QVERIFY(!window.questionEditor()->isVisibleTo(&window));
+    QVERIFY(window.importButton()->isVisibleTo(&window));
+
+    // A rejected question shows why and stores nothing.
+    window.writeQuestionButton()->click();
+    window.questionEditor()->saveButton()->click();
+    QVERIFY(window.questionEditor()->errorLabel()->isVisibleTo(window.questionEditor()));
+    QVERIFY(db->documents(set).isEmpty());
+
+    // Write a multiple choice question through the form.
+    QuestionEditor::Input in;
+    in.prompt = QStringLiteral("What does a LEFT JOIN keep?");
+    in.options = {QStringLiteral("Every left row"), QStringLiteral("Only matches"), QString(), QString()};
+    in.correct = {true, false, false, false};
+    in.explanation = QStringLiteral("Unmatched left rows get NULLs on the right.");
+    window.questionEditor()->setInput(in);
+    window.questionEditor()->saveButton()->click();
+    QVERIFY(!window.questionEditor()->isVisibleTo(&window));
+    const QVector<DocumentRecord> docs = db->documents(set);
+    QCOMPARE(docs.size(), 1);
+    QCOMPARE(docs.first().kind, DocumentKind::Manual);
+    QCOMPARE(docs.first().questionCount, 1);
+    QVERIFY(!window.documentRows().isEmpty());
+    const QVector<Question> stored = db->documentQuestions(docs.first().id);
+    QCOMPARE(stored.size(), 1);
+    const QString id = stored.first().id;
+    QVERIFY(id.startsWith(QStringLiteral("m-")));
+    QCOMPARE(stored.first().options.size(), 2);
+    QVERIFY(stored.first().options.first().correct);
+    QCOMPARE(stored.first().explanation, QStringLiteral("Unmatched left rows get NULLs on the right."));
+
+    // Other formats, added directly (the same path the form uses).
+    Question multi;
+    multi.type = QuestionType::MultiSelect;
+    multi.prompt = QStringLiteral("Which are outer joins?");
+    multi.topic = QStringLiteral("joins");
+    multi.options = {{QStringLiteral("a"), QStringLiteral("LEFT"), true, {}}, {QStringLiteral("b"), QStringLiteral("RIGHT"), true, {}},
+                     {QStringLiteral("c"), QStringLiteral("INNER"), false, {}}};
+    QVERIFY(window.saveOwnQuestion(multi, false));
+    Question written;
+    written.type = QuestionType::Written;
+    written.prompt = QStringLiteral("Name the join that keeps all left rows.");
+    written.topic = QStringLiteral("joins");
+    written.expectedAnswer = QStringLiteral("LEFT JOIN");
+    written.answers.append({QStringLiteral("LEFT JOIN"), {QStringLiteral("left outer join")}});
+    written.keyConcepts = {QStringLiteral("LEFT JOIN")};
+    QVERIFY(window.saveOwnQuestion(written, false));
+    QCOMPARE(db->documents(set).size(), 1);   // all three share one "My questions" document
+    QCOMPARE(db->documents(set).first().questionCount, 3);
+
+    // They are practised like any other question (multiple choice by default).
+    QVERIFY(window.practiceButton()->isEnabled());
+    QVERIFY(window.practiceButton()->text().contains(QStringLiteral("(1)")));
+    window.preferences()->formatCheck(SettingsDefaults::kStudyFormatMultiSelect)->setChecked(true);
+    window.preferences()->formatCheck(SettingsDefaults::kStudyFormatWritten)->setChecked(true);
+    QVERIFY(window.practiceButton()->text().contains(QStringLiteral("(3)")));
+    QVERIFY(window.startPractice());
+    QVERIFY(window.practiceView()->isActive());
+    window.practiceView()->abandon();
+    window.showSetList();
+    window.openSet(set);
+
+    // Generate and Regenerate never touch what you wrote.
+    QVERIFY(!generator.start({docs.first().id}, {QuestionType::SingleChoice}, true));
+    QCOMPARE(db->documentQuestions(docs.first().id).size(), 3);
+    QVERIFY(!window.removeDocument(docs.first().id, true));   // questions are deleted one by one
+    QVERIFY(!db->removeQuestions(docs.first().id));
+    QCOMPARE(db->documentQuestions(docs.first().id).size(), 3);
+    QVERIFY(!window.generateButton()->isEnabled());
+
+    // Editing keeps the question's ID and its answer history.
+    Question original = *db->question(id);
+    Evaluation correct;
+    correct.verdict = Verdict::Correct;
+    correct.score = 1.0;
+    QVERIFY(tracker.record(original, correct) > 0);
+    QVERIFY(window.editOwnQuestion(id));
+    QVERIFY(window.questionEditor()->isEditingExisting());
+    QCOMPARE(window.questionEditor()->editingId(), id);
+    QVERIFY(window.questionEditor()->promptEdit()->toPlainText().contains(QStringLiteral("LEFT JOIN")));
+    window.questionEditor()->promptEdit()->setPlainText(QStringLiteral("What does a LEFT OUTER JOIN keep?"));
+    window.questionEditor()->saveButton()->click();
+    const auto edited = db->question(id);
+    QVERIFY(edited);
+    QCOMPARE(edited->prompt, QStringLiteral("What does a LEFT OUTER JOIN keep?"));
+    QCOMPARE(edited->options.size(), 2);
+    QCOMPARE(db->documentQuestions(docs.first().id).size(), 3);   // edited in place, not duplicated
+    QSqlQuery q(db->connection());
+    QVERIFY(q.exec(QStringLiteral("SELECT COUNT(*) FROM attempts WHERE question_id = '%1'").arg(id)));
+    QVERIFY(q.next());
+    QCOMPARE(q.value(0).toInt(), 1);
+    q.finish();
+
+    // Deleting a question removes it and its history.
+    QVERIFY(window.removeOwnQuestion(id, true));
+    QVERIFY(!db->question(id));
+    QVERIFY(q.exec(QStringLiteral("SELECT COUNT(*) FROM attempts WHERE question_id = '%1'").arg(id)));
+    QVERIFY(q.next());
+    QCOMPARE(q.value(0).toInt(), 0);
+    q.finish();
+    QCOMPARE(db->documents(set).first().questionCount, 2);
+
+    // Your questions go away with their set.
+    QVERIFY(window.removeSet(set, true));
+    QVERIFY(q.exec(QStringLiteral("SELECT COUNT(*) FROM questions WHERE id LIKE 'm-%'")));
+    QVERIFY(q.next());
+    QCOMPARE(q.value(0).toInt(), 0);
 }
 
 void TestStudyUi::petStudyFlowWorksWithoutOllama()
