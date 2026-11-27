@@ -9,6 +9,7 @@
 #include <QWidget>
 
 class AppSettings;
+class CollapsibleSection;
 class PixelCheckBox;
 class PixelIconButton;
 class PixelOptionButton;
@@ -27,6 +28,7 @@ class QStackedWidget;
 class QVBoxLayout;
 class QuestionGenerator;
 class StudyLibrary;
+class StudyPracticeView;
 class StudyPreferencesPage;
 class StudySetList;
 class UISoundManager;
@@ -92,13 +94,18 @@ public:
     [[nodiscard]] QPushButton* importPptxButton() const { return m_importPptxBtn; }
     [[nodiscard]] QPushButton* importPdfButton() const { return m_importPdfBtn; }
     [[nodiscard]] QPushButton* importTextButton() const { return m_importTextBtn; }
-    [[nodiscard]] QPushButton* formatsToggle() const;
+    [[nodiscard]] CollapsibleSection* formatsSection() const;
     [[nodiscard]] bool formatsExpanded() const;
     [[nodiscard]] QFrame* setupCard() const { return m_setupCard; }
     [[nodiscard]] QComboBox* modelCombo() const;
     [[nodiscard]] StudyPreferencesPage* preferences() const { return m_prefs; }
     [[nodiscard]] PixelSegmentedControl* tabs() const { return m_tabs; }
     [[nodiscard]] QLabel* practiceHint() const { return m_practiceHint; }
+    [[nodiscard]] QPushButton* practiceButton() const { return m_practiceBtn; }
+    [[nodiscard]] StudyPracticeView* practiceView() const { return m_practice; }
+    [[nodiscard]] bool isPracticing() const { return m_practicing; }
+    /** Starts a practice session over the open set; false when it has no questions to ask. */
+    bool startPractice();
     [[nodiscard]] QLabel* setupLabel() const { return m_setupLabel; }
     [[nodiscard]] QLabel* statusLabel() const { return m_statusLabel; }
     [[nodiscard]] QPushButton* importButton() const { return m_importBtn; }
@@ -197,6 +204,9 @@ private:
     QStackedWidget* m_pages = nullptr;
     StudyPreferencesPage* m_prefs = nullptr;
     QLabel* m_practiceHint = nullptr;
+    QPushButton* m_practiceBtn = nullptr;
+    StudyPracticeView* m_practice = nullptr;
+    bool m_practicing = false;
 
     // Documents
     QScrollArea* m_docScroll = nullptr;

@@ -109,6 +109,7 @@ set(CHIIKAWA_STUDY_SOURCES
     src/study/ProgressTracker.cpp
     src/study/ReviewScheduler.cpp
     src/study/ScheduleStore.cpp
+    src/study/SetQuestionProvider.cpp
     src/study/QuestionGenerator.cpp
     src/study/QuestionScheduler.cpp
     src/study/QuestionSelector.cpp
@@ -127,6 +128,7 @@ set(CHIIKAWA_STUDY_SOURCES
     include/study/ProgressTracker.h
     include/study/ReviewScheduler.h
     include/study/ScheduleStore.h
+    include/study/SetQuestionProvider.h
     include/study/Question.h
     include/study/QuestionGenerator.h
     include/study/QuestionProvider.h
@@ -150,6 +152,7 @@ set(CHIIKAWA_UI_SOURCES
     src/ui/SettingsPanel.cpp
     src/ui/QuizPopup.cpp
     src/ui/StudyLibraryWindow.cpp
+    src/ui/StudyPracticeView.cpp
     src/ui/StudyPreferencesPage.cpp
     src/ui/StudySetList.cpp
     src/ui/PixelSegmentedControl.cpp
@@ -160,6 +163,7 @@ set(CHIIKAWA_UI_SOURCES
     include/ui/SettingsPanel.h
     include/ui/QuizPopup.h
     include/ui/StudyLibraryWindow.h
+    include/ui/StudyPracticeView.h
     include/ui/StudyPreferencesPage.h
     include/ui/StudySetList.h
     include/ui/StudyUiHelpers.h

@@ -66,7 +66,7 @@ public:
     /** True when a scheduled check-in may appear without interrupting anything. */
     [[nodiscard]] bool canShowCheckIn() const;
 
-    /** Shows a question now (Settings "Ask Me a Question"); ignored if one is already open. */
+    /** Shows a question now (Study app "Ask me now"); ignored if one is already open. */
     void askQuestionNow();
 
     /** Opens the Study Library window beside the pet. */

@@ -28,6 +28,10 @@ class PixelOptionButton;
  * checkboxes, written answer with Check / Reveal) and scrolls instead of clipping
  * when content is taller than the cap. Provider-agnostic: it only consumes
  * Question and Evaluation.
+ *
+ * In embedded mode the same question UI is a plain child widget (no window, fade, tail, or
+ * auto-hide) used inside the Study window's practice page. There, closed() means "move on":
+ * it follows Skip and the button that appears after a result (see setAdvanceText()).
  */
 class QuizPopup : public QWidget {
     Q_OBJECT
@@ -65,7 +69,7 @@ public:
         Placement placement = Placement::Above;
     };
 
-    explicit QuizPopup(QWidget* parent = nullptr);
+    explicit QuizPopup(QWidget* parent = nullptr, bool embedded = false);
     ~QuizPopup() override;
 
     void showQuestion(const Question& question, const QRect& petGlobalGeometry);
@@ -94,6 +98,9 @@ public:
     /** Height available for the popup on a screen: kMaxHeight, or 60% of short work areas. */
     [[nodiscard]] static int heightCap(const QRect& available);
 
+    [[nodiscard]] bool isEmbedded() const { return m_embedded; }
+    /** Embedded mode: text of the button shown after a result ("Next question", "Finish"). */
+    void setAdvanceText(const QString& text) { m_advanceText = text; }
     [[nodiscard]] bool isShowingResult() const { return m_showingResult; }
     [[nodiscard]] bool isFadingOut() const { return m_fadingOut; }
     [[nodiscard]] Phase phase() const { return m_phase; }
@@ -209,4 +216,6 @@ private:
     bool m_showingResult = false;
     bool m_fadingOut = false;
     bool m_hovered = false;
+    bool m_embedded = false;
+    QString m_advanceText = QStringLiteral("Done");
 };

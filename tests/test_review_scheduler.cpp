@@ -1,6 +1,7 @@
 #include "study/ChoiceEvaluators.h"
 #include "study/ProgressTracker.h"
 #include "study/ReviewScheduler.h"
+#include "study/SetQuestionProvider.h"
 #include "study/StudyDatabase.h"
 
 #include <QRandomGenerator>
@@ -45,6 +46,7 @@ private slots:
     void ratingFromVerdict();
     void trackerRecordsRatingsAndSchedules();
     void cramDoesNotMoveTheSchedule();
+    void practiceOrderPutsDueFirstThenNewThenTheRest();
 };
 
 void TestReviewScheduler::newCardRatings()
@@ -281,6 +283,42 @@ void TestReviewScheduler::cramDoesNotMoveTheSchedule()
     QVERIFY(q.exec(QStringLiteral("SELECT COUNT(*) FROM attempts")));
     QVERIFY(q.next());
     QCOMPARE(q.value(0).toInt(), 1);   // the attempt is still recorded
+}
+
+void TestReviewScheduler::practiceOrderPutsDueFirstThenNewThenTheRest()
+{
+    const QDateTime now = at(2026, 3, 10);
+    QVector<Question> questions;
+    QHash<QString, Card> cards;
+    for (int i = 0; i < 4; ++i) {
+        Question due;
+        due.id = QStringLiteral("due%1").arg(i);
+        Card dueCard = reviewCard(5, 2.5, now);   // due today
+        cards.insert(due.id, dueCard);
+        Question fresh;
+        fresh.id = QStringLiteral("new%1").arg(i);   // no card: new
+        Question later;
+        later.id = QStringLiteral("later%1").arg(i);
+        Card laterCard = reviewCard(5, 2.5, now);
+        laterCard.dueDay = studyDay(now) + 3;
+        cards.insert(later.id, laterCard);
+        questions << later << fresh << due;
+    }
+    QRandomGenerator rng(7);
+    const QVector<Question> ordered = SetQuestionProvider::order(
+        questions, [&cards](const QString& id) { return cards.value(id); }, now, rng);
+    QCOMPARE(ordered.size(), questions.size());
+    for (int i = 0; i < 4; ++i) {
+        QVERIFY2(ordered.at(i).id.startsWith(QStringLiteral("due")), qPrintable(ordered.at(i).id));
+        QVERIFY2(ordered.at(4 + i).id.startsWith(QStringLiteral("new")), qPrintable(ordered.at(4 + i).id));
+        QVERIFY2(ordered.at(8 + i).id.startsWith(QStringLiteral("later")), qPrintable(ordered.at(8 + i).id));
+    }
+    // Different seeds shuffle within a group but never across groups.
+    QRandomGenerator other(99);
+    const QVector<Question> again = SetQuestionProvider::order(
+        questions, [&cards](const QString& id) { return cards.value(id); }, now, other);
+    QVERIFY(again.at(0).id.startsWith(QStringLiteral("due")));
+    QVERIFY(again.at(11).id.startsWith(QStringLiteral("later")));
 }
 
 QTEST_MAIN(TestReviewScheduler)

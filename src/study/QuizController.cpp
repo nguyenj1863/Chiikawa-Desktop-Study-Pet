@@ -3,6 +3,7 @@
 #include "app/AppSettings.h"
 #include "study/ChoiceEvaluators.h"
 #include "study/ProgressTracker.h"
+#include "study/ReviewScheduler.h"
 #include "study/WrittenAnswerEvaluator.h"
 
 QuizController::QuizController(AppSettings* settings, QObject* parent)
@@ -47,7 +48,7 @@ bool QuizController::ask()
     if (m_state != State::Idle) {
         return false;
     }
-    const QStringList recent = m_settings ? m_settings->recentQuestionIds() : QStringList();
+    const QStringList recent = (m_settings && !m_practiceMode) ? m_settings->recentQuestionIds() : QStringList();
     for (const auto& provider : m_providers) {
         if (!m_activeProvider.isEmpty() && provider->id() != m_activeProvider) {
             continue;
@@ -56,7 +57,9 @@ bool QuizController::ask()
         if (q && q->isValid()) {
             m_current = std::move(q);
             m_state = State::Asking;
-            rememberAsked(m_current->id);
+            if (!m_practiceMode) {
+                rememberAsked(m_current->id);
+            }
             emit questionReady(*m_current);
             return true;
         }
@@ -66,7 +69,12 @@ bool QuizController::ask()
 
 Evaluation QuizController::record(const Evaluation& evaluation)
 {
-    const int xp = (m_tracker && m_current) ? m_tracker->record(*m_current, evaluation) : 0;
+    bool reschedule = true;
+    if (m_practiceMode && m_tracker && m_current) {
+        const Card card = m_tracker->card(m_current->id);
+        reschedule = card.state == CardState::New || ReviewScheduler::isDue(card, QDateTime::currentDateTime());
+    }
+    const int xp = (m_tracker && m_current) ? m_tracker->record(*m_current, evaluation, reschedule) : 0;
     m_state = State::Answered;
     emit evaluationReady(evaluation, xp);
     emit progressChanged();

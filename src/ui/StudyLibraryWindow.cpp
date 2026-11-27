@@ -13,6 +13,7 @@
 #include "study/StudyLibrary.h"
 #include "ui/PixelTheme.h"
 #include "ui/PixelSegmentedControl.h"
+#include "ui/StudyPracticeView.h"
 #include "ui/StudyPreferencesPage.h"
 #include "ui/StudySetList.h"
 #include "ui/StudyUiHelpers.h"
@@ -217,7 +218,14 @@ void StudyLibraryWindow::buildUi()
     m_backBtn->hide();
     connect(m_backBtn, &QPushButton::clicked, this, [this]() {
         click();
-        showSetList();
+        if (m_practicing) {
+            m_practice->abandon();
+            m_practicing = false;
+            applyView();
+            refresh();
+        } else {
+            showSetList();
+        }
     });
     auto* title = new QLabel(QStringLiteral("Study Library"), this);
     title->setObjectName(QStringLiteral("title"));
@@ -437,12 +445,32 @@ void StudyLibraryWindow::buildUi()
     m_generateBtn = makeButton(QStringLiteral("Generate"), detailPage, "primary");
     m_generateBtn->setToolTip(QStringLiteral("Write new questions from the checked documents"));
     m_regenerateBtn->setToolTip(QStringLiteral("Replace the questions of the checked documents"));
+    m_practiceBtn = makeButton(QStringLiteral("Practice"), detailPage, "primary");
+    actions->addWidget(m_practiceBtn);
     actions->addStretch(1);
     actions->addWidget(m_cancelBtn);
     actions->addWidget(m_regenerateBtn);
     actions->addWidget(m_generateBtn);
     detail->addLayout(actions);
     m_stack->addWidget(detailPage);
+
+    // Page 2: practising the open set
+    m_practice = new StudyPracticeView(m_settings, m_library, m_tracker, m_ollama, m_stack);
+    m_stack->addWidget(m_practice);
+    connect(m_practice, &StudyPracticeView::finished, this, [this]() {
+        m_practicing = false;
+        applyView();
+        refresh();
+    });
+    connect(m_practice, &StudyPracticeView::progressChanged, this, [this]() {
+        m_prefs->refreshProgress();
+        rebuildSetList();
+    });
+    connect(m_practice, &StudyPracticeView::buttonActivated, this, [this]() { click(); });
+    connect(m_practiceBtn, &QPushButton::clicked, this, [this]() {
+        click();
+        startPractice();
+    });
     m_pages = new QStackedWidget(this);
     m_pages->addWidget(m_stack);
     m_prefs = new StudyPreferencesPage(m_settings, m_library, m_generator, m_ollama, m_tracker, this);
@@ -458,6 +486,7 @@ void StudyLibraryWindow::buildUi()
     connect(m_tabs, &PixelSegmentedControl::currentChanged, m_pages, &QStackedWidget::setCurrentIndex);
     connect(m_prefs, &StudyPreferencesPage::preferencesChanged, this, [this]() {
         updateFormatsHint();
+        updateActions();
         emit preferencesChanged();
     });
     connect(m_prefs, &StudyPreferencesPage::askQuestionRequested, this, &StudyLibraryWindow::askQuestionRequested);
@@ -541,17 +570,42 @@ bool StudyLibraryWindow::isShowingSet() const
 void StudyLibraryWindow::applyView()
 {
     const bool showSet = m_showingSet && m_currentSet > 0;
-    m_stack->setCurrentIndex(showSet ? 1 : 0);
+    const bool practicing = showSet && m_practicing;
+    m_stack->setCurrentIndex(practicing ? 2 : (showSet ? 1 : 0));
     m_backBtn->setVisible(showSet);
-    const QString text = showSet ? setName(m_currentSet) : QStringLiteral("Study Library");
+    m_backBtn->setText(practicing ? QStringLiteral("‹ Set") : QStringLiteral("‹ Sets"));
+    m_backBtn->setToolTip(practicing ? QStringLiteral("End the session and go back to this set")
+                                     : QStringLiteral("Back to all study sets"));
+    const QString text = practicing ? QStringLiteral("Practice · %1").arg(setName(m_currentSet))
+                                    : (showSet ? setName(m_currentSet) : QStringLiteral("Study Library"));
     m_titleLabel->setToolTip(showSet ? text : QString());
     m_titleLabel->setText(m_titleLabel->fontMetrics().elidedText(text, Qt::ElideRight, kWidth - 150));
 }
 
 void StudyLibraryWindow::showSetList()
 {
+    if (m_practicing) {
+        m_practice->abandon();
+    }
+    m_practicing = false;
     m_showingSet = false;
     applyView();
+}
+
+bool StudyLibraryWindow::startPractice()
+{
+    if (!m_practice || m_currentSet <= 0) {
+        return false;
+    }
+    if (!m_practice->begin(m_currentSet)) {
+        m_statusLabel->setText(QStringLiteral("There are no questions to practise in this set yet."));
+        return false;
+    }
+    m_practicing = true;
+    m_showingSet = true;
+    m_statusLabel->clear();
+    applyView();
+    return true;
 }
 
 void StudyLibraryWindow::openSet(qint64 setId)
@@ -560,6 +614,10 @@ void StudyLibraryWindow::openSet(qint64 setId)
         return;
     }
     const bool changed = setId != m_currentSet;
+    if (changed && m_practicing) {
+        m_practice->abandon();
+        m_practicing = false;
+    }
     m_currentSet = setId;
     m_showingSet = true;
     if (changed) {
@@ -979,6 +1037,19 @@ void StudyLibraryWindow::updateActions()
             anyQuestions = anyQuestions || doc->questionCount > 0;
         }
     }
+    if (m_practiceBtn) {
+        int total = 0;
+        int inFormats = 0;
+        if (hasSet && m_library && m_library->isOpen()) {
+            total = static_cast<int>(m_library->database()->setQuestions(m_currentSet, {}, true).size());
+            inFormats = static_cast<int>(m_library->database()->setQuestions(m_currentSet, StudyPracticeView::enabledTypes(m_settings), true).size());
+        }
+        m_practiceBtn->setText(inFormats > 0 ? QStringLiteral("Practice (%1)").arg(inFormats) : QStringLiteral("Practice"));
+        m_practiceBtn->setEnabled(hasSet && inFormats > 0 && !generating);
+        m_practiceBtn->setToolTip(inFormats > 0 ? QStringLiteral("Answer this set's questions one at a time")
+                                  : total > 0 ? QStringLiteral("No questions in the chosen formats. Change formats in Preferences.")
+                                              : QStringLiteral("No questions yet. Generate some from your documents first."));
+    }
     m_importBtn->setEnabled(hasSet);
     m_importPptxBtn->setEnabled(hasSet);
     m_importPdfBtn->setEnabled(hasSet && DocumentExtractor::pdfSupported());
@@ -1058,9 +1129,9 @@ QComboBox* StudyLibraryWindow::modelCombo() const
     return m_prefs->modelCombo();
 }
 
-QPushButton* StudyLibraryWindow::formatsToggle() const
+CollapsibleSection* StudyLibraryWindow::formatsSection() const
 {
-    return m_prefs->formatsToggle();
+    return m_prefs->formatsSection();
 }
 
 bool StudyLibraryWindow::formatsExpanded() const
@@ -1205,6 +1276,11 @@ void StudyLibraryWindow::keyPressEvent(QKeyEvent* event)
     if (event->key() == Qt::Key_Escape) {
         if (m_setEditRow->isVisible()) {
             finishSetEdit(false);
+        } else if (m_practicing) {
+            m_practice->abandon();
+            m_practicing = false;
+            applyView();
+            refresh();
         } else if (isShowingSet()) {
             showSetList();
         } else {

@@ -1,5 +1,7 @@
 #include "ui/PixelTheme.h"
 
+#include <QAbstractItemView>
+#include <QComboBox>
 #include <QEnterEvent>
 #include <QFontMetrics>
 #include <QEvent>
@@ -813,6 +815,28 @@ void paintPixelCard(QPainter& p,
     paintGlassSurface(p, bounds, GlassLevel::Primary, kRadiusWindow, margin);
 }
 
+QFont uiFont(int pixelSize, QFont::Weight weight)
+{
+    QFont f;
+    f.setFamilies({QStringLiteral("Segoe UI"), QStringLiteral("Yu Gothic UI")});
+    f.setStyleHint(QFont::SansSerif);
+    f.setPixelSize(pixelSize);
+    f.setWeight(weight);
+    return f;
+}
+
+void configureComboPopup(QComboBox* combo)
+{
+    if (!combo || !combo->view()) {
+        return;
+    }
+    combo->view()->setCursor(Qt::PointingHandCursor);
+    if (QWidget* popup = combo->view()->window()) {
+        popup->setWindowFlags(popup->windowFlags() | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
+        popup->setAttribute(Qt::WA_TranslucentBackground, true);
+    }
+}
+
 QString styleSheet()
 {
     return QStringLiteral(R"(
@@ -1423,6 +1447,7 @@ QString textInputStyleSheet()
 PixelCheckBox::PixelCheckBox(const QString& text, QWidget* parent)
     : QCheckBox(text, parent)
 {
+    setFont(PixelTheme::uiFont());
     setCursor(Qt::PointingHandCursor);
     setMouseTracking(true);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -1619,6 +1644,7 @@ PixelOptionButton::PixelOptionButton(const QString& text, Indicator indicator, Q
     : QAbstractButton(parent)
     , m_indicator(indicator)
 {
+    setFont(PixelTheme::uiFont());
     setText(text);
     setCheckable(true);
     setAutoExclusive(indicator == Indicator::Radio);

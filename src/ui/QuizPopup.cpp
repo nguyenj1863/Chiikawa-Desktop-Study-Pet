@@ -86,25 +86,46 @@ QPushButton* makeButton(const QString& text, QWidget* parent, const char* object
 
 } // namespace
 
-QuizPopup::QuizPopup(QWidget* parent)
-#ifdef Q_OS_MACOS
-    : QWidget(parent, Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
-#else
-    : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
-#endif
+namespace {
+
+Qt::WindowFlags popupWindowFlags(bool embedded)
 {
+    if (embedded) {
+        return {};
+    }
+#ifdef Q_OS_MACOS
+    return Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint;
+#else
+    return Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint;
+#endif
+}
+
+} // namespace
+
+QuizPopup::QuizPopup(QWidget* parent, bool embedded)
+    : QWidget(parent, popupWindowFlags(embedded))
+{
+    m_embedded = embedded;
     PixelTheme::ensureFontsLoaded();
-    setAttribute(Qt::WA_TranslucentBackground);
-    setAttribute(Qt::WA_ShowWithoutActivating);
     setAttribute(Qt::WA_DeleteOnClose, false);
     setFocusPolicy(Qt::NoFocus);
-    setFixedWidth(kStudyWidth);
-    setStyleSheet(PixelTheme::styleSheet()
-                  + QStringLiteral("QScrollArea#quizScroll, QWidget#quizBody { background: transparent; border: none; }"));
+    const QString transparentBody = QStringLiteral("QScrollArea#quizScroll, QWidget#quizBody { background: transparent; border: none; }");
+    if (m_embedded) {
+        setStyleSheet(transparentBody);   // the hosting window already provides the theme
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    } else {
+        setAttribute(Qt::WA_TranslucentBackground);
+        setAttribute(Qt::WA_ShowWithoutActivating);
+        setFixedWidth(kStudyWidth);
+        setStyleSheet(PixelTheme::styleSheet() + transparentBody);
+    }
     setAccessibleName(QStringLiteral("Study question"));
 
     auto* root = new QVBoxLayout(this);
     root->setSpacing(8);
+    if (m_embedded) {
+        root->setContentsMargins(0, 0, 0, 0);
+    }
 
     // Header: category + close
     auto* header = new QHBoxLayout();
@@ -118,6 +139,7 @@ QuizPopup::QuizPopup(QWidget* parent)
     m_closeBtn->setToolTip(QStringLiteral("Dismiss"));
     m_closeBtn->setAccessibleName(QStringLiteral("Dismiss question"));
     header->addWidget(m_closeBtn, 0, Qt::AlignTop);
+    m_closeBtn->setVisible(!m_embedded);
     root->addLayout(header);
 
     // Scrollable body: everything between the header and the buttons.
@@ -126,7 +148,7 @@ QuizPopup::QuizPopup(QWidget* parent)
     m_scroll->setFrameShape(QFrame::NoFrame);
     m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_scroll->setWidgetResizable(false);
+    m_scroll->setWidgetResizable(m_embedded);
     m_scroll->viewport()->setAutoFillBackground(false);
     m_scroll->setFocusPolicy(Qt::NoFocus);
     m_body = new QWidget();
@@ -194,6 +216,7 @@ QuizPopup::QuizPopup(QWidget* parent)
     body->addWidget(m_explanationLabel);
     m_sourceLabel = makeLabel("muted", m_body);
     body->addWidget(m_sourceLabel);
+    body->addStretch(1);   // embedded: keep the question at the top instead of spreading it out
 
     m_scroll->setWidget(m_body);
     root->addWidget(m_scroll);
@@ -240,16 +263,18 @@ QuizPopup::QuizPopup(QWidget* parent)
     m_selfRow->hide();
     root->addWidget(m_selfRow);
 
-    m_opacity = new QGraphicsOpacityEffect(this);
-    m_opacity->setOpacity(0.0);
-    setGraphicsEffect(m_opacity);
+    if (!m_embedded) {
+        m_opacity = new QGraphicsOpacityEffect(this);
+        m_opacity->setOpacity(0.0);
+        setGraphicsEffect(m_opacity);
 
-    m_fade = new QPropertyAnimation(m_opacity, "opacity", this);
-    connect(m_fade, &QPropertyAnimation::finished, this, &QuizPopup::finishFadeOut);
+        m_fade = new QPropertyAnimation(m_opacity, "opacity", this);
+        connect(m_fade, &QPropertyAnimation::finished, this, &QuizPopup::finishFadeOut);
 
-    m_slide = new QPropertyAnimation(this, "pos", this);
-    m_slide->setDuration(kFadeInMs);
-    m_slide->setEasingCurve(QEasingCurve::OutCubic);
+        m_slide = new QPropertyAnimation(this, "pos", this);
+        m_slide->setDuration(kFadeInMs);
+        m_slide->setEasingCurve(QEasingCurve::OutCubic);
+    }
 
     m_autoHide.setSingleShot(true);
     connect(&m_autoHide, &QTimer::timeout, this, &QuizPopup::dismiss);
@@ -408,7 +433,9 @@ void QuizPopup::showQuestion(const Question& question, const QRect& petGlobalGeo
     m_originalWritten.clear();
     m_phase = Phase::Asking;
 
-    setFixedWidth(kStudyWidth);
+    if (!m_embedded) {
+        setFixedWidth(kStudyWidth);
+    }
     m_categoryLabel->setText(question.category.isEmpty() ? QStringLiteral("Study")
                                                          : QStringLiteral("Study · %1").arg(question.category));
     m_promptLabel->setText(question.prompt);
@@ -447,7 +474,7 @@ void QuizPopup::showQuestion(const Question& question, const QRect& petGlobalGeo
     m_actionRow->show();
     m_selfRow->hide();
     m_skipBtn->show();
-    m_laterBtn->setVisible(true);
+    m_laterBtn->setVisible(!m_embedded);
     m_revealBtn->setVisible(question.type == QuestionType::Written);
     m_revealBtn->setEnabled(true);
     placeActionButtons(question.type == QuestionType::Written);
@@ -522,6 +549,10 @@ void QuizPopup::placeActionButtons(bool twoRows)
 
 void QuizPopup::present(const QRect& petGlobalGeometry)
 {
+    if (m_embedded) {
+        setVisible(true);   // laid out by the hosting page; nothing to place or fade
+        return;
+    }
     m_lastPetRect = petGlobalGeometry;
     reposition(petGlobalGeometry);
     const QPoint finalPos = pos();
@@ -620,7 +651,7 @@ void QuizPopup::showEvaluation(const Evaluation& evaluation, int xp)
     m_actionRow->show();
     placeActionButtons(false);
     m_submitBtn->setEnabled(true);
-    m_submitBtn->setText(QStringLiteral("Done"));
+    m_submitBtn->setText(m_embedded ? m_advanceText : QStringLiteral("Done"));
 
     QString headline;
     if (evaluation.kind == AttemptKind::SelfAssessed) {
@@ -679,7 +710,9 @@ void QuizPopup::showEvaluation(const Evaluation& evaluation, int xp)
 
     reposition(m_lastPetRect);
     update();
-    startAutoHide(kStudyResultDisplayMs);
+    if (!m_embedded) {
+        startAutoHide(kStudyResultDisplayMs);
+    }
 }
 
 void QuizPopup::showSuggestion(const QString& suggestion)
@@ -776,6 +809,9 @@ void QuizPopup::fitToContent(const QRect& available)
 
 void QuizPopup::reposition(const QRect& petGlobalGeometry)
 {
+    if (m_embedded) {
+        return;   // the hosting layout sizes embedded questions
+    }
     QScreen* screen = QGuiApplication::screenAt(petGlobalGeometry.center());
     if (!screen) {
         screen = QGuiApplication::primaryScreen();
@@ -796,6 +832,19 @@ void QuizPopup::reposition(const QRect& petGlobalGeometry)
 
 void QuizPopup::dismiss()
 {
+    if (m_embedded) {
+        // Embedded: no fade. closed() tells the host to move on to the next question.
+        if (m_phase == Phase::Hidden) {
+            return;
+        }
+        m_showingResult = false;
+        m_phase = Phase::Hidden;
+        if (m_writtenEdit->hasFocus()) {
+            m_writtenEdit->clearFocus();
+        }
+        emit closed();
+        return;
+    }
     if (!isVisible() || m_fadingOut) {
         return;
     }
@@ -804,7 +853,7 @@ void QuizPopup::dismiss()
 
 int QuizPopup::remainingDismissMs() const
 {
-    if (!isVisible() || m_fadingOut || !(m_showingResult || m_phase == Phase::Notice)) {
+    if (m_embedded || !isVisible() || m_fadingOut || !(m_showingResult || m_phase == Phase::Notice)) {
         return 0;
     }
     if (m_hovered || !m_autoHide.isActive()) {
@@ -926,6 +975,9 @@ void QuizPopup::finishFadeOut()
 void QuizPopup::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
+    if (m_embedded) {
+        return;   // the hosting window paints the glass
+    }
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
 

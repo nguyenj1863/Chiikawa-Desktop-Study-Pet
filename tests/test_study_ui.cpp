@@ -11,10 +11,13 @@
 #include "study/StudyDatabase.h"
 #include "study/StudyLibrary.h"
 #include "study/QuizController.h"
+#include "study/QuizController.h"
 #include "ui/QuizPopup.h"
 #include "ui/PixelTheme.h"
+#include "ui/CollapsibleSection.h"
 #include "ui/PixelSegmentedControl.h"
 #include "ui/StudyLibraryWindow.h"
+#include "ui/StudyPracticeView.h"
 #include "ui/StudyPreferencesPage.h"
 #include "ui/StudySetList.h"
 
@@ -32,6 +35,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
+#include <QSqlQuery>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTemporaryDir>
@@ -87,6 +91,38 @@ Question writtenQuestion()
     return q;
 }
 
+/** Adds a study set with a ready document and `count` generated-looking questions of one type. */
+qint64 seedSet(StudyLibrary& library, const QString& name, int count, QuestionType type = QuestionType::SingleChoice)
+{
+    StudyDatabase* db = library.database();
+    const qint64 set = db->addStudySet(name).value_or(0);
+    const qint64 doc = db->addDocument(set, QStringLiteral("Deck"), QStringLiteral("deck.pptx"), DocumentKind::Pptx).value_or(0);
+    db->setDocumentStatus(doc, DocumentStatus::Ready);
+    for (int i = 0; i < count; ++i) {
+        Question q = choiceQuestion(type);
+        q.id = QStringLiteral("seed-%1-%2-%3").arg(set).arg(static_cast<int>(type)).arg(i);
+        q.prompt = QStringLiteral("Question %1 of %2").arg(i + 1).arg(name);
+        q.topic = QStringLiteral("topic %1").arg(i);
+        q.setId = set;
+        q.documentId = doc;
+        db->saveQuestion(q, 0, QStringLiteral("test"));
+    }
+    return set;
+}
+
+/** Answers the open single-choice question correctly (option "b") and checks it. */
+void answerCorrectly(QuizPopup* view)
+{
+    QVERIFY(view->phase() == QuizPopup::Phase::Asking);
+    for (PixelOptionButton* option : view->optionButtons()) {
+        if (option->property("optionId").toString() == QLatin1String("b")) {
+            option->click();
+        }
+    }
+    QVERIFY(view->submitButton()->isEnabled());
+    view->submitButton()->click();
+}
+
 quint16 closedPort()
 {
     QTcpServer s;
@@ -127,6 +163,10 @@ private slots:
     void libraryHidesTheReadyBannerAndCollapsesFormats();
     void libraryExplainsWhichFilesCanBeImported();
     void preferencesTabControlsCheckInsFormatsAndProgress();
+    void practiceRunsASetFromItsPage();
+    void studyTypographyMatchesTheSharedTheme();
+    void practiceSkipEndAndFormatRules();
+    void practicingEarlyKeepsTheReviewSchedule();
     void petStudyFlowWorksWithoutOllama();
     void studyShortcutOpensTheStudyWindow();
 
@@ -564,16 +604,16 @@ void TestStudyUi::libraryHidesTheReadyBannerAndCollapsesFormats()
     QVERIFY(id > 0);
     QVERIFY(window.isShowingSet());
     QVERIFY(!window.formatsExpanded());
-    QVERIFY(window.formatsToggle()->text().contains(QStringLiteral("Multiple choice")));
-    QVERIFY(!window.formatsToggle()->text().contains(QStringLiteral("Written")));
+    QVERIFY(window.formatsSection()->summaryLabel()->text().contains(QStringLiteral("Multiple choice")));
+    QVERIFY(!window.formatsSection()->summaryLabel()->text().contains(QStringLiteral("Written")));
     QVERIFY(window.formatCheck(SettingsDefaults::kStudyFormatSingleChoice)->isChecked());
     QVERIFY(!window.formatCheck(SettingsDefaults::kStudyFormatMultiSelect)->isChecked());
     QVERIFY(!window.formatCheck(SettingsDefaults::kStudyFormatWritten)->isChecked());
-    window.formatsToggle()->click();
+    window.formatsSection()->setExpanded(!window.formatsExpanded(), false);
     QVERIFY(window.formatsExpanded());
     window.formatCheck(SettingsDefaults::kStudyFormatWritten)->setChecked(true);
-    QVERIFY(window.formatsToggle()->text().contains(QStringLiteral("Written answer")));
-    window.formatsToggle()->click();
+    QVERIFY(window.formatsSection()->summaryLabel()->text().contains(QStringLiteral("Written answer")));
+    window.formatsSection()->setExpanded(!window.formatsExpanded(), false);
     QVERIFY(!window.formatsExpanded());
     QVERIFY(window.removeCurrentSet(true));
 }
@@ -666,10 +706,10 @@ void TestStudyUi::preferencesTabControlsCheckInsFormatsAndProgress()
     // Formats live here: multiple choice by default, summary follows changes.
     QVERIFY(prefs->formatsSummary().contains(QStringLiteral("Multiple choice")));
     QVERIFY(!prefs->formatsExpanded());
-    prefs->formatsToggle()->click();
+    prefs->formatsSection()->setExpanded(true, false);
     QVERIFY(prefs->formatsExpanded());
     prefs->formatCheck(SettingsDefaults::kStudyFormatWritten)->setChecked(true);
-    QVERIFY(prefs->formatsToggle()->text().contains(QStringLiteral("Written answer")));
+    QVERIFY(prefs->formatsSection()->summaryLabel()->text().contains(QStringLiteral("Written answer")));
     QVERIFY(window.practiceHint()->text().contains(QStringLiteral("written answer")));
     prefs->formatCheck(SettingsDefaults::kStudyFormatSingleChoice)->setChecked(false);
     prefs->formatCheck(SettingsDefaults::kStudyFormatWritten)->setChecked(false);   // would leave none on
@@ -689,6 +729,247 @@ void TestStudyUi::preferencesTabControlsCheckInsFormatsAndProgress()
 
     QVERIFY(window.removeSet(a, true));
     QVERIFY(window.removeSet(b, true));
+}
+
+void TestStudyUi::practiceRunsASetFromItsPage()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    QuestionGenerator generator(library.database(), &ollama);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+
+    const qint64 empty = window.createSet(QStringLiteral("Empty"));
+    QVERIFY(empty > 0);
+    QVERIFY(!window.practiceButton()->isEnabled());   // nothing to practise yet
+    QVERIFY(!window.startPractice());
+    window.showSetList();
+
+    const qint64 set = seedSet(library, QStringLiteral("Joins"), 3);
+    window.showNear(kPet);
+    window.openSet(set);
+    QVERIFY(window.practiceButton()->isEnabled());
+    QVERIFY(window.practiceButton()->text().contains(QStringLiteral("(3)")));
+
+    window.practiceButton()->click();
+    QVERIFY(window.isPracticing());
+    QVERIFY(!window.isShowingSet() || window.titleLabel()->text().contains(QStringLiteral("Practice")));
+    StudyPracticeView* view = window.practiceView();
+    QVERIFY(view->isActive());
+    QCOMPARE(view->progressLabel()->text(), QStringLiteral("Question 1 of 3"));
+
+    for (int i = 0; i < 3; ++i) {
+        QuizPopup* qv = view->questionView();
+        QVERIFY(qv->isEmbedded());
+        QCOMPARE(view->progressLabel()->text(), QStringLiteral("Question %1 of 3").arg(i + 1));
+        answerCorrectly(qv);
+        QVERIFY(qv->phase() == QuizPopup::Phase::Result);
+        QCOMPARE(qv->submitButton()->text(), i < 2 ? QStringLiteral("Next question") : QStringLiteral("Finish"));
+        qv->submitButton()->click();   // advance
+    }
+    QVERIFY(view->showingSummary());
+    QCOMPARE(view->summary().answered, 3);
+    QCOMPARE(view->summary().correct, 3);
+    QVERIFY(view->summary().xp > 0);
+    QVERIFY(view->summaryLabel()->text().contains(QStringLiteral("3 of 3")));
+
+    // Every answer was recorded with a rating and moved its card out of "new".
+    QSqlQuery q(library.database()->connection());
+    QVERIFY(q.exec(QStringLiteral("SELECT COUNT(*) FROM attempts WHERE rating IS NOT NULL")));
+    QVERIFY(q.next());
+    QCOMPARE(q.value(0).toInt(), 3);
+    q.finish();
+    const QVector<Question> questions = library.database()->setQuestions(set, {}, true);
+    QCOMPARE(questions.size(), 3);
+    for (const Question& question : questions) {
+        QCOMPARE(tracker.card(question.id).state, CardState::Review);
+    }
+    // Practising does not touch the pet's "recently asked" memory.
+    QVERIFY(settings.recentQuestionIds().isEmpty());
+
+    view->backButton()->click();
+    QVERIFY(!window.isPracticing());
+    QVERIFY(window.isShowingSet());
+    QVERIFY(window.removeSet(set, true));
+    QVERIFY(window.removeSet(empty, true));
+}
+
+void TestStudyUi::practiceSkipEndAndFormatRules()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    QuestionGenerator generator(library.database(), &ollama);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+
+    // Two multiple choice and one multiple select question in the same set.
+    const qint64 set = seedSet(library, QStringLiteral("Formats"), 2);
+    {
+        StudyDatabase* db = library.database();
+        const qint64 doc = db->documents(set).first().id;
+        Question multi = choiceQuestion(QuestionType::MultiSelect);
+        multi.id = QStringLiteral("multi-1");
+        multi.setId = set;
+        multi.documentId = doc;
+        db->saveQuestion(multi, 0, QStringLiteral("test"));
+    }
+    window.showNear(kPet);
+    window.openSet(set);
+    // Multiple choice is the default, so only the two single-choice questions are offered.
+    QVERIFY(window.practiceButton()->text().contains(QStringLiteral("(2)")));
+    window.preferences()->formatCheck(SettingsDefaults::kStudyFormatMultiSelect)->setChecked(true);
+    QVERIFY(window.practiceButton()->text().contains(QStringLiteral("(3)")));
+    window.preferences()->formatCheck(SettingsDefaults::kStudyFormatMultiSelect)->setChecked(false);
+    QVERIFY(window.practiceButton()->text().contains(QStringLiteral("(2)")));
+
+    // Skip the first question, answer the second, then end the session early.
+    QVERIFY(window.startPractice());
+    StudyPracticeView* view = window.practiceView();
+    view->questionView()->skipButton()->click();
+    QCOMPARE(view->progressLabel()->text(), QStringLiteral("Question 2 of 2"));
+    answerCorrectly(view->questionView());
+    QCOMPARE(view->questionView()->submitButton()->text(), QStringLiteral("Finish"));
+    view->endButton()->click();   // ends with answers: shows the summary
+    QVERIFY(view->showingSummary());
+    QCOMPARE(view->summary().skipped, 1);
+    QCOMPARE(view->summary().answered, 1);
+    QVERIFY(view->summaryLabel()->text().contains(QStringLiteral("1 skipped")));
+
+    // Practice again starts a fresh session; ending without answering just leaves.
+    view->againButton()->click();
+    QVERIFY(!view->showingSummary());
+    QCOMPARE(view->summary().answered, 0);
+    view->endButton()->click();
+    QVERIFY(!window.isPracticing());
+
+    // Leaving through Back drops a session without a summary.
+    QVERIFY(window.startPractice());
+    window.backButton()->click();
+    QVERIFY(!window.isPracticing());
+    QVERIFY(window.isShowingSet());
+    QVERIFY(window.removeSet(set, true));
+}
+
+void TestStudyUi::practicingEarlyKeepsTheReviewSchedule()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    QuestionGenerator generator(library.database(), &ollama);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+
+    const qint64 set = seedSet(library, QStringLiteral("Schedule"), 2);
+    window.showNear(kPet);
+    window.openSet(set);
+    QVERIFY(window.startPractice());
+    StudyPracticeView* view = window.practiceView();
+    for (int round = 0; round < 2; ++round) {
+        for (int i = 0; i < 2; ++i) {
+            answerCorrectly(view->questionView());
+            view->questionView()->submitButton()->click();
+        }
+        QVERIFY(view->showingSummary());
+        if (round == 0) {
+            view->againButton()->click();   // second session starts right away
+        }
+    }
+    // The second pass was early (cards were scheduled for tomorrow): attempts and XP are kept,
+    // but each card was only scheduled once.
+    QSqlQuery q(library.database()->connection());
+    QVERIFY(q.exec(QStringLiteral("SELECT COUNT(*) FROM attempts")));
+    QVERIFY(q.next());
+    QCOMPARE(q.value(0).toInt(), 4);
+    q.finish();
+    for (const Question& question : library.database()->setQuestions(set, {}, true)) {
+        QCOMPARE(tracker.card(question.id).reps, 1);
+    }
+    window.practiceView()->abandon();
+    QVERIFY(window.removeSet(set, true));
+}
+
+void TestStudyUi::studyTypographyMatchesTheSharedTheme()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    QuestionGenerator generator(library.database(), &ollama);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+    const qint64 set = seedSet(library, QStringLiteral("Fonts"), 1);
+    window.showNear(kPet);
+    window.openSet(set);
+    window.showTab(1);
+    QApplication::processEvents();
+
+    // Reference controls: built under the same shared style sheet the Settings window uses.
+    QWidget host;
+    host.setStyleSheet(PixelTheme::styleSheet());
+    auto* refCheck = new PixelCheckBox(QStringLiteral("x"), &host);
+    auto* refOption = new PixelOptionButton(QStringLiteral("x"), PixelOptionButton::Indicator::Radio, &host);
+    auto* refCombo = new QComboBox(&host);
+    auto* refLabel = new QLabel(QStringLiteral("x"), &host);
+    auto* refTitle = new QLabel(QStringLiteral("x"), &host);
+    refTitle->setObjectName(QStringLiteral("sectionTitle"));
+    auto* refMuted = new QLabel(QStringLiteral("x"), &host);
+    refMuted->setObjectName(QStringLiteral("muted"));
+    auto* refButton = new QPushButton(QStringLiteral("x"), &host);
+    host.show();
+    const auto same = [](const QFont& a, const QFont& b) {
+        return a.family() == b.family() && a.pixelSize() == b.pixelSize() && a.weight() == b.weight();
+    };
+    const auto check = [&](QWidget* study, QWidget* reference, const char* what) {
+        study->ensurePolished();
+        reference->ensurePolished();
+        QVERIFY2(same(study->font(), reference->font()),
+                 qPrintable(QStringLiteral("%1: %2 %3px w%4 vs %5 %6px w%7")
+                                .arg(QLatin1String(what), study->font().family()).arg(study->font().pixelSize()).arg(study->font().weight())
+                                .arg(reference->font().family()).arg(reference->font().pixelSize()).arg(reference->font().weight())));
+    };
+
+    StudyPreferencesPage* prefs = window.preferences();
+    check(prefs->checkInsCheck(), refCheck, "preferences checkbox");
+    check(prefs->formatCheck(SettingsDefaults::kStudyFormatWritten), refCheck, "format checkbox");
+    check(prefs->mixedModeButton(), refOption, "radio option");
+    check(prefs->frequencyCombo(), refCombo, "frequency combo");
+    check(prefs->sourceCombo(), refCombo, "set combo");
+    check(prefs->focusCombo(), refCombo, "format combo");
+    check(prefs->askNowButton(), refButton, "button");
+    check(prefs->formatsSection()->titleLabel(), refTitle, "section title");
+    for (QLabel* label : prefs->findChildren<QLabel*>()) {
+        if (label->objectName() == QLatin1String("muted")) {
+            check(label, refMuted, "muted label");
+        } else if (label->objectName().isEmpty() && label->text().size() < 14) {
+            check(label, refLabel, "plain label");
+        }
+    }
+    // The painted controls take their font from the theme, not the OS default.
+    QVERIFY(same(refCheck->font(), PixelTheme::uiFont()));
+    QVERIFY(same(refOption->font(), PixelTheme::uiFont()));
+
+    // The set page and its dropdown-style controls use the same classes.
+    for (QPushButton* chip : window.findChildren<QPushButton*>(QStringLiteral("chip"))) {
+        check(chip, refButton, "chip");
+    }
+    QVERIFY(window.removeSet(set, true));
 }
 
 void TestStudyUi::petStudyFlowWorksWithoutOllama()

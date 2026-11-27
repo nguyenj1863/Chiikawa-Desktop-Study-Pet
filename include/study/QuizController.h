@@ -51,6 +51,13 @@ public:
     [[nodiscard]] QString activeProvider() const { return m_activeProvider; }
 
     void setProgressTracker(ProgressTracker* tracker) { m_tracker = tracker; }
+    /**
+     * Practice sessions walk a queue on purpose: recent questions are neither avoided nor
+     * remembered, and answering a card that is not yet due records the attempt and XP but leaves
+     * its review schedule alone (only new or due cards move).
+     */
+    void setPracticeMode(bool enabled) { m_practiceMode = enabled; }
+    [[nodiscard]] bool practiceMode() const { return m_practiceMode; }
     void setWrittenEvaluator(WrittenAnswerEvaluator* evaluator);
 
     /** Fetches a new question; returns false when one is already active or none are available. */
@@ -100,4 +107,5 @@ private:
     int m_judgeId = 0;
     std::optional<Question> m_current;
     State m_state = State::Idle;
+    bool m_practiceMode = false;
 };

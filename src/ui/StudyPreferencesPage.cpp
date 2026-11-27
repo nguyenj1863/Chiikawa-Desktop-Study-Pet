@@ -5,6 +5,7 @@
 #include "study/ProgressTracker.h"
 #include "study/QuestionGenerator.h"
 #include "study/StudyLibrary.h"
+#include "ui/CollapsibleSection.h"
 #include "ui/PixelTheme.h"
 #include "ui/StudyUiHelpers.h"
 
@@ -41,21 +42,27 @@ void StudyPreferencesPage::build()
     root->setContentsMargins(0, 0, 4, 0);
     root->setSpacing(7);
 
+    // The same collapsible sections Settings uses, so both windows look and feel alike.
+    const auto section = [this](const QString& title, bool expanded) {
+        auto* sec = new CollapsibleSection(title, expanded, this);
+        connect(sec, &CollapsibleSection::userToggled, this, [this](bool) { emit buttonActivated(); });
+        connect(sec, &CollapsibleSection::heightChanged, this, [this]() { updateGeometry(); });
+        return sec;
+    };
+
     // Chiikawa's questions
-    auto* askCard = makeCard(this);
-    auto* ask = new QVBoxLayout(askCard);
-    ask->setContentsMargins(10, 8, 10, 9);
-    ask->setSpacing(5);
-    ask->addWidget(makeLabel(QStringLiteral("Chiikawa's questions"), "sectionTitle", askCard));
-    m_checkIns = new PixelCheckBox(QStringLiteral("Ask me questions while I study"), askCard);
+    m_checkInSection = section(QStringLiteral("Chiikawa's questions"), true);
+    auto* ask = new QVBoxLayout();
+    ask->setSpacing(4);
+    m_checkIns = new PixelCheckBox(QStringLiteral("Ask me questions while I study"), this);
     m_checkIns->setObjectName(QStringLiteral("checkInsEnableCheck"));
     m_checkIns->setToolTip(QStringLiteral("Chiikawa occasionally asks a quick question while the study timer runs"));
     ask->addWidget(m_checkIns);
 
     auto* sourceRow = new QHBoxLayout();
     sourceRow->setSpacing(6);
-    sourceRow->addWidget(new QLabel(QStringLiteral("From"), askCard));
-    m_source = new QComboBox(askCard);
+    sourceRow->addWidget(new QLabel(QStringLiteral("From"), this));
+    m_source = new QComboBox(this);
     m_source->setObjectName(QStringLiteral("studySourceCombo"));
     m_source->setCursor(Qt::PointingHandCursor);
     m_source->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -66,8 +73,8 @@ void StudyPreferencesPage::build()
 
     auto* frequencyRow = new QHBoxLayout();
     frequencyRow->setSpacing(6);
-    frequencyRow->addWidget(new QLabel(QStringLiteral("How often"), askCard));
-    m_frequency = new QComboBox(askCard);
+    frequencyRow->addWidget(new QLabel(QStringLiteral("How often"), this));
+    m_frequency = new QComboBox(this);
     m_frequency->setObjectName(QStringLiteral("checkInFrequencyCombo"));
     m_frequency->setCursor(Qt::PointingHandCursor);
     m_frequency->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -80,12 +87,13 @@ void StudyPreferencesPage::build()
 
     auto* askRow = new QHBoxLayout();
     askRow->setSpacing(6);
-    askRow->addWidget(makeLabel(QStringLiteral("Questions appear while the study timer runs."), "muted", askCard), 1);
-    m_askNow = makeButton(QStringLiteral("Ask me now"), askCard, "primary");
+    askRow->addWidget(makeLabel(QStringLiteral("Questions appear while the study timer runs."), "muted", this), 1);
+    m_askNow = makeButton(QStringLiteral("Ask me now"), this, "primary");
     m_askNow->setToolTip(QStringLiteral("Show a question next to Chiikawa right now"));
     askRow->addWidget(m_askNow);
     ask->addLayout(askRow);
-    root->addWidget(askCard);
+    m_checkInSection->setContentLayout(ask);
+    root->addWidget(m_checkInSection);
 
     connect(m_checkIns, &QCheckBox::toggled, this, &StudyPreferencesPage::applyCheckIns);
     connect(m_checkIns, &QCheckBox::clicked, this, [this](bool) { emit buttonActivated(); });
@@ -99,21 +107,9 @@ void StudyPreferencesPage::build()
     });
 
     // Question formats: collapsed, multiple choice by default
-    auto* formatCard = makeCard(this);
-    auto* formats = new QVBoxLayout(formatCard);
-    formats->setContentsMargins(10, 6, 10, 6);
-    formats->setSpacing(3);
-    m_formatsToggle = makeButton(QString(), formatCard, "chip");
-    m_formatsToggle->setObjectName(QStringLiteral("formatsToggle"));
-    m_formatsToggle->setStyleSheet(QStringLiteral("QPushButton#formatsToggle { text-align: left; background: transparent; border: none;"
-                                                  " color: #F3F6FC; padding: 3px 2px; }"
-                                                  " QPushButton#formatsToggle:hover { color: #FFFFFF; }"));
-    m_formatsToggle->setIconSize(QSize(12, 12));
-    formats->addWidget(m_formatsToggle);
-    m_formatsBody = new QWidget(formatCard);
-    auto* body = new QVBoxLayout(m_formatsBody);
-    body->setContentsMargins(0, 0, 0, 0);
-    body->setSpacing(3);
+    m_formatsSection = section(QStringLiteral("Question formats"), false);
+    auto* body = new QVBoxLayout();
+    body->setSpacing(4);
     const QList<QPair<int, QString>> formatNames = {
         {SettingsDefaults::kStudyFormatSingleChoice, QStringLiteral("Multiple choice")},
         {SettingsDefaults::kStudyFormatMultiSelect, QStringLiteral("Multiple select")},
@@ -122,7 +118,7 @@ void StudyPreferencesPage::build()
     auto* checks = new QHBoxLayout();
     checks->setSpacing(4);
     for (const auto& f : formatNames) {
-        auto* check = new PixelCheckBox(f.second, m_formatsBody);
+        auto* check = new PixelCheckBox(f.second, this);
         check->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
         m_formatChecks.insert(f.first, check);
         checks->addWidget(check);
@@ -133,8 +129,8 @@ void StudyPreferencesPage::build()
     body->addLayout(checks);
     auto* modeRow = new QHBoxLayout();
     modeRow->setSpacing(4);
-    m_mixedBtn = new PixelOptionButton(QStringLiteral("Mixed"), PixelOptionButton::Indicator::Radio, m_formatsBody);
-    m_focusBtn = new PixelOptionButton(QStringLiteral("Only"), PixelOptionButton::Indicator::Radio, m_formatsBody);
+    m_mixedBtn = new PixelOptionButton(QStringLiteral("Mixed"), PixelOptionButton::Indicator::Radio, this);
+    m_focusBtn = new PixelOptionButton(QStringLiteral("Only"), PixelOptionButton::Indicator::Radio, this);
     for (PixelOptionButton* b : {m_mixedBtn, m_focusBtn}) {
         b->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         b->setFixedWidth(b == m_mixedBtn ? 82 : 66);
@@ -142,40 +138,36 @@ void StudyPreferencesPage::build()
         connect(b, &QAbstractButton::toggled, this, &StudyPreferencesPage::applyFormatControls);
         connect(b, &QAbstractButton::clicked, this, [this](bool) { emit buttonActivated(); });
     }
-    m_focusCombo = new QComboBox(m_formatsBody);
+    m_focusCombo = new QComboBox(this);
     m_focusCombo->setCursor(Qt::PointingHandCursor);
     configureTranslucentPopup(m_focusCombo);
     for (const auto& f : formatNames) {
         m_focusCombo->addItem(f.second, f.first);
     }
     connect(m_focusCombo, &QComboBox::currentIndexChanged, this, &StudyPreferencesPage::applyFormatControls);
+    connect(m_focusCombo, &QComboBox::activated, this, [this](int) { emit buttonActivated(); });
     modeRow->addWidget(m_mixedBtn);
     modeRow->addWidget(m_focusBtn);
     modeRow->addWidget(m_focusCombo, 1);
     body->addLayout(modeRow);
-    m_formatHint = makeLabel(QString(), "muted", m_formatsBody);
+    m_formatsSection->setContentLayout(body);
+    root->addWidget(m_formatsSection);
+    // Shown above the sections so it never changes a section's height.
+    m_formatHint = makeLabel(QString(), "muted", this);
     m_formatHint->hide();
-    body->addWidget(m_formatHint);
-    formats->addWidget(m_formatsBody);
-    root->addWidget(formatCard);
-    connect(m_formatsToggle, &QPushButton::clicked, this, [this]() {
-        emit buttonActivated();
-        setFormatsExpanded(!formatsExpanded());
-    });
-    setFormatsExpanded(false);
+    root->insertWidget(0, m_formatHint);
 
     // AI model (only offered when a model can be chosen or downloaded)
-    m_modelCard = makeCard(this);
-    auto* model = new QHBoxLayout(m_modelCard);
-    model->setContentsMargins(10, 8, 10, 8);
+    m_modelCard = section(QStringLiteral("AI model"), true);
+    auto* model = new QHBoxLayout();
     model->setSpacing(6);
-    model->addWidget(makeLabel(QStringLiteral("AI model"), "sectionTitle", m_modelCard));
-    m_modelCombo = new QComboBox(m_modelCard);
+    m_modelCombo = new QComboBox(this);
     m_modelCombo->setObjectName(QStringLiteral("studyModelCombo"));
     m_modelCombo->setCursor(Qt::PointingHandCursor);
     m_modelCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     configureTranslucentPopup(m_modelCombo);
     model->addWidget(m_modelCombo, 1);
+    m_modelCard->setContentLayout(model);
     root->addWidget(m_modelCard);
     connect(m_modelCombo, &QComboBox::activated, this, [this](int index) {
         emit buttonActivated();
@@ -194,16 +186,16 @@ void StudyPreferencesPage::build()
     });
 
     // Progress
-    auto* progressCard = makeCard(this);
-    auto* progress = new QHBoxLayout(progressCard);
-    progress->setContentsMargins(10, 8, 10, 8);
+    m_progressSection = section(QStringLiteral("Progress"), true);
+    auto* progress = new QHBoxLayout();
     progress->setSpacing(6);
-    m_progressLabel = makeLabel(QString(), "sectionSummary", progressCard);
-    m_reset = makeButton(QStringLiteral("Reset progress"), progressCard);
+    m_progressLabel = makeLabel(QString(), "sectionSummary", this);
+    m_reset = makeButton(QStringLiteral("Reset progress"), this);
     m_reset->setToolTip(QStringLiteral("Clear study XP, answer history and review schedules. Documents and questions are kept."));
     progress->addWidget(m_progressLabel, 1);
     progress->addWidget(m_reset);
-    root->addWidget(progressCard);
+    m_progressSection->setContentLayout(progress);
+    root->addWidget(m_progressSection);
     connect(m_reset, &QPushButton::clicked, this, [this]() {
         emit buttonActivated();
         resetProgress(false);
@@ -212,17 +204,14 @@ void StudyPreferencesPage::build()
     root->addStretch(1);
 }
 
-bool StudyPreferencesPage::formatsExpanded() const
+QWidget* StudyPreferencesPage::modelCard() const
 {
-    return m_formatsBody && !m_formatsBody->isHidden();
+    return m_modelCard;
 }
 
-void StudyPreferencesPage::setFormatsExpanded(bool expanded)
+bool StudyPreferencesPage::formatsExpanded() const
 {
-    m_formatsBody->setVisible(expanded);
-    m_formatsToggle->setIcon(PixelTheme::icon(expanded ? PixelIcon::ChevronDown : PixelIcon::ChevronRight,
-                                              QColor(0xC8, 0xD4, 0xE6), 12));
-    m_formatsToggle->setAccessibleName(expanded ? QStringLiteral("Hide question formats") : QStringLiteral("Show question formats"));
+    return m_formatsSection && m_formatsSection->isExpanded();
 }
 
 QString StudyPreferencesPage::formatsSummary() const
@@ -246,7 +235,17 @@ QString StudyPreferencesPage::formatsSummary() const
 
 void StudyPreferencesPage::updateFormatsSummary()
 {
-    m_formatsToggle->setText(QStringLiteral(" Question formats  ·  %1").arg(formatsSummary()));
+    m_formatsSection->setSummary(formatsSummary());
+}
+
+void StudyPreferencesPage::updateCheckInSummary()
+{
+    if (!m_settings) {
+        return;
+    }
+    m_checkInSection->setSummary(m_settings->checkInsEnabled()
+                                     ? QStringLiteral("Every ~%1 min").arg(m_settings->checkInMinutes())
+                                     : QStringLiteral("Off"));
 }
 
 void StudyPreferencesPage::reloadSets()
@@ -289,6 +288,7 @@ void StudyPreferencesPage::syncFromSettings()
     m_focusCombo->setEnabled(focus);
     m_syncing = false;
     updateFormatsSummary();
+    updateCheckInSummary();
     refreshProgress();
 }
 
@@ -304,6 +304,7 @@ void StudyPreferencesPage::applyCheckIns()
         m_settings->setStudySetId(source);
     }
     m_settings->save();
+    updateCheckInSummary();
     refreshProgress();
     emit preferencesChanged();
 }
@@ -343,12 +344,14 @@ void StudyPreferencesPage::refreshProgress()
     }
     if (!m_tracker || !m_settings) {
         m_progressLabel->setText(QStringLiteral("No study answers yet"));
+        m_progressSection->setSummary(QString());
         return;
     }
     const StudyProgress p = m_tracker->progress(m_settings->studySetId());
     const int answered = p.attempted + p.selfAssessed;
     if (answered == 0) {
         m_progressLabel->setText(QStringLiteral("No study answers yet"));
+        m_progressSection->setSummary(QString());
         return;
     }
     QString text = QStringLiteral("%1 XP · %2 answered").arg(p.totalXp()).arg(answered);
@@ -356,6 +359,7 @@ void StudyPreferencesPage::refreshProgress()
         text += QStringLiteral(" · %1 to review").arg(p.reviewTopics.size());
     }
     m_progressLabel->setText(text);
+    m_progressSection->setSummary(QStringLiteral("%1 XP").arg(p.totalXp()));
 }
 
 void StudyPreferencesPage::updateModels(OllamaClient::SetupState state)

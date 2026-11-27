@@ -3,11 +3,13 @@
 #include <QAbstractButton>
 #include <QCheckBox>
 #include <QColor>
+#include <QFont>
 #include <QDialog>
 #include <QIcon>
 #include <QPushButton>
 #include <QString>
 
+class QComboBox;
 class QPainter;
 class QRect;
 
@@ -115,6 +117,17 @@ void ensureFontsLoaded();
 
 /** Resolved friendly body font family (Nunito, falling back to Segoe UI). */
 [[nodiscard]] QString bodyFontFamily();
+
+/**
+ * The one UI text font (the same face and size the style sheet gives labels, combo boxes and
+ * buttons). Controls that paint their own text, such as PixelCheckBox and PixelOptionButton,
+ * take their font from here so every window (Settings, Study, Chiikawa's bubble) matches.
+ */
+inline constexpr int kBodyPx = 12;
+[[nodiscard]] QFont uiFont(int pixelSize = kBodyPx, QFont::Weight weight = QFont::Normal);
+
+/** Frameless, translucent drop-down list so every combo popup matches the glass windows. */
+void configureComboPopup(QComboBox* combo);
 
 /**
  * Paints a smoked-black Liquid Glass floating surface with soft ambient shadow,

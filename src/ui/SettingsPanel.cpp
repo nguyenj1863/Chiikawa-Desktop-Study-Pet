@@ -242,14 +242,7 @@ private:
 
 void configureTranslucentPopup(QComboBox* combo)
 {
-    if (!combo || !combo->view()) {
-        return;
-    }
-    combo->view()->setCursor(Qt::PointingHandCursor);
-    if (QWidget* popup = combo->view()->window()) {
-        popup->setWindowFlags(popup->windowFlags() | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
-        popup->setAttribute(Qt::WA_TranslucentBackground, true);
-    }
+    PixelTheme::configureComboPopup(combo);
 }
 
 void styleTimeCombo(QComboBox* combo)

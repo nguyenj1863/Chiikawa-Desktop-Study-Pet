@@ -7,6 +7,7 @@
 #include <QWidget>
 
 class AppSettings;
+class CollapsibleSection;
 class PixelCheckBox;
 class PixelOptionButton;
 class ProgressTracker;
@@ -52,12 +53,12 @@ public:
     [[nodiscard]] QPushButton* resetButton() const { return m_reset; }
     [[nodiscard]] QLabel* progressLabel() const { return m_progressLabel; }
     [[nodiscard]] QComboBox* modelCombo() const { return m_modelCombo; }
-    [[nodiscard]] QWidget* modelCard() const { return m_modelCard; }
+    [[nodiscard]] QWidget* modelCard() const;
     [[nodiscard]] PixelCheckBox* formatCheck(int formatBit) const { return m_formatChecks.value(formatBit, nullptr); }
     [[nodiscard]] PixelOptionButton* mixedModeButton() const { return m_mixedBtn; }
     [[nodiscard]] PixelOptionButton* focusModeButton() const { return m_focusBtn; }
     [[nodiscard]] QComboBox* focusCombo() const { return m_focusCombo; }
-    [[nodiscard]] QPushButton* formatsToggle() const { return m_formatsToggle; }
+    [[nodiscard]] CollapsibleSection* formatsSection() const { return m_formatsSection; }
     [[nodiscard]] bool formatsExpanded() const;
 
     /** Asks for confirmation unless confirmed is true, then clears progress. */
@@ -73,8 +74,8 @@ private:
     void build();
     void applyCheckIns();
     void applyFormatControls();
-    void setFormatsExpanded(bool expanded);
     void updateFormatsSummary();
+    void updateCheckInSummary();
 
     AppSettings* m_settings = nullptr;
     StudyLibrary* m_library = nullptr;
@@ -87,15 +88,16 @@ private:
     QComboBox* m_frequency = nullptr;
     QPushButton* m_askNow = nullptr;
 
-    QPushButton* m_formatsToggle = nullptr;
-    QWidget* m_formatsBody = nullptr;
+    CollapsibleSection* m_checkInSection = nullptr;
+    CollapsibleSection* m_formatsSection = nullptr;
+    CollapsibleSection* m_progressSection = nullptr;
     QHash<int, PixelCheckBox*> m_formatChecks;
     PixelOptionButton* m_mixedBtn = nullptr;
     PixelOptionButton* m_focusBtn = nullptr;
     QComboBox* m_focusCombo = nullptr;
     QLabel* m_formatHint = nullptr;
 
-    QWidget* m_modelCard = nullptr;
+    CollapsibleSection* m_modelCard = nullptr;
     QComboBox* m_modelCombo = nullptr;
 
     QLabel* m_progressLabel = nullptr;
