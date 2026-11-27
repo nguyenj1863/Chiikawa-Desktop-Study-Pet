@@ -95,6 +95,12 @@ set(CHIIKAWA_ALARM_SOURCES
     include/alarm/UISoundManager.h
 )
 
+set(CHIIKAWA_AI_SOURCES
+    src/ai/OllamaClient.cpp
+    include/ai/LlmClient.h
+    include/ai/OllamaClient.h
+)
+
 set(CHIIKAWA_STUDY_SOURCES
     src/study/Chunker.cpp
     src/study/DocumentExtractor.cpp
@@ -164,6 +170,7 @@ add_library(chiikawa_core STATIC
     ${CHIIKAWA_QUICKACTIONS_SOURCES}
     ${CHIIKAWA_TIMER_SOURCES}
     ${CHIIKAWA_ALARM_SOURCES}
+    ${CHIIKAWA_AI_SOURCES}
     ${CHIIKAWA_STUDY_SOURCES}
     ${CHIIKAWA_TRIVIA_SOURCES}
     ${CHIIKAWA_UI_SOURCES}
@@ -258,6 +265,7 @@ chiikawa_add_test(test_quick_actions tests/test_quick_actions.cpp resources/reso
 chiikawa_add_test(test_trivia tests/test_trivia.cpp resources/resources.qrc)
 chiikawa_add_test(test_study_extract tests/test_study_extract.cpp tests/StudyTestUtils.h)
 chiikawa_add_test(test_study_pipeline tests/test_study_pipeline.cpp tests/StudyTestUtils.h)
+chiikawa_add_test(test_ollama_client tests/test_ollama_client.cpp)
 
 if(WIN32)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS
