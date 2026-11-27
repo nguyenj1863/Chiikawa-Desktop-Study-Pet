@@ -1,7 +1,9 @@
 #pragma once
 
 #include "study/StudyTypes.h"
+#include "trivia/TriviaTypes.h"
 
+#include <QSet>
 #include <QSqlDatabase>
 #include <QString>
 #include <optional>
@@ -63,6 +65,20 @@ public:
     bool replaceChunks(qint64 documentId, const QVector<Chunk>& chunks);
     [[nodiscard]] QVector<Chunk> chunks(qint64 documentId);
     [[nodiscard]] std::optional<Chunk> chunk(qint64 chunkId);
+
+    // Questions
+    /** Inserts or replaces a generated question (format-specific fields stored as JSON). */
+    bool saveQuestion(const Question& question, qint64 chunkId, const QString& model);
+    [[nodiscard]] std::optional<Question> question(const QString& id);
+    [[nodiscard]] QVector<Question> documentQuestions(qint64 documentId);
+    /**
+     * Questions from a course, optionally limited to some formats. When selectedOnly is
+     * set, only documents the student selected for studying contribute.
+     */
+    [[nodiscard]] QVector<Question> courseQuestions(qint64 courseId, const QList<QuestionType>& types = {},
+                                                    bool selectedOnly = true);
+    bool removeQuestions(qint64 documentId);
+    [[nodiscard]] QSet<qint64> usedChunkIds(qint64 documentId);
 
     /** Marks documents left mid-processing by a previous run as failed so they can be retried. */
     void recoverInterruptedDocuments();

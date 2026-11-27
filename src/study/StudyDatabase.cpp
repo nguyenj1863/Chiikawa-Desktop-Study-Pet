@@ -3,10 +3,14 @@
 #include <QAtomicInteger>
 #include <QDateTime>
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QStandardPaths>
 #include <QThread>
+#include <algorithm>
 
 namespace {
 
@@ -79,6 +83,81 @@ const QString kDocumentColumns = QStringLiteral(
     "d.unit_count, d.unsupported, d.selected, "
     "(SELECT COUNT(*) FROM chunks c WHERE c.document_id = d.id), "
     "(SELECT COUNT(*) FROM questions qn WHERE qn.document_id = d.id)");
+
+QJsonObject questionPayload(const Question& q)
+{
+    QJsonArray options;
+    for (const QuestionOption& o : q.options) {
+        options.append(QJsonObject{{QStringLiteral("id"), o.id},
+                                   {QStringLiteral("text"), o.text},
+                                   {QStringLiteral("correct"), o.correct},
+                                   {QStringLiteral("why"), o.explanation}});
+    }
+    QJsonArray aliases;
+    for (const AcceptedAnswer& a : q.answers) {
+        for (const QString& alias : a.aliases) {
+            aliases.append(alias);
+        }
+    }
+    const SourceRef source = q.sources.isEmpty() ? SourceRef{} : q.sources.first();
+    return QJsonObject{
+        {QStringLiteral("options"), options},
+        {QStringLiteral("expected"), q.expectedAnswer},
+        {QStringLiteral("key_points"), QJsonArray::fromStringList(q.keyConcepts)},
+        {QStringLiteral("aliases"), aliases},
+        {QStringLiteral("explanation"), q.explanation},
+        {QStringLiteral("evidence"), source.excerpt},
+        {QStringLiteral("location"), source.location},
+    };
+}
+
+const QString kQuestionColumns = QStringLiteral(
+    "qn.id, qn.document_id, qn.course_id, qn.chunk_id, qn.type, qn.prompt, qn.concept, qn.difficulty, "
+    "qn.payload, d.title, co.name");
+
+const QString kQuestionFrom = QStringLiteral(
+    " FROM questions qn JOIN documents d ON d.id = qn.document_id JOIN courses co ON co.id = qn.course_id");
+
+Question readQuestion(const QSqlQuery& q)
+{
+    Question out;
+    out.id = q.value(0).toString();
+    out.documentId = q.value(1).toLongLong();
+    out.courseId = q.value(2).toLongLong();
+    const qint64 chunkId = q.value(3).toLongLong();
+    out.type = static_cast<QuestionType>(q.value(4).toInt());
+    out.prompt = q.value(5).toString();
+    out.topic = q.value(6).toString();
+    out.difficulty = static_cast<Difficulty>(std::clamp(q.value(7).toInt(), 0, 2));
+    const QJsonObject payload = QJsonDocument::fromJson(q.value(8).toString().toUtf8()).object();
+    out.providerId = QStringLiteral("study");
+    out.category = q.value(10).toString();
+    out.explanation = payload.value(QStringLiteral("explanation")).toString();
+    out.expectedAnswer = payload.value(QStringLiteral("expected")).toString();
+    for (const QJsonValue& k : payload.value(QStringLiteral("key_points")).toArray()) {
+        out.keyConcepts.append(k.toString());
+    }
+    for (const QJsonValue& v : payload.value(QStringLiteral("options")).toArray()) {
+        const QJsonObject o = v.toObject();
+        out.options.append({o.value(QStringLiteral("id")).toString(), o.value(QStringLiteral("text")).toString(),
+                            o.value(QStringLiteral("correct")).toBool(), o.value(QStringLiteral("why")).toString()});
+    }
+    QStringList aliases;
+    for (const QJsonValue& a : payload.value(QStringLiteral("aliases")).toArray()) {
+        aliases.append(a.toString());
+    }
+    if (!out.expectedAnswer.isEmpty()) {
+        out.answers.append({out.expectedAnswer, aliases, Rarity::Common});
+    }
+    SourceRef source;
+    source.title = q.value(9).toString();
+    source.location = payload.value(QStringLiteral("location")).toString();
+    source.excerpt = payload.value(QStringLiteral("evidence")).toString();
+    source.documentId = out.documentId;
+    source.chunkId = chunkId;
+    out.sources.append(source);
+    return out;
+}
 
 } // namespace
 
@@ -530,6 +609,107 @@ std::optional<Chunk> StudyDatabase::chunk(qint64 chunkId)
         return c;
     }
     return std::nullopt;
+}
+
+bool StudyDatabase::saveQuestion(const Question& question, qint64 chunkId, const QString& model)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("INSERT OR REPLACE INTO questions(id, document_id, course_id, chunk_id, type, prompt,"
+                             " concept, difficulty, payload, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+    q.addBindValue(question.id);
+    q.addBindValue(question.documentId);
+    q.addBindValue(question.courseId);
+    q.addBindValue(chunkId > 0 ? QVariant(chunkId) : QVariant(QMetaType::fromType<qint64>()));
+    q.addBindValue(static_cast<int>(question.type));
+    q.addBindValue(text(question.prompt));
+    q.addBindValue(text(question.topic));
+    q.addBindValue(static_cast<int>(question.difficulty));
+    q.addBindValue(QString::fromUtf8(QJsonDocument(questionPayload(question)).toJson(QJsonDocument::Compact)));
+    q.addBindValue(text(model));
+    q.addBindValue(nowMs());
+    if (!q.exec()) {
+        m_lastError = q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+std::optional<Question> StudyDatabase::question(const QString& id)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("SELECT ") + kQuestionColumns + kQuestionFrom + QStringLiteral(" WHERE qn.id = ?"));
+    q.addBindValue(id);
+    if (q.exec() && q.next()) {
+        return readQuestion(q);
+    }
+    return std::nullopt;
+}
+
+QVector<Question> StudyDatabase::documentQuestions(qint64 documentId)
+{
+    QVector<Question> out;
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("SELECT ") + kQuestionColumns + kQuestionFrom
+              + QStringLiteral(" WHERE qn.document_id = ? ORDER BY qn.created_at, qn.id"));
+    q.addBindValue(documentId);
+    if (q.exec()) {
+        while (q.next()) {
+            out.append(readQuestion(q));
+        }
+    }
+    return out;
+}
+
+QVector<Question> StudyDatabase::courseQuestions(qint64 courseId, const QList<QuestionType>& types, bool selectedOnly)
+{
+    QVector<Question> out;
+    QString sql = QStringLiteral("SELECT ") + kQuestionColumns + kQuestionFrom + QStringLiteral(" WHERE qn.course_id = ?");
+    if (selectedOnly) {
+        sql += QStringLiteral(" AND d.selected = 1");
+    }
+    if (!types.isEmpty()) {
+        QStringList ids;
+        for (const QuestionType t : types) {
+            ids.append(QString::number(static_cast<int>(t)));
+        }
+        sql += QStringLiteral(" AND qn.type IN (%1)").arg(ids.join(QLatin1Char(',')));
+    }
+    sql += QStringLiteral(" ORDER BY qn.created_at, qn.id");
+    QSqlQuery q(connection());
+    q.prepare(sql);
+    q.addBindValue(courseId);
+    if (q.exec()) {
+        while (q.next()) {
+            out.append(readQuestion(q));
+        }
+    }
+    return out;
+}
+
+bool StudyDatabase::removeQuestions(qint64 documentId)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("DELETE FROM questions WHERE document_id = ?"));
+    q.addBindValue(documentId);
+    if (!q.exec()) {
+        m_lastError = q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+QSet<qint64> StudyDatabase::usedChunkIds(qint64 documentId)
+{
+    QSet<qint64> out;
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("SELECT DISTINCT chunk_id FROM questions WHERE document_id = ? AND chunk_id IS NOT NULL"));
+    q.addBindValue(documentId);
+    if (q.exec()) {
+        while (q.next()) {
+            out.insert(q.value(0).toLongLong());
+        }
+    }
+    return out;
 }
 
 void StudyDatabase::recoverInterruptedDocuments()

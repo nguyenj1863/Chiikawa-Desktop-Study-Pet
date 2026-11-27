@@ -104,12 +104,16 @@ set(CHIIKAWA_AI_SOURCES
 set(CHIIKAWA_STUDY_SOURCES
     src/study/Chunker.cpp
     src/study/DocumentExtractor.cpp
+    src/study/QuestionGenerator.cpp
+    src/study/QuestionValidator.cpp
     src/study/Retriever.cpp
     src/study/StudyDatabase.cpp
     src/study/StudyLibrary.cpp
     src/study/ZipReader.cpp
     include/study/Chunker.h
     include/study/DocumentExtractor.h
+    include/study/QuestionGenerator.h
+    include/study/QuestionValidator.h
     include/study/Retriever.h
     include/study/StudyDatabase.h
     include/study/StudyLibrary.h
@@ -266,6 +270,7 @@ chiikawa_add_test(test_trivia tests/test_trivia.cpp resources/resources.qrc)
 chiikawa_add_test(test_study_extract tests/test_study_extract.cpp tests/StudyTestUtils.h)
 chiikawa_add_test(test_study_pipeline tests/test_study_pipeline.cpp tests/StudyTestUtils.h)
 chiikawa_add_test(test_ollama_client tests/test_ollama_client.cpp)
+chiikawa_add_test(test_study_generation tests/test_study_generation.cpp tests/MockLlmClient.h)
 
 if(WIN32)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS

@@ -6,6 +6,7 @@
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
 #include <QNetworkReply>
@@ -237,9 +238,7 @@ void OllamaClient::sendActive()
                                                 {QStringLiteral("num_ctx"), kNumCtx},
                                                 {QStringLiteral("num_predict"), r.maxTokens}}},
     };
-    if (!r.schema.isEmpty()) {
-        body.insert(QStringLiteral("format"), r.schema);
-    }
+
     if (!m_activeRequest.retriedWithoutThink) {
         // Reasoning traces are slow on small local models and not needed for structured output.
         body.insert(QStringLiteral("think"), false);
@@ -248,7 +247,13 @@ void OllamaClient::sendActive()
     QNetworkRequest req(endpoint(QStringLiteral("/api/chat")));
     req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     m_timedOut = false;
-    m_active = m_net->post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
+    if (!r.schema.isEmpty() && QJsonDocument::fromJson(r.schema).isObject()) {
+        // Splice the schema in as raw text: QJsonObject would sort its keys alphabetically.
+        payload.chop(1);
+        payload += R"(,"format":)" + r.schema.trimmed() + '}';
+    }
+    m_active = m_net->post(req, payload);
     connect(m_active, &QNetworkReply::finished, this, &OllamaClient::onChatReply);
     m_timeout.start(std::max(1000, r.timeoutMs));
 }

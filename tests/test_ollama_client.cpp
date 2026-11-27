@@ -44,6 +44,7 @@ public:
 
     Handler handler;
     QList<QPair<QString, QJsonObject>> requests;
+    QList<QByteArray> rawBodies;
     int inFlight = 0;
     int maxInFlight = 0;
 
@@ -89,6 +90,7 @@ private:
 
         const QJsonObject obj = QJsonDocument::fromJson(body).object();
         requests.append({path, obj});
+        rawBodies.append(body);
         ++inFlight;
         maxInFlight = std::max(maxInFlight, inFlight);
         const Response r = handler ? handler(path, obj) : Response{404, json({{QStringLiteral("error"), QStringLiteral("no handler")}})};
@@ -243,7 +245,7 @@ void TestOllamaClient::chatSendsStructuredLocalRequest()
     QSignalSpy failed(&client, &LlmClient::failed);
 
     LlmRequest req = simpleRequest();
-    req.schema = QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}};
+    req.schema = R"({"type":"object","properties":{"zeta":{"type":"string"},"alpha":{"type":"string"}}})";
     req.temperature = 0.1;
     req.maxTokens = 321;
     const int id = client.generate(req);
@@ -261,6 +263,8 @@ void TestOllamaClient::chatSendsStructuredLocalRequest()
     QCOMPARE(body.value(QStringLiteral("stream")).toBool(true), false);
     QCOMPARE(body.value(QStringLiteral("think")).toBool(true), false);
     QCOMPARE(body.value(QStringLiteral("format")).toObject().value(QStringLiteral("type")).toString(), QStringLiteral("object"));
+    // Property order is preserved on the wire (zeta before alpha).
+    QVERIFY(server.rawBodies.first().indexOf("zeta") < server.rawBodies.first().indexOf("alpha"));
     QVERIFY(!body.value(QStringLiteral("keep_alive")).toString().isEmpty());
     const QJsonArray messages = body.value(QStringLiteral("messages")).toArray();
     QCOMPARE(messages.size(), 2);

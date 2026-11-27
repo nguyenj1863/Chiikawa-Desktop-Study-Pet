@@ -1,6 +1,6 @@
 #pragma once
 
-#include <QJsonObject>
+#include <QByteArray>
 #include <QMetaType>
 #include <QObject>
 #include <QString>
@@ -29,7 +29,11 @@ struct LlmError {
 struct LlmRequest {
     QString system;
     QString prompt;
-    QJsonObject schema;        // JSON schema the reply must follow; empty for free text
+    /**
+     * JSON schema the reply must follow, as raw JSON text so property order is kept
+     * (grammar-constrained decoding writes fields in schema order). Empty for free text.
+     */
+    QByteArray schema;
     double temperature = 0.2;
     int maxTokens = 1024;
     int timeoutMs = 120000;
