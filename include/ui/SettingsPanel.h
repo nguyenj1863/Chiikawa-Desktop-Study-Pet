@@ -1,6 +1,5 @@
 #pragma once
 
-#include "study/StudyTypes.h"
 
 #include <QTime>
 #include <QWidget>
@@ -48,14 +47,6 @@ public:
     void syncFromTimer();
     void syncFromAlarm();
 
-    /** Refreshes the study stats and section summary. */
-    void refreshStudySummary();
-
-    /** Study sets offered in "Questions". */
-    void setStudySets(const QVector<StudySet>& studySets);
-    /** Study progress line shown when questions come from the Study Library. */
-    void setStudyProgressText(const QString& text);
-
     /** Converts separate hour/minute/AM-PM selector values into a QTime. */
     [[nodiscard]] static QTime composeAlarmTime(int displayHour, int minute, bool isPm, bool use24Hour);
 
@@ -82,9 +73,6 @@ signals:
     void dragFinished();
     void closedByUser();
     void panelResized();
-    void askQuestionRequested();
-    void studyProgressResetRequested();
-    void studyLibraryRequested();
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
@@ -108,7 +96,6 @@ private slots:
     void onPreviewSoundClicked();
     void onPreferenceChanged();
     void onRestoreDefaultsClicked();
-    void onStudyResetClicked();
     void onClosePanel();
 
 private:
@@ -174,16 +161,6 @@ private:
     QPushButton* m_snooze5Btn = nullptr;
     QPushButton* m_snooze10Btn = nullptr;
     QPushButton* m_snooze15Btn = nullptr;
-
-    // Study check-ins (Collapsible, collapsed by default)
-    CollapsibleSection* m_studySection = nullptr;
-    QCheckBox* m_checkInsEnableCheck = nullptr;
-    QComboBox* m_studySourceCombo = nullptr;
-    QVector<StudySet> m_studySets;
-    QString m_studyProgressText;
-    QComboBox* m_checkInFrequencyCombo = nullptr;
-    QLabel* m_studyStatsLabel = nullptr;
-    QPushButton* m_askQuestionBtn = nullptr;
 
     // Pet Preferences (Collapsible, collapsed by default)
     CollapsibleSection* m_petSection = nullptr;

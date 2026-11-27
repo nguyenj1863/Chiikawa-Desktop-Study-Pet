@@ -137,7 +137,7 @@ PetWindow::PetWindow(QWidget* parent)
         if (m_uiSound) {
             m_uiSound->playClick();
         }
-        openStudyLibrary();
+        openStudy();
     });
     connect(m_quickActionMenu.get(), &QuickActionMenu::settingsRequested,
             this, &PetWindow::onSettingsQuickAction);
@@ -889,8 +889,8 @@ void PetWindow::setupCheckIns()
         m_quizPopup->showQuestion(question, frameGeometry());
     });
     connect(m_quizController.get(), &QuizController::progressChanged, this, [this]() {
-        if (m_settingsPanel) {
-            m_settingsPanel->refreshStudySummary();
+        if (m_libraryWindow) {
+            m_libraryWindow->refreshProgress();
         }
     });
     connect(m_quizPopup.get(), &QuizPopup::skipRequested, m_quizController.get(), &QuizController::skip);
@@ -918,7 +918,7 @@ void PetWindow::setupCheckIns()
         m_quizController->skip();
         m_questionScheduler->postpone(std::chrono::minutes(5));
     });
-    connect(m_quizPopup.get(), &QuizPopup::noticeActionTriggered, this, &PetWindow::openStudyLibrary);
+    connect(m_quizPopup.get(), &QuizPopup::noticeActionTriggered, this, &PetWindow::openStudy);
     connect(m_quizController.get(), &QuizController::evaluationReady, this, [this](const Evaluation& evaluation, int xp) {
         m_quizPopup->showEvaluation(evaluation, xp);
         refreshStudyProgress();
@@ -935,16 +935,6 @@ void PetWindow::setupCheckIns()
             m_uiSound->playClick();
         }
     });
-
-    connect(m_settingsPanel.get(), &SettingsPanel::askQuestionRequested, this, &PetWindow::askQuestionNow);
-    connect(m_settingsPanel.get(), &SettingsPanel::studyProgressResetRequested, this, [this]() {
-        m_quizController->resetProgress();
-        if (m_progressTracker) {
-            m_progressTracker->reset(0);
-        }
-        refreshStudyProgress();
-    });
-    connect(m_settingsPanel.get(), &SettingsPanel::studyLibraryRequested, this, &PetWindow::openStudyLibrary);
 
     // Someone who already set up a study set gets the study stack (and its study set list) right away;
     // everyone else only pays for it when they first use the Study App.
@@ -1019,21 +1009,14 @@ void PetWindow::applyStudyPreferences()
 
 void PetWindow::refreshStudyProgress()
 {
-    if (!m_progressTracker || !m_settingsPanel) {
-        return;
+    if (m_libraryWindow) {
+        m_libraryWindow->refreshProgress();
     }
-    const StudyProgress p = m_progressTracker->progress(m_settings->studySetId());
-    const int answered = p.attempted + p.selfAssessed;
-    QString text = QStringLiteral("%1 XP · %2 answered").arg(p.totalXp()).arg(answered);
-    if (!p.reviewTopics.isEmpty()) {
-        text += QStringLiteral(" · %1 to review").arg(p.reviewTopics.size());
-    }
-    m_settingsPanel->setStudyProgressText(text);
 }
 
 void PetWindow::refreshStudySets()
 {
-    if (!m_studyLibrary || !m_settingsPanel) {
+    if (!m_studyLibrary) {
         return;
     }
     const QVector<StudySet> studySets = m_studyLibrary->database()->studySets();
@@ -1046,7 +1029,6 @@ void PetWindow::refreshStudySets()
         m_settings->setStudySetId(studySets.isEmpty() ? 0 : studySets.first().id);
         m_settings->save();
     }
-    m_settingsPanel->setStudySets(studySets);
     applyStudyPreferences();
     refreshStudyProgress();
 }
@@ -1075,7 +1057,7 @@ void PetWindow::showNoStudyQuestionsNotice()
     m_quizPopup->showNotice(title, body, QStringLiteral("Open Study Library"), frameGeometry());
 }
 
-void PetWindow::openStudyLibrary()
+void PetWindow::openStudy()
 {
     ensureStudy();
     if (!m_libraryWindow) {
@@ -1088,6 +1070,15 @@ void PetWindow::openStudyLibrary()
                 m_ollama->setModel(m_settings->studyModel());
             }
             applyStudyPreferences();
+            updateCheckInScheduling();
+            refreshStudyProgress();
+        });
+        connect(m_libraryWindow.get(), &StudyLibraryWindow::askQuestionRequested, this, &PetWindow::askQuestionNow);
+        connect(m_libraryWindow.get(), &StudyLibraryWindow::progressResetRequested, this, [this]() {
+            m_quizController->resetProgress();
+            if (m_progressTracker) {
+                m_progressTracker->reset(0);
+            }
             refreshStudyProgress();
         });
     }

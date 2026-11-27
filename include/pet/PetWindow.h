@@ -70,7 +70,7 @@ public:
     void askQuestionNow();
 
     /** Opens the Study Library window beside the pet. */
-    void openStudyLibrary();
+    void openStudy();
 
     // Study stack, created on first use (nullptr before that).
     [[nodiscard]] StudyLibrary* studyLibrary() const { return m_studyLibrary.get(); }

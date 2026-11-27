@@ -12,6 +12,7 @@ class AppSettings;
 class PixelCheckBox;
 class PixelIconButton;
 class PixelOptionButton;
+class PixelSegmentedControl;
 class ProgressTracker;
 class QComboBox;
 class QDragEnterEvent;
@@ -26,6 +27,7 @@ class QStackedWidget;
 class QVBoxLayout;
 class QuestionGenerator;
 class StudyLibrary;
+class StudyPreferencesPage;
 class StudySetList;
 class UISoundManager;
 
@@ -75,6 +77,11 @@ public:
     bool removeDocument(qint64 documentId, bool confirmed = false);
 
     void refresh();
+    /** Refreshes the Preferences tab's progress line. */
+    void refreshProgress();
+    /** 0 = Library, 1 = Preferences. */
+    void showTab(int index);
+    [[nodiscard]] int currentTab() const;
 
     // Accessors for tests
     [[nodiscard]] StudySetList* setList() const { return m_setList; }
@@ -85,10 +92,13 @@ public:
     [[nodiscard]] QPushButton* importPptxButton() const { return m_importPptxBtn; }
     [[nodiscard]] QPushButton* importPdfButton() const { return m_importPdfBtn; }
     [[nodiscard]] QPushButton* importTextButton() const { return m_importTextBtn; }
-    [[nodiscard]] QPushButton* formatsToggle() const { return m_formatsToggle; }
-    [[nodiscard]] bool formatsExpanded() const { return m_formatsBody && !m_formatsBody->isHidden(); }
+    [[nodiscard]] QPushButton* formatsToggle() const;
+    [[nodiscard]] bool formatsExpanded() const;
     [[nodiscard]] QFrame* setupCard() const { return m_setupCard; }
-    [[nodiscard]] QComboBox* modelCombo() const { return m_modelCombo; }
+    [[nodiscard]] QComboBox* modelCombo() const;
+    [[nodiscard]] StudyPreferencesPage* preferences() const { return m_prefs; }
+    [[nodiscard]] PixelSegmentedControl* tabs() const { return m_tabs; }
+    [[nodiscard]] QLabel* practiceHint() const { return m_practiceHint; }
     [[nodiscard]] QLabel* setupLabel() const { return m_setupLabel; }
     [[nodiscard]] QLabel* statusLabel() const { return m_statusLabel; }
     [[nodiscard]] QPushButton* importButton() const { return m_importBtn; }
@@ -101,9 +111,9 @@ public:
     [[nodiscard]] QPushButton* recheckButton() const { return m_recheckBtn; }
     [[nodiscard]] QProgressBar* progressBar() const { return m_progress; }
     [[nodiscard]] PixelCheckBox* formatCheck(int formatBit) const;
-    [[nodiscard]] PixelOptionButton* mixedModeButton() const { return m_mixedBtn; }
-    [[nodiscard]] PixelOptionButton* focusModeButton() const { return m_focusBtn; }
-    [[nodiscard]] QComboBox* focusCombo() const { return m_focusCombo; }
+    [[nodiscard]] PixelOptionButton* mixedModeButton() const;
+    [[nodiscard]] PixelOptionButton* focusModeButton() const;
+    [[nodiscard]] QComboBox* focusCombo() const;
     [[nodiscard]] QList<qint64> documentRows() const;
     [[nodiscard]] PixelCheckBox* documentCheck(qint64 documentId) const;
     [[nodiscard]] QLabel* documentMeta(qint64 documentId) const;
@@ -111,6 +121,8 @@ public:
 signals:
     void setChanged(qint64 setId);
     void preferencesChanged();
+    void askQuestionRequested();
+    void progressResetRequested();
     void buttonActivated();
 
 protected:
@@ -128,14 +140,11 @@ private:
     void reloadSets(qint64 selectId);
     void rebuildSetList();
     void applyView();
-    void setFormatsExpanded(bool expanded);
-    void updateFormatsSummary();
+    void updateFormatsHint();
     [[nodiscard]] QString setName(qint64 id) const;
     void rebuildDocuments();
     void updateActions();
     void updateSetupBanner(OllamaClient::SetupState state);
-    void syncFormatControls();
-    void applyFormatControls();
     void onImportClicked(const QString& filter);
     void onDownloadClicked();
     void beginSetEdit(bool rename, qint64 id);
@@ -154,8 +163,6 @@ private:
     // Setup banner
     QFrame* m_setupCard = nullptr;
     QLabel* m_setupLabel = nullptr;
-    QComboBox* m_modelCombo = nullptr;
-    QWidget* m_modelRow = nullptr;
     QPushButton* m_getOllamaBtn = nullptr;
     QPushButton* m_startOllamaBtn = nullptr;
     QPushButton* m_downloadBtn = nullptr;
@@ -185,14 +192,11 @@ private:
     QPushButton* m_importPdfBtn = nullptr;
     QPushButton* m_importTextBtn = nullptr;
 
-    // Formats
-    QPushButton* m_formatsToggle = nullptr;
-    QWidget* m_formatsBody = nullptr;
-    QHash<int, PixelCheckBox*> m_formatChecks;
-    PixelOptionButton* m_mixedBtn = nullptr;
-    PixelOptionButton* m_focusBtn = nullptr;
-    QComboBox* m_focusCombo = nullptr;
-    QLabel* m_formatHint = nullptr;
+    // Tabs and preferences
+    PixelSegmentedControl* m_tabs = nullptr;
+    QStackedWidget* m_pages = nullptr;
+    StudyPreferencesPage* m_prefs = nullptr;
+    QLabel* m_practiceHint = nullptr;
 
     // Documents
     QScrollArea* m_docScroll = nullptr;

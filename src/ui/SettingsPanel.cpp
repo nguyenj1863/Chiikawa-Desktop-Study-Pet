@@ -767,109 +767,6 @@ void SettingsPanel::buildUi()
     root->addWidget(m_alarmSection);
 
     // =========================================================================
-    // SECTION: STUDY CHECK-INS (Collapsed by default, opt-in)
-    // =========================================================================
-    m_studySection = new CollapsibleSection(QStringLiteral("Study"), false, m_contentWidget);
-    m_studySection->setObjectName(QStringLiteral("studySection"));
-    connect(m_studySection, &CollapsibleSection::userToggled, this, [this](bool) {
-        playUiClick();
-    });
-    connect(m_studySection, &CollapsibleSection::heightChanged, this, [this]() {
-        updateLayoutSize();
-        emit panelResized();
-    });
-
-    auto* studyBody = new QVBoxLayout();
-    studyBody->setSpacing(4);
-
-    m_checkInsEnableCheck = new PixelCheckBox(QStringLiteral("Ask questions during study sessions"), m_contentWidget);
-    m_checkInsEnableCheck->setObjectName(QStringLiteral("checkInsEnableCheck"));
-    m_checkInsEnableCheck->setToolTip(QStringLiteral("Chiikawa occasionally asks a quick question while the study timer runs"));
-    connect(m_checkInsEnableCheck, &QCheckBox::toggled, this, &SettingsPanel::onPreferenceChanged);
-    connect(m_checkInsEnableCheck, &QCheckBox::clicked, this, [this](bool) { playUiClick(); });
-    studyBody->addWidget(m_checkInsEnableCheck);
-
-    auto* sourceRow = new QHBoxLayout();
-    sourceRow->setSpacing(6);
-    auto* sourceLabel = new QLabel(QStringLiteral("Questions"), m_contentWidget);
-    m_studySourceCombo = new QComboBox(m_contentWidget);
-    m_studySourceCombo->setObjectName(QStringLiteral("studySourceCombo"));
-    m_studySourceCombo->setCursor(Qt::PointingHandCursor);
-    m_studySourceCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_studySourceCombo->setToolTip(QStringLiteral("The study set Chiikawa asks questions from"));
-    configureTranslucentPopup(m_studySourceCombo);
-    connect(m_studySourceCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
-    connect(m_studySourceCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
-    sourceRow->addWidget(sourceLabel);
-    sourceRow->addWidget(m_studySourceCombo, 1);
-    studyBody->addLayout(sourceRow);
-    setStudySets({});
-
-    auto* frequencyRow = new QHBoxLayout();
-    frequencyRow->setSpacing(6);
-    auto* frequencyLabel = new QLabel(QStringLiteral("Frequency"), m_contentWidget);
-    m_checkInFrequencyCombo = new QComboBox(m_contentWidget);
-    m_checkInFrequencyCombo->setObjectName(QStringLiteral("checkInFrequencyCombo"));
-    m_checkInFrequencyCombo->setCursor(Qt::PointingHandCursor);
-    m_checkInFrequencyCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    for (const int minutes : SettingsDefaults::kCheckInMinuteChoices) {
-        m_checkInFrequencyCombo->addItem(QStringLiteral("About every %1 min").arg(minutes), minutes);
-    }
-    configureTranslucentPopup(m_checkInFrequencyCombo);
-    connect(m_checkInFrequencyCombo, &QComboBox::currentIndexChanged, this, &SettingsPanel::onPreferenceChanged);
-    connect(m_checkInFrequencyCombo, &QComboBox::activated, this, [this](int) { playUiClick(); });
-    frequencyRow->addWidget(frequencyLabel);
-    frequencyRow->addWidget(m_checkInFrequencyCombo, 1);
-    studyBody->addLayout(frequencyRow);
-
-    auto* studyStatsRow = new QHBoxLayout();
-    studyStatsRow->setSpacing(6);
-    m_studyStatsLabel = new QLabel(m_contentWidget);
-    m_studyStatsLabel->setObjectName(QStringLiteral("sectionSummary"));
-    m_studyStatsLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    m_askQuestionBtn = new QPushButton(QStringLiteral("Ask Me a Question"), m_contentWidget);
-    m_askQuestionBtn->setObjectName(QStringLiteral("primary"));
-    m_askQuestionBtn->setCursor(Qt::PointingHandCursor);
-    m_askQuestionBtn->setToolTip(QStringLiteral("Show a question now"));
-    connect(m_askQuestionBtn, &QPushButton::clicked, this, [this]() {
-        playUiClick();
-        emit askQuestionRequested();
-    });
-    studyStatsRow->addWidget(m_studyStatsLabel, 1);
-    studyStatsRow->addWidget(m_askQuestionBtn);
-    studyBody->addLayout(studyStatsRow);
-
-    auto* studyButtonsRow = new QHBoxLayout();
-    studyButtonsRow->setSpacing(6);
-    auto* libraryBtn = new QPushButton(
-        PixelTheme::icon(PixelIcon::Edit, PixelTheme::kSecondaryText, 12),
-        QStringLiteral(" Study Library"), m_contentWidget);
-    libraryBtn->setObjectName(QStringLiteral("subtle"));
-    libraryBtn->setProperty("actionId", QStringLiteral("openStudyLibrary"));
-    libraryBtn->setIconSize(QSize(12, 12));
-    libraryBtn->setCursor(Qt::PointingHandCursor);
-    libraryBtn->setToolTip(QStringLiteral("Import lecture slides, PDFs, and notes, and generate questions"));
-    connect(libraryBtn, &QPushButton::clicked, this, [this]() {
-        playUiClick();
-        emit studyLibraryRequested();
-    });
-    auto* studyResetBtn = new QPushButton(
-        PixelTheme::icon(PixelIcon::Reset, PixelTheme::kSecondaryText, 12),
-        QStringLiteral(" Reset Progress"), m_contentWidget);
-    studyResetBtn->setObjectName(QStringLiteral("subtle"));
-    studyResetBtn->setProperty("actionId", QStringLiteral("studyResetProgress"));
-    studyResetBtn->setIconSize(QSize(12, 12));
-    studyResetBtn->setCursor(Qt::PointingHandCursor);
-    studyResetBtn->setToolTip(QStringLiteral("Clear study XP and answer history"));
-    connect(studyResetBtn, &QPushButton::clicked, this, &SettingsPanel::onStudyResetClicked);
-    studyButtonsRow->addWidget(libraryBtn, 1);
-    studyButtonsRow->addWidget(studyResetBtn, 1);
-    studyBody->addLayout(studyButtonsRow);
-
-    m_studySection->setContentLayout(studyBody);
-    root->addWidget(m_studySection);
-
-    // =========================================================================
     // SECTION 3: PET PREFERENCES (Collapsed by default, auto-persisted)
     // =========================================================================
     m_petSection = new CollapsibleSection(QStringLiteral("Pet Preferences"), false, m_contentWidget);
@@ -1182,13 +1079,6 @@ void SettingsPanel::syncFromSettings()
     m_volumeSlider->setValue(volPct);
     m_volumeValue->setText(QStringLiteral("%1%").arg(volPct));
     m_notifyCheck->setChecked(m_settings->alarmNotificationEnabled());
-    m_checkInsEnableCheck->setChecked(m_settings->checkInsEnabled());
-    {
-        const int index = m_studySourceCombo->findData(m_settings->studySetId());
-        m_studySourceCombo->setCurrentIndex(std::max(0, index));   // first study set, or the placeholder
-    }
-    const int freqIdx = m_checkInFrequencyCombo->findData(m_settings->checkInMinutes());
-    m_checkInFrequencyCombo->setCurrentIndex(freqIdx >= 0 ? freqIdx : 0);
 
     const bool want24 = m_settings->alarmUse24Hour();
     if (want24 != m_use24Hour) {
@@ -1210,7 +1100,6 @@ void SettingsPanel::syncFromSettings()
     refreshPetSummary();
     refreshQuickActionsSummary();
     refreshAlarmSummary();
-    refreshStudySummary();
 }
 
 void SettingsPanel::syncFromTimer()
@@ -1693,83 +1582,12 @@ void SettingsPanel::onPreferenceChanged()
     m_settings->setAlarmSoundId(m_soundCombo->currentData().toString());
     m_settings->setAlarmVolume(m_volumeSlider->value() / 100.0);
     m_settings->setAlarmNotificationEnabled(m_notifyCheck->isChecked());
-    m_settings->setCheckInsEnabled(m_checkInsEnableCheck->isChecked());
-    {
-        const qint64 source = m_studySourceCombo->currentData().toLongLong();
-        if (source > 0) {
-            m_settings->setStudySetId(source);
-        }
-    }
-    m_settings->setCheckInMinutes(m_checkInFrequencyCombo->currentData().toInt());
 
     m_settings->save();
     refreshPetSummary();
     refreshQuickActionsSummary();
     refreshAlarmSummary();
-    refreshStudySummary();
     emit settingsApplied();
-}
-
-void SettingsPanel::refreshStudySummary()
-{
-    if (!m_studySection || !m_settings || !m_studyStatsLabel) {
-        return;
-    }
-    m_studyStatsLabel->setText(m_studyProgressText.isEmpty() ? QStringLiteral("No study answers yet") : m_studyProgressText);
-    const QString source = m_studySourceCombo ? m_studySourceCombo->currentText() : QString();
-    m_studySection->setSummary(m_settings->checkInsEnabled()
-                                    ? QStringLiteral("Every ~%1 min · %2").arg(m_settings->checkInMinutes()).arg(source)
-                                    : QStringLiteral("Off"));
-}
-
-void SettingsPanel::setStudySets(const QVector<StudySet>& studySets)
-{
-    m_studySets = studySets;
-    if (!m_studySourceCombo) {
-        return;
-    }
-    const bool wasSyncing = m_syncingUi;
-    m_syncingUi = true;
-    m_studySourceCombo->clear();
-    if (studySets.isEmpty()) {
-        m_studySourceCombo->addItem(QStringLiteral("Study Library (no study sets yet)"), qint64(0));
-    }
-    for (const StudySet& c : studySets) {
-        m_studySourceCombo->addItem(c.name, c.id);
-    }
-    if (m_settings) {
-        const int index = m_studySourceCombo->findData(m_settings->studySetId());
-        m_studySourceCombo->setCurrentIndex(index >= 0 ? index : 0);
-    }
-    m_syncingUi = wasSyncing;
-    refreshStudySummary();
-}
-
-void SettingsPanel::setStudyProgressText(const QString& text)
-{
-    m_studyProgressText = text;
-    refreshStudySummary();
-}
-
-void SettingsPanel::onStudyResetClicked()
-{
-    if (!m_settings) {
-        return;
-    }
-    playUiClick();
-    PixelConfirmDialog dlg(
-        QStringLiteral("Reset study progress?"),
-        QStringLiteral("Study XP and answer history go back to zero. Your documents and questions are kept."),
-        QStringLiteral("Reset"),
-        QStringLiteral("Cancel"),
-        this);
-    const int res = dlg.exec();
-    playUiClick();
-    if (res != QDialog::Accepted) {
-        return;
-    }
-    emit studyProgressResetRequested();
-    refreshStudySummary();
 }
 
 void SettingsPanel::onRestoreDefaultsClicked()

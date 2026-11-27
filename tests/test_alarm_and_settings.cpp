@@ -736,7 +736,12 @@ void TestAlarmAndSettings::redesignedTimerAndAlarmControls()
     qInfo() << "SettingsPanel dimensions: width=" << panel.width() << "collapsedHeight=" << collapsedHeight;
     QCOMPARE(panel.width(), SettingsPanel::kPanelWidth);
     // 5 sections (Study Timer + collapsed Alarm, Study, Pet Preferences, Quick Actions)
-    QVERIFY2(collapsedHeight <= 425, qPrintable(QStringLiteral("Collapsed height too tall: %1").arg(collapsedHeight)));
+    QVERIFY2(collapsedHeight <= 385, qPrintable(QStringLiteral("Collapsed height too tall: %1").arg(collapsedHeight)));
+    // Study controls live in the Study app, not in Settings.
+    QVERIFY(!panel.findChild<QWidget*>(QStringLiteral("studySection")));
+    QVERIFY(!panel.findChild<QWidget*>(QStringLiteral("checkInsEnableCheck")));
+    QVERIFY(!panel.findChild<QWidget*>(QStringLiteral("studySourceCombo")));
+    QVERIFY(!panel.findChild<QWidget*>(QStringLiteral("checkInFrequencyCombo")));
 
     // Find Edit pencil button and verify size + state tooltips across Idle, Running, Paused
     QPushButton* editBtn = nullptr;

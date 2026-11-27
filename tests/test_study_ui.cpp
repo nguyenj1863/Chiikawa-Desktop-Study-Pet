@@ -13,10 +13,13 @@
 #include "study/QuizController.h"
 #include "ui/QuizPopup.h"
 #include "ui/PixelTheme.h"
+#include "ui/PixelSegmentedControl.h"
 #include "ui/StudyLibraryWindow.h"
+#include "ui/StudyPreferencesPage.h"
 #include "ui/StudySetList.h"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
 #include <QMimeData>
@@ -123,6 +126,7 @@ private slots:
     void libraryListsSetsAndDrillsIntoOne();
     void libraryHidesTheReadyBannerAndCollapsesFormats();
     void libraryExplainsWhichFilesCanBeImported();
+    void preferencesTabControlsCheckInsFormatsAndProgress();
     void petStudyFlowWorksWithoutOllama();
     void studyShortcutOpensTheStudyWindow();
 
@@ -607,6 +611,84 @@ void TestStudyUi::libraryExplainsWhichFilesCanBeImported()
     QVERIFY(message.contains(QStringLiteral("Save older")));
     QVERIFY(window.documentRows().isEmpty());
     QVERIFY(window.removeCurrentSet(true));
+}
+
+void TestStudyUi::preferencesTabControlsCheckInsFormatsAndProgress()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    QuestionGenerator generator(library.database(), &ollama);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+
+    // Two tabs; Library first, Preferences second.
+    QCOMPARE(window.tabs()->count(), 2);
+    QCOMPARE(window.currentTab(), 0);
+    window.tabs()->button(1)->click();
+    QCOMPARE(window.currentTab(), 1);
+    StudyPreferencesPage* prefs = window.preferences();
+    QVERIFY(prefs);
+    window.showTab(0);
+    QCOMPARE(window.currentTab(), 0);
+
+    // Chiikawa's questions: off by default, saved immediately, and the app is told.
+    QVERIFY(!settings.checkInsEnabled());
+    QVERIFY(!prefs->checkInsCheck()->isChecked());
+    QSignalSpy changed(&window, &StudyLibraryWindow::preferencesChanged);
+    prefs->checkInsCheck()->setChecked(true);
+    QVERIFY(settings.checkInsEnabled());
+    QVERIFY(changed.count() >= 1);
+    prefs->frequencyCombo()->setCurrentIndex(prefs->frequencyCombo()->findData(30));
+    QCOMPARE(settings.checkInMinutes(), 30);
+    AppSettings reloaded;
+    QVERIFY(reloaded.checkInsEnabled());
+    QCOMPARE(reloaded.checkInMinutes(), 30);
+
+    // The study set Chiikawa draws from follows the library.
+    const qint64 a = library.database()->addStudySet(QStringLiteral("Alpha")).value_or(0);
+    const qint64 b = library.database()->addStudySet(QStringLiteral("Beta")).value_or(0);
+    window.showNear(kPet);
+    QVERIFY(prefs->sourceCombo()->isEnabled());
+    QVERIFY(prefs->sourceCombo()->findData(a) >= 0);
+    prefs->sourceCombo()->setCurrentIndex(prefs->sourceCombo()->findData(b));
+    QCOMPARE(settings.studySetId(), b);
+
+    // Ask-now is forwarded to the app.
+    QSignalSpy ask(&window, &StudyLibraryWindow::askQuestionRequested);
+    prefs->askNowButton()->click();
+    QCOMPARE(ask.count(), 1);
+
+    // Formats live here: multiple choice by default, summary follows changes.
+    QVERIFY(prefs->formatsSummary().contains(QStringLiteral("Multiple choice")));
+    QVERIFY(!prefs->formatsExpanded());
+    prefs->formatsToggle()->click();
+    QVERIFY(prefs->formatsExpanded());
+    prefs->formatCheck(SettingsDefaults::kStudyFormatWritten)->setChecked(true);
+    QVERIFY(prefs->formatsToggle()->text().contains(QStringLiteral("Written answer")));
+    QVERIFY(window.practiceHint()->text().contains(QStringLiteral("written answer")));
+    prefs->formatCheck(SettingsDefaults::kStudyFormatSingleChoice)->setChecked(false);
+    prefs->formatCheck(SettingsDefaults::kStudyFormatWritten)->setChecked(false);   // would leave none on
+    QVERIFY(settings.studyFormats() != 0);
+
+    // Reset progress clears answers, keeps questions, and is announced.
+    QCOMPARE(prefs->progressLabel()->text(), QStringLiteral("No study answers yet"));
+    QSignalSpy reset(&window, &StudyLibraryWindow::progressResetRequested);
+    QVERIFY(prefs->resetProgress(true));
+    QCOMPARE(reset.count(), 1);
+
+    // The model card only appears when a model can be picked or downloaded.
+    emit ollama.setupStateChanged(OllamaClient::SetupState::NotInstalled);
+    QVERIFY(!prefs->modelCard()->isVisibleTo(prefs));
+    emit ollama.setupStateChanged(OllamaClient::SetupState::ModelMissing);
+    QVERIFY(prefs->modelCard()->isVisibleTo(prefs));
+
+    QVERIFY(window.removeSet(a, true));
+    QVERIFY(window.removeSet(b, true));
 }
 
 void TestStudyUi::petStudyFlowWorksWithoutOllama()

@@ -12,7 +12,10 @@
 #include "study/QuestionSelector.h"
 #include "study/StudyLibrary.h"
 #include "ui/PixelTheme.h"
+#include "ui/PixelSegmentedControl.h"
+#include "ui/StudyPreferencesPage.h"
 #include "ui/StudySetList.h"
+#include "ui/StudyUiHelpers.h"
 
 #include <QAbstractItemView>
 #include <QAbstractSlider>
@@ -43,33 +46,9 @@
 #include <QVBoxLayout>
 #include <algorithm>
 
+using namespace StudyUi;
+
 namespace {
-
-QPushButton* makeButton(const QString& text, QWidget* parent, const char* objectName = nullptr)
-{
-    auto* btn = new QPushButton(text, parent);
-    if (objectName) {
-        btn->setObjectName(QString::fromLatin1(objectName));
-    }
-    btn->setCursor(Qt::PointingHandCursor);
-    return btn;
-}
-
-QLabel* makeLabel(const QString& text, const char* objectName, QWidget* parent)
-{
-    auto* label = new QLabel(text, parent);
-    label->setObjectName(QString::fromLatin1(objectName));
-    label->setWordWrap(true);
-    return label;
-}
-
-QFrame* makeCard(QWidget* parent)
-{
-    auto* card = new QFrame(parent);
-    card->setObjectName(QStringLiteral("studyCard"));
-    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    return card;
-}
 
 QString typeTag(QuestionType type)
 {
@@ -218,7 +197,8 @@ StudyLibraryWindow::StudyLibraryWindow(AppSettings* settings, StudyLibrary* libr
         });
     }
     reloadSets(m_settings ? m_settings->studySetId() : 0);
-    syncFormatControls();
+    m_prefs->syncFromSettings();
+    updateFormatsHint();
     updateSetupBanner(m_ollama ? m_ollama->setupState() : OllamaClient::SetupState::NotInstalled);
     hide();
 }
@@ -255,6 +235,12 @@ void StudyLibraryWindow::buildUi()
     header->addWidget(closeBtn);
     shell->addLayout(header);
 
+    m_tabs = new PixelSegmentedControl(this);
+    m_tabs->addTab(QStringLiteral("Library"));
+    m_tabs->addTab(QStringLiteral("Preferences"));
+    shell->addWidget(m_tabs);
+    connect(m_tabs, &PixelSegmentedControl::tabClicked, this, [this](int) { click(); });
+
     // Local AI setup banner
     m_setupCard = makeCard(this);
     auto* setup = new QVBoxLayout(m_setupCard);
@@ -266,32 +252,6 @@ void StudyLibraryWindow::buildUi()
     m_downloadProgress->setTextVisible(false);
     m_downloadProgress->hide();
     setup->addWidget(m_downloadProgress);
-    m_modelRow = new QWidget(m_setupCard);
-    auto* modelLayout = new QHBoxLayout(m_modelRow);
-    modelLayout->setContentsMargins(0, 0, 0, 0);
-    modelLayout->setSpacing(6);
-    modelLayout->addWidget(new QLabel(QStringLiteral("Model"), m_modelRow));
-    m_modelCombo = new QComboBox(m_modelRow);
-    m_modelCombo->setObjectName(QStringLiteral("studyModelCombo"));
-    m_modelCombo->setCursor(Qt::PointingHandCursor);
-    m_modelCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    modelLayout->addWidget(m_modelCombo, 1);
-    setup->addWidget(m_modelRow);
-    connect(m_modelCombo, &QComboBox::activated, this, [this](int index) {
-        click();
-        const QString model = m_modelCombo->itemData(index).toString();
-        if (m_settings) {
-            m_settings->setStudyModel(model);
-            m_settings->save();
-        }
-        if (m_ollama) {
-            m_ollama->setModel(model);
-        }
-        if (m_generator) {
-            m_generator->setModelName(model);
-        }
-        emit preferencesChanged();
-    });
     auto* setupButtons = new QHBoxLayout();
     setupButtons->setSpacing(6);
     m_getOllamaBtn = makeButton(QStringLiteral("Get Ollama"), m_setupCard, "primary");
@@ -446,70 +406,9 @@ void StudyLibraryWindow::buildUi()
     connect(m_importTextBtn, &QPushButton::clicked, this,
             [this]() { onImportClicked(QStringLiteral("Text and Markdown (*.txt *.md *.markdown)")); });
 
-    // Question formats (collapsed: multiple choice is the default)
-    auto* formatCard = makeCard(detailPage);
-    auto* formats = new QVBoxLayout(formatCard);
-    formats->setContentsMargins(10, 6, 10, 6);
-    formats->setSpacing(3);
-    m_formatsToggle = makeButton(QString(), formatCard, "chip");
-    m_formatsToggle->setObjectName(QStringLiteral("formatsToggle"));
-    m_formatsToggle->setStyleSheet(QStringLiteral("QPushButton#formatsToggle { text-align: left; background: transparent; border: none;"
-                                                  " color: #F3F6FC; padding: 3px 2px; }"
-                                                  " QPushButton#formatsToggle:hover { color: #FFFFFF; }"));
-    m_formatsToggle->setIconSize(QSize(12, 12));
-    formats->addWidget(m_formatsToggle);
-    m_formatsBody = new QWidget(formatCard);
-    auto* body = new QVBoxLayout(m_formatsBody);
-    body->setContentsMargins(0, 0, 0, 0);
-    body->setSpacing(3);
-    const QList<QPair<int, QString>> formatNames = {
-        {SettingsDefaults::kStudyFormatSingleChoice, QStringLiteral("Multiple choice")},
-        {SettingsDefaults::kStudyFormatMultiSelect, QStringLiteral("Multiple select")},
-        {SettingsDefaults::kStudyFormatWritten, QStringLiteral("Written answer")},
-    };
-    auto* checks = new QHBoxLayout();
-    checks->setSpacing(4);
-    for (const auto& f : formatNames) {
-        auto* check = new PixelCheckBox(f.second, m_formatsBody);
-        check->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-        m_formatChecks.insert(f.first, check);
-        checks->addWidget(check);
-        connect(check, &QCheckBox::toggled, this, &StudyLibraryWindow::applyFormatControls);
-        connect(check, &QCheckBox::clicked, this, [this](bool) { click(); });
-    }
-    checks->addStretch(1);
-    body->addLayout(checks);
-    auto* modeRow = new QHBoxLayout();
-    modeRow->setSpacing(4);
-    m_mixedBtn = new PixelOptionButton(QStringLiteral("Mixed"), PixelOptionButton::Indicator::Radio, m_formatsBody);
-    m_focusBtn = new PixelOptionButton(QStringLiteral("Only"), PixelOptionButton::Indicator::Radio, m_formatsBody);
-    for (PixelOptionButton* b : {m_mixedBtn, m_focusBtn}) {
-        b->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        b->setFixedWidth(b == m_mixedBtn ? 82 : 66);
-        b->setFixedHeight(b->heightForWidth(b->width()));
-        connect(b, &QAbstractButton::toggled, this, &StudyLibraryWindow::applyFormatControls);
-        connect(b, &QAbstractButton::clicked, this, [this](bool) { click(); });
-    }
-    m_focusCombo = new QComboBox(m_formatsBody);
-    m_focusCombo->setCursor(Qt::PointingHandCursor);
-    for (const auto& f : formatNames) {
-        m_focusCombo->addItem(f.second, f.first);
-    }
-    connect(m_focusCombo, &QComboBox::currentIndexChanged, this, &StudyLibraryWindow::applyFormatControls);
-    modeRow->addWidget(m_mixedBtn);
-    modeRow->addWidget(m_focusBtn);
-    modeRow->addWidget(m_focusCombo, 1);
-    body->addLayout(modeRow);
-    m_formatHint = makeLabel(QString(), "muted", m_formatsBody);
-    m_formatHint->hide();
-    body->addWidget(m_formatHint);
-    formats->addWidget(m_formatsBody);
-    detail->addWidget(formatCard);
-    connect(m_formatsToggle, &QPushButton::clicked, this, [this]() {
-        click();
-        setFormatsExpanded(!formatsExpanded());
-    });
-    setFormatsExpanded(false);
+    // Which question formats practice uses is a preference; show it here so it is never a surprise
+    m_practiceHint = makeLabel(QString(), "muted", detailPage);
+    detail->addWidget(m_practiceHint);
 
     // Documents
     m_docScroll = new QScrollArea(detailPage);
@@ -544,7 +443,26 @@ void StudyLibraryWindow::buildUi()
     actions->addWidget(m_generateBtn);
     detail->addLayout(actions);
     m_stack->addWidget(detailPage);
-    shell->addWidget(m_stack, 1);
+    m_pages = new QStackedWidget(this);
+    m_pages->addWidget(m_stack);
+    m_prefs = new StudyPreferencesPage(m_settings, m_library, m_generator, m_ollama, m_tracker, this);
+    auto* prefsScroll = new QScrollArea(m_pages);
+    prefsScroll->setObjectName(QStringLiteral("docScroll"));
+    prefsScroll->setWidgetResizable(true);
+    prefsScroll->setFrameShape(QFrame::NoFrame);
+    prefsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    prefsScroll->viewport()->setAutoFillBackground(false);
+    prefsScroll->setWidget(m_prefs);
+    m_pages->addWidget(prefsScroll);
+    shell->addWidget(m_pages, 1);
+    connect(m_tabs, &PixelSegmentedControl::currentChanged, m_pages, &QStackedWidget::setCurrentIndex);
+    connect(m_prefs, &StudyPreferencesPage::preferencesChanged, this, [this]() {
+        updateFormatsHint();
+        emit preferencesChanged();
+    });
+    connect(m_prefs, &StudyPreferencesPage::askQuestionRequested, this, &StudyLibraryWindow::askQuestionRequested);
+    connect(m_prefs, &StudyPreferencesPage::resetRequested, this, &StudyLibraryWindow::progressResetRequested);
+    connect(m_prefs, &StudyPreferencesPage::buttonActivated, this, [this]() { click(); });
 
     // Progress and status are shared by both pages
     m_progress = new QProgressBar(this);
@@ -700,6 +618,9 @@ void StudyLibraryWindow::reloadSets(qint64 selectId)
     applyView();
     rebuildDocuments();
     updateActions();
+    if (m_prefs) {
+        m_prefs->reloadSets();
+    }
 }
 
 qint64 StudyLibraryWindow::createSet(const QString& name)
@@ -836,7 +757,7 @@ void StudyLibraryWindow::onImportClicked(const QString& filter)
 
 void StudyLibraryWindow::dragEnterEvent(QDragEnterEvent* event)
 {
-    if (isShowingSet() && event->mimeData()->hasUrls()) {
+    if (isShowingSet() && currentTab() == 0 && event->mimeData()->hasUrls()) {
         event->acceptProposedAction();
         return;
     }
@@ -851,7 +772,7 @@ void StudyLibraryWindow::dropEvent(QDropEvent* event)
             paths.append(url.toLocalFile());
         }
     }
-    if (isShowingSet() && !paths.isEmpty()) {
+    if (isShowingSet() && currentTab() == 0 && !paths.isEmpty()) {
         importFiles(paths);
         event->acceptProposedAction();
         return;
@@ -1081,27 +1002,12 @@ void StudyLibraryWindow::updateSetupBanner(OllamaClient::SetupState state)
     m_downloadProgress->setVisible(pulling);
     m_recheckBtn->setVisible(state != OllamaClient::SetupState::Ready && state != OllamaClient::SetupState::Checking);
 
-    // The model picker lists installed models plus the chosen one.
-    m_syncing = true;
-    m_modelCombo->clear();
-    QStringList models = m_ollama ? m_ollama->installedModels() : QStringList();
-    if (!model.isEmpty() && !models.contains(model)) {
-        models.prepend(model);
-    }
-    for (const QString& m : models) {
-        const bool installed = m_ollama && m_ollama->installedModels().contains(m);
-        m_modelCombo->addItem(installed ? m : QStringLiteral("%1 (not installed)").arg(m), m);
-    }
-    m_modelCombo->setCurrentIndex(std::max(0, m_modelCombo->findData(model)));
-    m_syncing = false;
-    m_modelRow->setVisible(state == OllamaClient::SetupState::Ready || state == OllamaClient::SetupState::ModelMissing);
-    // A working setup needs no banner; the card returns only when something must be done, or to
-    // switch models when more than one is installed.
+    m_prefs->updateModels(state);
+    // A working setup needs no banner; the card returns only when something must be done.
     const bool ready = state == OllamaClient::SetupState::Ready;
     const bool checking = state == OllamaClient::SetupState::Checking;
     m_setupLabel->setVisible(!ready);
-    const bool choosableModels = ready && m_ollama && m_ollama->installedModels().size() > 1;
-    m_setupCard->setVisible((!ready && !checking) || pulling || choosableModels);
+    m_setupCard->setVisible((!ready && !checking) || pulling);
     updateActions();
 }
 
@@ -1127,86 +1033,59 @@ void StudyLibraryWindow::onDownloadClicked()
     m_ollama->pullModel(model);
 }
 
-void StudyLibraryWindow::syncFormatControls()
-{
-    if (!m_settings) {
-        return;
-    }
-    m_syncing = true;
-    const int mask = m_settings->studyFormats();
-    for (auto it = m_formatChecks.cbegin(); it != m_formatChecks.cend(); ++it) {
-        it.value()->setChecked((mask & it.key()) != 0);
-    }
-    const bool focus = m_settings->studyFormatMode() == SettingsDefaults::kStudyFormatModeFocus;
-    m_mixedBtn->setChecked(!focus);
-    m_focusBtn->setChecked(focus);
-    m_focusCombo->setCurrentIndex(std::max(0, m_focusCombo->findData(m_settings->studyFocusFormat())));
-    m_focusCombo->setEnabled(focus);
-    m_syncing = false;
-    updateFormatsSummary();
-}
-
-void StudyLibraryWindow::setFormatsExpanded(bool expanded)
-{
-    m_formatsBody->setVisible(expanded);
-    m_formatsToggle->setIcon(PixelTheme::icon(expanded ? PixelIcon::ChevronDown : PixelIcon::ChevronRight,
-                                              QColor(0xC8, 0xD4, 0xE6), 12));
-    m_formatsToggle->setAccessibleName(expanded ? QStringLiteral("Hide question formats") : QStringLiteral("Show question formats"));
-}
-
-void StudyLibraryWindow::updateFormatsSummary()
-{
-    QString summary;
-    if (m_settings) {
-        const bool focus = m_settings->studyFormatMode() == SettingsDefaults::kStudyFormatModeFocus;
-        if (focus) {
-            const int index = m_focusCombo->findData(m_settings->studyFocusFormat());
-            summary = QStringLiteral("Only %1").arg(index >= 0 ? m_focusCombo->itemText(index).toLower() : QString());
-        } else {
-            const int mask = m_settings->studyFormats();
-            QStringList names;
-            for (int i = 0; i < m_focusCombo->count(); ++i) {
-                if (mask & m_focusCombo->itemData(i).toInt()) {
-                    names.append(m_focusCombo->itemText(i));
-                }
-            }
-            summary = names.size() == m_focusCombo->count() ? QStringLiteral("All formats") : names.join(QStringLiteral(", "));
-        }
-    }
-    m_formatsToggle->setText(QStringLiteral(" Question formats  ·  %1").arg(summary));
-}
-
-void StudyLibraryWindow::applyFormatControls()
-{
-    if (m_syncing || !m_settings) {
-        return;
-    }
-    int mask = 0;
-    for (auto it = m_formatChecks.cbegin(); it != m_formatChecks.cend(); ++it) {
-        if (it.value()->isChecked()) {
-            mask |= it.key();
-        }
-    }
-    if (!m_settings->setStudyFormats(mask)) {
-        // At least one format must stay on: undo the last uncheck.
-        m_formatHint->setText(QStringLiteral("Keep at least one question format turned on."));
-        m_formatHint->show();
-        syncFormatControls();
-        return;
-    }
-    m_formatHint->hide();
-    m_settings->setStudyFormatMode(m_focusBtn->isChecked() ? SettingsDefaults::kStudyFormatModeFocus
-                                                           : SettingsDefaults::kStudyFormatModeMixed);
-    m_settings->setStudyFocusFormat(m_focusCombo->currentData().toInt());
-    m_settings->save();
-    m_focusCombo->setEnabled(m_focusBtn->isChecked());
-    updateFormatsSummary();
-    emit preferencesChanged();
-}
-
 PixelCheckBox* StudyLibraryWindow::formatCheck(int formatBit) const
 {
-    return m_formatChecks.value(formatBit, nullptr);
+    return m_prefs->formatCheck(formatBit);
+}
+
+PixelOptionButton* StudyLibraryWindow::mixedModeButton() const
+{
+    return m_prefs->mixedModeButton();
+}
+
+PixelOptionButton* StudyLibraryWindow::focusModeButton() const
+{
+    return m_prefs->focusModeButton();
+}
+
+QComboBox* StudyLibraryWindow::focusCombo() const
+{
+    return m_prefs->focusCombo();
+}
+
+QComboBox* StudyLibraryWindow::modelCombo() const
+{
+    return m_prefs->modelCombo();
+}
+
+QPushButton* StudyLibraryWindow::formatsToggle() const
+{
+    return m_prefs->formatsToggle();
+}
+
+bool StudyLibraryWindow::formatsExpanded() const
+{
+    return m_prefs->formatsExpanded();
+}
+
+void StudyLibraryWindow::updateFormatsHint()
+{
+    m_practiceHint->setText(QStringLiteral("Practice and questions use: %1. Change this in Preferences.").arg(m_prefs->formatsSummary().toLower()));
+}
+
+void StudyLibraryWindow::refreshProgress()
+{
+    m_prefs->refreshProgress();
+}
+
+void StudyLibraryWindow::showTab(int index)
+{
+    m_tabs->setCurrentIndex(index);
+}
+
+int StudyLibraryWindow::currentTab() const
+{
+    return m_tabs->currentIndex();
 }
 
 QList<qint64> StudyLibraryWindow::documentRows() const
@@ -1245,7 +1124,8 @@ void StudyLibraryWindow::showNear(const QRect& petGlobalGeometry)
     move(x, y);
     reloadSets(m_settings ? m_settings->studySetId() : currentSet());
     showSetList();
-    syncFormatControls();
+    m_prefs->syncFromSettings();
+    updateFormatsHint();
     show();
 #ifdef Q_OS_MACOS
     MacWindowHelper::configureFloatingOverlay(this, false);
