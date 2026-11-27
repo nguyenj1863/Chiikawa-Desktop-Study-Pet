@@ -92,6 +92,21 @@ set(CHIIKAWA_ALARM_SOURCES
     include/alarm/UISoundManager.h
 )
 
+set(CHIIKAWA_TRIVIA_SOURCES
+    src/trivia/AnswerEvaluator.cpp
+    src/trivia/QuestionScheduler.cpp
+    src/trivia/QuizController.cpp
+    src/trivia/QuizPopup.cpp
+    src/trivia/TriviaQuestionProvider.cpp
+    include/trivia/AnswerEvaluator.h
+    include/trivia/QuestionProvider.h
+    include/trivia/QuestionScheduler.h
+    include/trivia/QuizController.h
+    include/trivia/QuizPopup.h
+    include/trivia/TriviaQuestionProvider.h
+    include/trivia/TriviaTypes.h
+)
+
 set(CHIIKAWA_UI_SOURCES
     src/ui/CollapsibleSection.cpp
     src/ui/OnboardingPreview.cpp
@@ -130,6 +145,7 @@ add_library(chiikawa_core STATIC
     ${CHIIKAWA_QUICKACTIONS_SOURCES}
     ${CHIIKAWA_TIMER_SOURCES}
     ${CHIIKAWA_ALARM_SOURCES}
+    ${CHIIKAWA_TRIVIA_SOURCES}
     ${CHIIKAWA_UI_SOURCES}
     ${CHIIKAWA_PLATFORM_SOURCES}
 )
@@ -212,6 +228,7 @@ chiikawa_add_test(test_animation_manager tests/test_animation_manager.cpp resour
 chiikawa_add_test(test_alarm_and_settings tests/test_alarm_and_settings.cpp resources/resources.qrc)
 chiikawa_add_test(test_onboarding tests/test_onboarding.cpp resources/resources.qrc)
 chiikawa_add_test(test_quick_actions tests/test_quick_actions.cpp resources/resources.qrc)
+chiikawa_add_test(test_trivia tests/test_trivia.cpp resources/resources.qrc)
 
 if(WIN32)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS

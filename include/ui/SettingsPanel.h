@@ -46,6 +46,9 @@ public:
     void syncFromTimer();
     void syncFromAlarm();
 
+    /** Refreshes the Trivia Check-Ins points/answered labels from AppSettings. */
+    void refreshTriviaSummary();
+
     /** Converts separate hour/minute/AM-PM selector values into a QTime. */
     [[nodiscard]] static QTime composeAlarmTime(int displayHour, int minute, bool isPm, bool use24Hour);
 
@@ -72,6 +75,8 @@ signals:
     void dragFinished();
     void closedByUser();
     void panelResized();
+    void triviaAskRequested();
+    void triviaProgressResetRequested();
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
@@ -95,6 +100,7 @@ private slots:
     void onPreviewSoundClicked();
     void onPreferenceChanged();
     void onRestoreDefaultsClicked();
+    void onTriviaResetClicked();
     void onClosePanel();
 
 private:
@@ -160,6 +166,13 @@ private:
     QPushButton* m_snooze5Btn = nullptr;
     QPushButton* m_snooze10Btn = nullptr;
     QPushButton* m_snooze15Btn = nullptr;
+
+    // Trivia Check-Ins (Collapsible, collapsed by default)
+    CollapsibleSection* m_triviaSection = nullptr;
+    QCheckBox* m_triviaEnableCheck = nullptr;
+    QComboBox* m_triviaFrequencyCombo = nullptr;
+    QLabel* m_triviaStatsLabel = nullptr;
+    QPushButton* m_triviaAskBtn = nullptr;
 
     // Pet Preferences (Collapsible, collapsed by default)
     CollapsibleSection* m_petSection = nullptr;

@@ -25,6 +25,9 @@ class OnboardingWindow;
 class UISoundManager;
 class QuickActionMenu;
 class AppLaunchNoticePopup;
+class QuestionScheduler;
+class QuizController;
+class QuizPopup;
 
 #include "pet/AnimationManager.h"
 #include "platform/DesktopLayerHelper.h"
@@ -49,6 +52,15 @@ public:
     [[nodiscard]] OnboardingWindow* onboardingWindow() const { return m_onboardingWindow.get(); }
     [[nodiscard]] QuickActionMenu* quickActionMenu() const { return m_quickActionMenu.get(); }
     [[nodiscard]] AppLaunchNoticePopup* appNotice() const { return m_appNotice.get(); }
+    [[nodiscard]] QuizController* quizController() const { return m_quizController.get(); }
+    [[nodiscard]] QuizPopup* quizPopup() const { return m_quizPopup.get(); }
+    [[nodiscard]] QuestionScheduler* questionScheduler() const { return m_questionScheduler.get(); }
+
+    /** True when a scheduled trivia check-in may appear without interrupting anything. */
+    [[nodiscard]] bool canShowTriviaCheckIn() const;
+
+    /** Shows a trivia question now (Settings "Ask Me a Question"); ignored if one is already open. */
+    void askTriviaNow();
 
     void setExternalAppLauncher(std::unique_ptr<ExternalAppLauncher> launcher);
 
@@ -114,6 +126,8 @@ private:
     [[nodiscard]] QRect currentVisibleSpriteBounds() const;
     void showCompletionToast();
     void playCompletionFeedback();
+    void setupTrivia();
+    void updateTriviaScheduling();
 
     std::unique_ptr<AppSettings> m_settings;
     std::unique_ptr<StudyTimer> m_timer;
@@ -133,6 +147,10 @@ private:
     std::unique_ptr<QuickActionMenu> m_quickActionMenu;
     std::unique_ptr<AppLaunchNoticePopup> m_appNotice;
     std::unique_ptr<ExternalAppLauncher> m_appLauncher;
+    // Destroyed in reverse order: popup, then scheduler, then controller.
+    std::unique_ptr<QuizController> m_quizController;
+    std::unique_ptr<QuestionScheduler> m_questionScheduler;
+    std::unique_ptr<QuizPopup> m_quizPopup;
     DesktopLayerHelper m_desktopLayer;
 
     QTimer m_snoozeBubbleTimer;

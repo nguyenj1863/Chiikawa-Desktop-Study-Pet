@@ -22,7 +22,8 @@ public:
         SettingsOpen        = 1u << 2,
         Onboarding          = 1u << 3,
         Hidden              = 1u << 4,
-        QuickActionMenuOpen = 1u << 5
+        QuickActionMenuOpen = 1u << 5,
+        TriviaOpen          = 1u << 6
     };
 
     explicit MovementController(QWidget* target, QObject* parent = nullptr);

@@ -17,6 +17,10 @@
 #include "timer/TimerBubble.h"
 #include "alarm/UISoundManager.h"
 #include "app/WindowCoordinator.h"
+#include "trivia/QuestionScheduler.h"
+#include "trivia/QuizController.h"
+#include "trivia/QuizPopup.h"
+#include "trivia/TriviaQuestionProvider.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -193,7 +197,10 @@ PetWindow::PetWindow(QWidget* parent)
         if (state == StudyTimer::State::Running) {
             m_completionHandled = false;
         }
+        updateTriviaScheduling();
     });
+
+    setupTrivia();
 
     connect(m_settingsPanel.get(), &SettingsPanel::settingsApplied,
             this, &PetWindow::applySettings);
@@ -266,6 +273,9 @@ PetWindow::PetWindow(QWidget* parent)
 
 PetWindow::~PetWindow()
 {
+    if (m_questionScheduler) {
+        m_questionScheduler->stop();
+    }
     if (m_settings) {
         m_settings->setLastPosition(pos());
         m_settings->save();
@@ -420,6 +430,7 @@ void PetWindow::applySettings()
     if (m_alarmNotification) {
         m_alarmNotification->setSnoozeMinutes(m_settings->snoozeMinutes());
     }
+    updateTriviaScheduling();
 
     const bool wantDesktopOnly = m_settings->desktopOnlyMode();
     if (!m_desktopLayerInitialized || m_appliedDesktopOnlyMode != wantDesktopOnly) {
@@ -507,6 +518,9 @@ void PetWindow::showPet()
 void PetWindow::hidePet()
 {
     hide();
+    if (m_quizPopup && m_quizPopup->isVisible()) {
+        m_quizPopup->dismiss();
+    }
     if (m_quickActionMenu) {
         m_quickActionMenu->hideImmediately();
     }
@@ -568,6 +582,12 @@ void PetWindow::exitApplication()
 {
     m_singleClickTimer.stop();
     m_snoozeBubbleTimer.stop();
+    if (m_questionScheduler) {
+        m_questionScheduler->stop();
+    }
+    if (m_quizPopup) {
+        m_quizPopup->hide();
+    }
     if (m_quickActionMenu) {
         m_quickActionMenu->hideImmediately();
     }
@@ -626,6 +646,9 @@ void PetWindow::onPositionMoved(const QPoint& pos)
     }
     if (m_hovering && m_timer->isActive()) {
         updateHoverBubble();
+    }
+    if (m_quizPopup && m_quizPopup->isVisible()) {
+        m_quizPopup->followPet(frameGeometry());
     }
 }
 
@@ -785,7 +808,9 @@ void PetWindow::leaveEvent(QEvent* event)
 
 void PetWindow::updateHoverBubble()
 {
-    if (!m_hovering || !m_timer->isActive()) {
+    // The trivia bubble occupies the same spot above the pet; keep the countdown out of its way.
+    const bool triviaOpen = m_quizPopup && m_quizPopup->isVisible();
+    if (!m_hovering || !m_timer->isActive() || triviaOpen) {
         if (m_bubble && m_bubble->isVisible()) {
             m_bubble->fadeOut();
         }
@@ -809,6 +834,111 @@ void PetWindow::onTimerRemaining(std::chrono::milliseconds remaining)
     if (m_hovering) {
         updateHoverBubble();
     }
+}
+
+void PetWindow::setupTrivia()
+{
+    m_quizController = std::make_unique<QuizController>(m_settings.get());
+    m_quizController->addProvider(std::make_unique<TriviaQuestionProvider>());
+    m_questionScheduler = std::make_unique<QuestionScheduler>();
+    m_questionScheduler->setCanAskPredicate([this]() { return canShowTriviaCheckIn(); });
+    m_quizPopup = std::make_unique<QuizPopup>(nullptr);
+
+    connect(m_questionScheduler.get(), &QuestionScheduler::questionDue, this, [this]() {
+        m_quizController->ask();
+    });
+    connect(m_quizController.get(), &QuizController::questionReady, this, [this](const Question& question) {
+        if (m_bubble && m_bubble->isVisible()) {
+            m_bubble->fadeOut();
+        }
+        if (m_movement) {
+            m_movement->setPaused(MovementController::PauseReason::TriviaOpen, true);
+        }
+        m_quizPopup->showQuestion(question, frameGeometry());
+    });
+    connect(m_quizController.get(), &QuizController::progressChanged, this, [this]() {
+        if (m_settingsPanel) {
+            m_settingsPanel->refreshTriviaSummary();
+        }
+    });
+    connect(m_quizPopup.get(), &QuizPopup::answerSubmitted, this, [this](const QString& answer) {
+        const AnswerResult result = m_quizController->submit(answer);
+        if (result.empty) {
+            return;
+        }
+        const auto& question = m_quizController->currentQuestion();
+        m_quizPopup->showResult(result, question ? question->explanation : QString());
+    });
+    connect(m_quizPopup.get(), &QuizPopup::skipRequested, m_quizController.get(), &QuizController::skip);
+    connect(m_quizPopup.get(), &QuizPopup::closed, this, [this]() {
+        m_quizController->dismiss();
+        if (m_movement) {
+            m_movement->setPaused(MovementController::PauseReason::TriviaOpen, false);
+        }
+    });
+    connect(m_quizPopup.get(), &QuizPopup::buttonActivated, this, [this]() {
+        if (m_uiSound) {
+            m_uiSound->playClick();
+        }
+    });
+
+    connect(m_settingsPanel.get(), &SettingsPanel::triviaAskRequested, this, &PetWindow::askTriviaNow);
+    connect(m_settingsPanel.get(), &SettingsPanel::triviaProgressResetRequested,
+            m_quizController.get(), &QuizController::resetProgress);
+
+    updateTriviaScheduling();
+}
+
+void PetWindow::updateTriviaScheduling()
+{
+    if (!m_questionScheduler || !m_settings || !m_timer) {
+        return;
+    }
+    const bool wanted = m_settings->triviaEnabled() && m_timer->isRunning();
+    if (!wanted) {
+        m_questionScheduler->stop();
+        return;
+    }
+    const std::chrono::milliseconds interval = std::chrono::minutes(m_settings->triviaIntervalMinutes());
+    if (!m_questionScheduler->isRunning()) {
+        m_questionScheduler->setBaseInterval(interval);
+        m_questionScheduler->start();
+    } else if (m_questionScheduler->baseInterval() != interval) {
+        m_questionScheduler->setBaseInterval(interval); // restarts the countdown
+    }
+}
+
+bool PetWindow::canShowTriviaCheckIn() const
+{
+    if (!isVisible() || m_dragging || m_exitPending) {
+        return false;
+    }
+    if (m_quizPopup && m_quizPopup->isVisible()) {
+        return false;
+    }
+    if (m_movement
+        && (m_movement->isPausedFor(MovementController::PauseReason::QuickActionMenuOpen)
+            || m_movement->isPausedFor(MovementController::PauseReason::Dragging))) {
+        return false;
+    }
+    const auto visible = [](const QWidget* w) { return w && w->isVisible(); };
+    if (visible(m_settingsPanel.get()) || visible(m_onboardingWindow.get())
+        || visible(m_alarmNotification.get()) || visible(m_completionToast.get())
+        || visible(m_appNotice.get()) || visible(m_quickActionMenu.get())) {
+        return false;
+    }
+    return QApplication::activeModalWidget() == nullptr && QApplication::activePopupWidget() == nullptr;
+}
+
+void PetWindow::askTriviaNow()
+{
+    if (!m_quizController || (m_quizPopup && m_quizPopup->isVisible())) {
+        return;
+    }
+    if (!isVisible()) {
+        showPet();
+    }
+    m_quizController->ask();
 }
 
 void PetWindow::playCompletionFeedback()
