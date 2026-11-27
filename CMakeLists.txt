@@ -102,22 +102,31 @@ set(CHIIKAWA_AI_SOURCES
 )
 
 set(CHIIKAWA_STUDY_SOURCES
+    src/study/ChoiceEvaluators.cpp
     src/study/Chunker.cpp
     src/study/DocumentExtractor.cpp
+    src/study/ProgressTracker.cpp
     src/study/QuestionGenerator.cpp
+    src/study/QuestionSelector.cpp
     src/study/QuestionValidator.cpp
     src/study/Retriever.cpp
     src/study/StudyDatabase.cpp
     src/study/StudyLibrary.cpp
+    src/study/WrittenAnswerEvaluator.cpp
     src/study/ZipReader.cpp
+    include/study/ChoiceEvaluators.h
     include/study/Chunker.h
     include/study/DocumentExtractor.h
+    include/study/Evaluation.h
+    include/study/ProgressTracker.h
     include/study/QuestionGenerator.h
+    include/study/QuestionSelector.h
     include/study/QuestionValidator.h
     include/study/Retriever.h
     include/study/StudyDatabase.h
     include/study/StudyLibrary.h
     include/study/StudyTypes.h
+    include/study/WrittenAnswerEvaluator.h
     include/study/ZipReader.h
 )
 
@@ -271,6 +280,7 @@ chiikawa_add_test(test_study_extract tests/test_study_extract.cpp tests/StudyTes
 chiikawa_add_test(test_study_pipeline tests/test_study_pipeline.cpp tests/StudyTestUtils.h)
 chiikawa_add_test(test_ollama_client tests/test_ollama_client.cpp)
 chiikawa_add_test(test_study_generation tests/test_study_generation.cpp tests/MockLlmClient.h)
+chiikawa_add_test(test_study_answers tests/test_study_answers.cpp tests/MockLlmClient.h)
 
 if(WIN32)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS
