@@ -76,7 +76,10 @@ QString difficultyName(Difficulty d)
  */
 QString stripEmbeddedOptions(const QString& prompt)
 {
-    static const QRegularExpression listLine(QStringLiteral(R"(\n\s*(?:\d{1,2}[.)]|[A-Da-d][.)]|[-*\x{2022}])\s+)"));
+    static const QRegularExpression listLine(
+        QStringLiteral(R"(\n\s*(?:\d{1,2}[.)]|[A-Da-d][.)]|\([A-Da-d1-9]\)|[-*\x{2022}])\s+)"));
+    // The same options run inline after the question: "... complexity? (a) n < n^2 (b) ..."
+    static const QRegularExpression inlineOptions(QStringLiteral(R"(\s\((?:a|A|1)\)\s.+\s\((?:b|B|2)\)\s)"));
     // The student never sees "the passage" or "your notes"; drop phrases that refer to them.
     static const QRegularExpression passageRef(
         QStringLiteral(R"(,?\s+(?:according to|based on|in|from) (?:the (?:provided |given )?(?:passage|text)|)"
@@ -91,6 +94,10 @@ QString stripEmbeddedOptions(const QString& prompt)
     const QRegularExpressionMatch m = listLine.match(stem);
     if (m.hasMatch() && m.capturedStart() > 10) {
         stem = stem.left(m.capturedStart()).trimmed();
+    }
+    const QRegularExpressionMatch inlineMatch = inlineOptions.match(stem);
+    if (inlineMatch.hasMatch() && inlineMatch.capturedStart() > 10) {
+        stem = stem.left(inlineMatch.capturedStart()).trimmed();
     }
     const QRegularExpressionMatch lead = leadingRef.match(stem);
     if (lead.hasMatch() && lead.capturedLength() < stem.size()) {

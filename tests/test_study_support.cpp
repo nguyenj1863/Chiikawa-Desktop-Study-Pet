@@ -465,6 +465,23 @@ void TestStudySupport::questionsMustNotLeanOnUnseenNotesOrData()
         &error);
     QVERIFY2(parsed, qPrintable(error));
     QCOMPARE(parsed->prompt, QStringLiteral("What is the access time of the L1 cache?"));
+
+    // Answer choices repeated in the question ("(a) ... (b) ...", as a 9B model wrote for a quiz
+    // slide) are cut, on their own lines or inline; the choices themselves stay as options.
+    const QString stem = QStringLiteral("Which of the following represents a correct ordering of complexity?");
+    for (const QString& repeated : {stem + QStringLiteral("\n(a) 1 < lgn < n^3\n(b) n < n^2 < n!\n(c) lgn < n\n(d) n < n!"),
+                                    stem + QStringLiteral(" (a) 1 < lgn < n^3 (b) n < n^2 < n! (c) lgn < n (d) n < n!")}) {
+        const auto cut = QuestionGenerator::parseResponse(QuestionType::SingleChoice,
+                                                          choiceJson(repeated, QStringLiteral("L1 cache | 1 ns"), -1), &error);
+        QVERIFY2(cut, qPrintable(error));
+        QCOMPARE(cut->prompt, stem);
+    }
+    // A label inside the question that is not a list of choices stays.
+    const QString keep = QStringLiteral("What does step (a) of the merge sort algorithm do with the input?");
+    const auto kept = QuestionGenerator::parseResponse(QuestionType::SingleChoice,
+                                                       choiceJson(keep, QStringLiteral("L1 cache | 1 ns"), -1), &error);
+    QVERIFY2(kept, qPrintable(error));
+    QCOMPARE(kept->prompt, keep);
 }
 
 void TestStudySupport::generatorShowsQuotedDataAndRetriesWithContext()
