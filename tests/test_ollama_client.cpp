@@ -161,6 +161,8 @@ private slots:
     void setupReportsNotInstalledOrNotRunning();
     void setupDetectsModels();
     void chatSendsStructuredLocalRequest();
+    void imagesAndModelTravelWithTheRequest();
+    void setupLearnsWhichModelsCanSee();
     void requestsRunOneAtATime();
     void reportsModelMissingAndHttpErrors();
     void retriesWithoutThinkWhenRejected();
@@ -231,6 +233,12 @@ void TestOllamaClient::setupDetectsModels()
     client.setModel(QStringLiteral("other:7b"));
     QCOMPARE(client.setupState(), OllamaClient::SetupState::ModelMissing);
     QCOMPARE(OllamaClient::approximateDownloadSize(QStringLiteral("other:7b")), QStringLiteral("several GB"));
+    // The optional larger model: its size is known, and choosing it asks to download it.
+    QCOMPARE(OllamaClient::approximateDownloadSize(QString::fromLatin1(OllamaClient::kHigherQualityModel)),
+             QStringLiteral("about 6.6 GB"));
+    client.setModel(QString::fromLatin1(OllamaClient::kHigherQualityModel));
+    QCOMPARE(client.setupState(), OllamaClient::SetupState::ModelMissing);
+    QVERIFY(OllamaClient::setupMessage(client.setupState(), client.model()).contains(QStringLiteral("6.6 GB")));
 }
 
 void TestOllamaClient::chatSendsStructuredLocalRequest()
@@ -274,6 +282,88 @@ void TestOllamaClient::chatSendsStructuredLocalRequest()
     QCOMPARE(options.value(QStringLiteral("num_predict")).toInt(), 321);
     QCOMPARE(options.value(QStringLiteral("temperature")).toDouble(), 0.1);
     QCOMPARE(client.setupState(), OllamaClient::SetupState::Ready);
+}
+
+void TestOllamaClient::imagesAndModelTravelWithTheRequest()
+{
+    FakeOllama server;
+    server.handler = [](const QString&, const QJsonObject&) {
+        return FakeOllama::Response{200, FakeOllama::chatBody(QStringLiteral("{}"))};
+    };
+    OllamaClient client;
+    QVERIFY(client.setBaseUrl(server.url()));
+    QSignalSpy finished(&client, &LlmClient::finished);
+    LlmRequest req = simpleRequest();
+    req.model = QStringLiteral("qwen3-vl:4b");
+    req.images = {QByteArray("\x89PNG-one", 8), QByteArray("jpeg-two")};
+    client.generate(req);
+    client.generate(simpleRequest());
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 2, 5000);
+
+    const QJsonObject vision = server.requests.at(0).second;
+    QCOMPARE(vision.value(QStringLiteral("model")).toString(), QStringLiteral("qwen3-vl:4b"));
+    const QJsonObject user = vision.value(QStringLiteral("messages")).toArray().last().toObject();
+    const QJsonArray images = user.value(QStringLiteral("images")).toArray();
+    QCOMPARE(images.size(), 2);
+    QCOMPARE(QByteArray::fromBase64(images.at(0).toString().toLatin1()), QByteArray("\x89PNG-one", 8));
+    QCOMPARE(QByteArray::fromBase64(images.at(1).toString().toLatin1()), QByteArray("jpeg-two"));
+
+    // A request without its own model or images uses the chosen model and sends no images.
+    const QJsonObject text = server.requests.at(1).second;
+    QCOMPARE(text.value(QStringLiteral("model")).toString(), QString::fromLatin1(OllamaClient::kDefaultModel));
+    QVERIFY(!text.value(QStringLiteral("messages")).toArray().last().toObject().contains(QStringLiteral("images")));
+}
+
+void TestOllamaClient::setupLearnsWhichModelsCanSee()
+{
+    FakeOllama server;
+    server.handler = [](const QString& path, const QJsonObject& body) {
+        if (path == QStringLiteral("/api/tags")) {
+            return FakeOllama::Response{200, FakeOllama::tagsBody({QStringLiteral("llama3.2:latest"),
+                                                                    QStringLiteral("granite3.2-vision:2b"),
+                                                                    QStringLiteral("qwen3-vl:4b")})};
+        }
+        if (path == QStringLiteral("/api/show")) {
+            const QString model = body.value(QStringLiteral("model")).toString();
+            QJsonArray caps{QStringLiteral("completion")};
+            if (model != QStringLiteral("llama3.2:latest")) {
+                caps.append(QStringLiteral("vision"));
+            }
+            return FakeOllama::Response{200, FakeOllama::json({{QStringLiteral("capabilities"), caps}})};
+        }
+        return FakeOllama::Response{404, {}};
+    };
+    OllamaClient client;
+    QVERIFY(client.setBaseUrl(server.url()));
+    client.setModel(QStringLiteral("llama3.2"));
+    QSignalSpy caps(&client, &OllamaClient::capabilitiesChanged);
+    client.checkSetup();
+    QTRY_COMPARE_WITH_TIMEOUT(caps.count(), 1, 5000);
+    QVERIFY(!client.supportsVision(QStringLiteral("llama3.2")));        // implicit :latest tag
+    QVERIFY(client.supportsVision(QStringLiteral("qwen3-vl:4b")));
+    QVERIFY(!client.supportsVision(QStringLiteral("not-installed:1b")));
+
+    // The text model cannot see, so the suggested vision model is used, else any that can.
+    QCOMPARE(client.visionModel(QStringLiteral("qwen3-vl:4b")), QStringLiteral("qwen3-vl:4b"));
+    QCOMPARE(client.visionModel(QStringLiteral("missing:7b")), QStringLiteral("granite3.2-vision:2b"));
+    client.setModel(QStringLiteral("granite3.2-vision:2b"));
+    QCOMPARE(client.visionModel(QStringLiteral("qwen3-vl:4b")), QStringLiteral("granite3.2-vision:2b"));
+
+    // A second check does not ask about models it already knows.
+    int shows = 0;
+    for (const auto& r : std::as_const(server.requests)) {
+        shows += r.first == QStringLiteral("/api/show") ? 1 : 0;
+    }
+    QCOMPARE(shows, 3);
+    client.checkSetup();
+    QTRY_COMPARE_WITH_TIMEOUT(client.setupState(), OllamaClient::SetupState::Ready, 5000);
+    QTest::qWait(100);
+    int showsAfter = 0;
+    for (const auto& r : std::as_const(server.requests)) {
+        showsAfter += r.first == QStringLiteral("/api/show") ? 1 : 0;
+    }
+    QCOMPARE(showsAfter, 3);
+    QVERIFY(OllamaClient::approximateDownloadSize(QString::fromLatin1(OllamaClient::kSuggestedVisionModel)).contains(QStringLiteral("3.3 GB")));
 }
 
 void TestOllamaClient::requestsRunOneAtATime()

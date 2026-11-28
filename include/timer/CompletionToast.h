@@ -14,8 +14,9 @@ class QScreen;
 
 /**
  * Custom study-completion notification anchored to the bottom-right work area
- * of the primary display (above the taskbar). Stays visible for 12 seconds with
- * hover-aware pause/resume and never steals keyboard focus.
+ * of the primary display (above the taskbar), placed by NotificationStack so it
+ * never overlaps the alarm. Stays visible for 12 seconds with hover-aware
+ * pause/resume and never steals keyboard focus.
  */
 class CompletionToast : public QWidget {
     Q_OBJECT
@@ -60,11 +61,8 @@ private slots:
     void onDismissClicked();
     void onStartAgainClicked();
     void finishFadeOut();
-    void repositionToPrimaryScreen();
 
 private:
-    void bindScreenSignals(QScreen* screen);
-    [[nodiscard]] QScreen* targetScreen() const;
     void startFadeIn(const QPoint& finalPos);
     void startFadeOut();
 
@@ -77,7 +75,6 @@ private:
     QGraphicsOpacityEffect* m_opacity = nullptr;
     QPropertyAnimation* m_fade = nullptr;
     QPropertyAnimation* m_slide = nullptr;
-    QPointer<QScreen> m_trackedScreen;
 
     QTimer m_autoHide;
     QElapsedTimer m_remainingClock;

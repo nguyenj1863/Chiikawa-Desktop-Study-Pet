@@ -1,17 +1,18 @@
 #include "MockLlmClient.h"
 
-#include "study/AnswerNormalizer.h"
-#include "study/ChoiceEvaluators.h"
-#include "study/ProgressTracker.h"
-#include "study/QuestionSelector.h"
+#include "study/evaluation/AnswerNormalizer.h"
+#include "study/evaluation/ChoiceEvaluators.h"
+#include "study/progress/ProgressTracker.h"
+#include "study/practice/QuestionSelector.h"
 #include "study/StudyDatabase.h"
-#include "study/WrittenAnswerEvaluator.h"
+#include "study/evaluation/WrittenAnswerEvaluator.h"
 
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSignalSpy>
+#include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -122,7 +123,7 @@ private slots:
     void judgeRunsAsyncAndHandlesFailures();
     void selfAssessmentIsSeparate();
 
-    void xpDependsOnDifficultyScoreAndKind();
+    void progressSummarisesAnswersAccuracyAndDueCards();
     void progressTracksFormatsReviewAndReset();
 
     void selectorRespectsFormatPreferences();
@@ -370,26 +371,45 @@ void TestStudyAnswers::selfAssessmentIsSeparate()
     QCOMPARE(StudyEval::selfRatingLabel(SelfRating::PartlyGotIt), QStringLiteral("Partially got it"));
 }
 
-void TestStudyAnswers::xpDependsOnDifficultyScoreAndKind()
+void TestStudyAnswers::progressSummarisesAnswersAccuracyAndDueCards()
 {
-    QCOMPARE(ProgressTracker::baseXp(Difficulty::Easy), 10);
-    QCOMPARE(ProgressTracker::baseXp(Difficulty::Medium), 20);
-    QCOMPARE(ProgressTracker::baseXp(Difficulty::Hard), 35);
+    QTemporaryDir dir;
+    StudyDatabase::setStorageDirectory(dir.path());
+    StudyDatabase db;
+    QVERIFY(db.open());
+    const qint64 studySet = db.addStudySet(QStringLiteral("Mixed")).value_or(0);
+    const qint64 doc = db.addDocument(studySet, QStringLiteral("Deck"), QStringLiteral("deck.pptx"), DocumentKind::Pptx).value_or(0);
+    QVERIFY(studySet > 0 && doc > 0);
+    Question a = singleChoice();
+    a.id = QStringLiteral("a");
+    a.setId = studySet;
+    a.documentId = doc;
+    Question b = singleChoice();
+    b.id = QStringLiteral("b");
+    b.topic = QStringLiteral("other topic");
+    b.setId = studySet;
+    b.documentId = doc;
+    QVERIFY(db.saveQuestion(a, 0, QString()));
+    QVERIFY(db.saveQuestion(b, 0, QString()));
 
-    const Question hard = multiSelect();
-    Evaluation e = MultiSelectEvaluator::evaluate(hard, {QStringLiteral("a"), QStringLiteral("c"), QStringLiteral("d")});
-    QCOMPARE(ProgressTracker::xpFor(hard, e), 35);
-    e = MultiSelectEvaluator::evaluate(hard, {QStringLiteral("a"), QStringLiteral("d")});
-    QCOMPARE(ProgressTracker::xpFor(hard, e), 23);   // 35 * 2/3, rounded
-    e.verdict = Verdict::NeedsReview;
-    QCOMPARE(ProgressTracker::xpFor(hard, e), 0);
+    ProgressTracker tracker(&db);
+    StudyProgress none = tracker.progress(studySet);
+    QCOMPARE(none.answered(), 0);
+    QCOMPARE(none.accuracy(), 0.0);
+    QCOMPARE(none.dueCount, 0);
 
-    // Revealed answers earn far less than answering on your own.
-    QCOMPARE(ProgressTracker::xpFor(hard, StudyEval::selfAssessment(SelfRating::GotIt)), 9);
-    QCOMPARE(ProgressTracker::xpFor(hard, StudyEval::selfAssessment(SelfRating::PartlyGotIt)), 4);
-    QCOMPARE(ProgressTracker::xpFor(hard, StudyEval::selfAssessment(SelfRating::NeedReview)), 0);
-    QVERIFY(ProgressTracker::xpFor(hard, StudyEval::selfAssessment(SelfRating::GotIt))
-            < ProgressTracker::xpFor(hard, MultiSelectEvaluator::evaluate(hard, {QStringLiteral("a"), QStringLiteral("c"), QStringLiteral("d")})));
+    // One right, one wrong: half right, and the wrong one comes back for review.
+    QVERIFY(tracker.record(a, SingleChoiceEvaluator::evaluate(a, QStringLiteral("b"))));
+    QVERIFY(tracker.record(b, SingleChoiceEvaluator::evaluate(b, QStringLiteral("a"))));
+    const StudyProgress p = tracker.progress(studySet);
+    QCOMPARE(p.answered(), 2);
+    QCOMPARE(p.accuracy(), 0.5);
+    QVERIFY(!p.reviewTopics.isEmpty());
+    // The missed question is a learning card due again in minutes; the right one is due tomorrow.
+    QCOMPARE(p.dueCount, 0);
+    QSqlQuery q(db.connection());
+    QVERIFY(q.exec(QStringLiteral("UPDATE card_schedule SET due_at = 0 WHERE state = 1")));
+    QCOMPARE(tracker.progress(studySet).dueCount, 1);
 }
 
 void TestStudyAnswers::progressTracksFormatsReviewAndReset()
@@ -417,9 +437,9 @@ void TestStudyAnswers::progressTracksFormatsReviewAndReset()
     }
 
     ProgressTracker tracker(&db);
-    QCOMPARE(tracker.record(sc, SingleChoiceEvaluator::evaluate(sc, QStringLiteral("a"))), 0);
-    QCOMPARE(tracker.record(ms, MultiSelectEvaluator::evaluate(ms, {QStringLiteral("a"), QStringLiteral("d")})), 23);
-    QCOMPARE(tracker.record(w, StudyEval::selfAssessment(SelfRating::GotIt)), 9);
+    QVERIFY(tracker.record(sc, SingleChoiceEvaluator::evaluate(sc, QStringLiteral("a"))));
+    QVERIFY(tracker.record(ms, MultiSelectEvaluator::evaluate(ms, {QStringLiteral("a"), QStringLiteral("d")})));
+    QVERIFY(tracker.record(w, StudyEval::selfAssessment(SelfRating::GotIt)));
     Evaluation unsure;
     unsure.verdict = Verdict::NeedsReview;
     tracker.record(w, unsure);
@@ -431,11 +451,10 @@ void TestStudyAnswers::progressTracksFormatsReviewAndReset()
     QCOMPARE(p.partial, 1);
     QCOMPARE(p.incorrect, 1);
     QCOMPARE(p.needsReview, 1);
-    QCOMPARE(p.xp, 23);
     QCOMPARE(p.selfAssessed, 1);
     QCOMPARE(p.selfGotIt, 1);
-    QCOMPARE(p.selfXp, 9);
-    QCOMPARE(p.totalXp(), 32);
+    QCOMPARE(p.answered(), 4);
+    QVERIFY(qAbs(p.accuracy() - 1.0 / 3.0) < 1e-9);   // one right of the three that could be judged
     QCOMPARE(p.byFormat.value(int(QuestionType::MultiSelect)).partial, 1);
     QCOMPARE(p.byFormat.value(int(QuestionType::SingleChoice)).attempted, 1);
     QVERIFY(p.reviewTopics.contains(QStringLiteral("left join")));

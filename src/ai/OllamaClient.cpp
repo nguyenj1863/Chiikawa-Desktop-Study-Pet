@@ -227,10 +227,18 @@ void OllamaClient::sendActive()
         messages.append(QJsonObject{{QStringLiteral("role"), QStringLiteral("system")},
                                     {QStringLiteral("content"), r.system}});
     }
-    messages.append(QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
-                                {QStringLiteral("content"), r.prompt}});
+    QJsonObject user{{QStringLiteral("role"), QStringLiteral("user")}, {QStringLiteral("content"), r.prompt}};
+    if (!r.images.isEmpty()) {
+        // Vision models read images sent with the message (base64, no data: prefix).
+        QJsonArray images;
+        for (const QByteArray& image : r.images) {
+            images.append(QString::fromLatin1(image.toBase64()));
+        }
+        user.insert(QStringLiteral("images"), images);
+    }
+    messages.append(user);
     QJsonObject body{
-        {QStringLiteral("model"), m_model},
+        {QStringLiteral("model"), r.model.isEmpty() ? m_model : r.model},
         {QStringLiteral("messages"), messages},
         {QStringLiteral("stream"), false},
         {QStringLiteral("keep_alive"), kKeepAlive},
@@ -385,6 +393,63 @@ void OllamaClient::onTagsReply(QNetworkReply* reply)
         }
     }
     setState(modelInstalled(m_model) ? SetupState::Ready : SetupState::ModelMissing);
+    fetchCapabilities();
+}
+
+void OllamaClient::fetchCapabilities()
+{
+    // /api/show lists what each installed model can do ("vision" for models that read images).
+    for (const QString& name : std::as_const(m_models)) {
+        if (m_capabilities.contains(name)) {
+            continue;
+        }
+        QNetworkRequest req(endpoint(QStringLiteral("/api/show")));
+        req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+        req.setTransferTimeout(kTagsTimeoutMs);
+        QNetworkReply* reply = m_net->post(req, QJsonDocument(QJsonObject{{QStringLiteral("model"), name}}).toJson(QJsonDocument::Compact));
+        ++m_capabilityRequests;
+        connect(reply, &QNetworkReply::finished, this, [this, reply, name]() {
+            reply->deleteLater();
+            QStringList caps;
+            if (reply->error() == QNetworkReply::NoError) {
+                for (const QJsonValue& c : QJsonDocument::fromJson(reply->readAll()).object().value(QStringLiteral("capabilities")).toArray()) {
+                    caps.append(c.toString());
+                }
+                m_capabilities.insert(name, caps);
+            }
+            if (--m_capabilityRequests == 0) {
+                emit capabilitiesChanged();
+            }
+        });
+    }
+}
+
+bool OllamaClient::supportsVision(const QString& model) const
+{
+    const QString tagged = model.contains(QLatin1Char(':')) ? model : model + QStringLiteral(":latest");
+    for (auto it = m_capabilities.cbegin(); it != m_capabilities.cend(); ++it) {
+        if (it.key().compare(model, Qt::CaseInsensitive) == 0 || it.key().compare(tagged, Qt::CaseInsensitive) == 0) {
+            return it.value().contains(QStringLiteral("vision"));
+        }
+    }
+    return false;
+}
+
+QString OllamaClient::visionModel(const QString& preferred) const
+{
+    // The chosen text model if it can see; then the preferred vision model; then any installed one.
+    if (supportsVision(m_model)) {
+        return m_model;
+    }
+    if (!preferred.isEmpty() && modelInstalled(preferred) && supportsVision(preferred)) {
+        return preferred;
+    }
+    for (const QString& name : m_models) {
+        if (supportsVision(name)) {
+            return name;
+        }
+    }
+    return QString();
 }
 
 QString OllamaClient::setupMessage(SetupState state, const QString& model)
@@ -410,8 +475,12 @@ QString OllamaClient::setupMessage(SetupState state, const QString& model)
 
 QString OllamaClient::approximateDownloadSize(const QString& model)
 {
-    if (model.compare(QString::fromLatin1(kDefaultModel), Qt::CaseInsensitive) == 0) {
+    if (model.compare(QString::fromLatin1(kDefaultModel), Qt::CaseInsensitive) == 0
+        || model.compare(QString::fromLatin1(kSuggestedVisionModel), Qt::CaseInsensitive) == 0) {
         return QStringLiteral("about 3.3 GB");
+    }
+    if (model.compare(QString::fromLatin1(kHigherQualityModel), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("about 6.6 GB");
     }
     return QStringLiteral("several GB");
 }

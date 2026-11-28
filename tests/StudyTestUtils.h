@@ -9,6 +9,7 @@
 #include <QPair>
 #include <QString>
 #include <QStringList>
+#include <QVector>
 #include <QtEndian>
 #include <array>
 
@@ -123,6 +124,10 @@ struct TestSlide {
     QString notes;
     bool picture = false;
     QString slideNumberText = QStringLiteral("99");   // placeholder text that must be ignored
+    QByteArray pictureData;          // with picture: an embedded image file (PNG bytes)
+    QString pictureAlt;              // with picture: the picture's alt text
+    QVector<QStringList> table;      // a DrawingML table; the first row is the header
+    QByteArray logoData;             // a second picture, shared between slides (like a logo)
 };
 
 inline QByteArray slideXml(const TestSlide& s)
@@ -151,8 +156,26 @@ inline QByteArray slideXml(const TestSlide& s)
                           "<p:txBody><a:bodyPr/><a:p><a:r><a:t>%1</a:t></a:r></a:p></p:txBody></p:sp>")
                .arg(s.slideNumberText);
     if (s.picture) {
-        xml += QStringLiteral("<p:pic><p:nvPicPr><p:cNvPr id=\"5\" name=\"Picture\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>"
-                              "<p:blipFill><a:blip r:embed=\"rId9\"/></p:blipFill><p:spPr/></p:pic>");
+        xml += QStringLiteral("<p:pic><p:nvPicPr><p:cNvPr id=\"5\" name=\"Picture 4\" descr=\"%1\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>"
+                              "<p:blipFill><a:blip r:embed=\"rId9\"/></p:blipFill><p:spPr/></p:pic>")
+                   .arg(s.pictureAlt.toHtmlEscaped());
+    }
+    if (!s.logoData.isEmpty()) {
+        xml += QStringLiteral("<p:pic><p:nvPicPr><p:cNvPr id=\"6\" name=\"Picture 9\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>"
+                              "<p:blipFill><a:blip r:embed=\"rId8\"/></p:blipFill><p:spPr/></p:pic>");
+    }
+    if (!s.table.isEmpty()) {
+        xml += QStringLiteral("<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"7\" name=\"Table 1\"/><p:cNvGraphicFramePr/><p:nvPr/>"
+                              "</p:nvGraphicFramePr><a:graphic><a:graphicData><a:tbl>");
+        for (const QStringList& row : s.table) {
+            xml += QStringLiteral("<a:tr>");
+            for (const QString& cell : row) {
+                xml += QStringLiteral("<a:tc><a:txBody><a:bodyPr/><a:p><a:r><a:t>%1</a:t></a:r></a:p></a:txBody></a:tc>")
+                           .arg(cell.toHtmlEscaped());
+            }
+            xml += QStringLiteral("</a:tr>");
+        }
+        xml += QStringLiteral("</a:tbl></a:graphicData></a:graphic></p:graphicFrame>");
     }
     xml += QStringLiteral("</p:spTree></p:cSld></p:sld>");
     return xml.toUtf8();
@@ -185,6 +208,7 @@ inline QByteArray buildPptx(const QList<TestSlide>& slides)
     const QString relNs = QStringLiteral("http://schemas.openxmlformats.org/officeDocument/2006/relationships");
     QString presRels = QStringLiteral("<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">");
     QString sldIds;
+    bool logoAdded = false;
     const int n = static_cast<int>(slides.size());
     for (int i = 0; i < n; ++i) {
         const int fileNumber = n - i;   // reversed file numbering
@@ -202,6 +226,18 @@ inline QByteArray buildPptx(const QList<TestSlide>& slides)
             slideRels += QStringLiteral("<Relationship Id=\"rId2\" Type=\"%1/notesSlide\" Target=\"../notesSlides/notesSlide%2.xml\"/>")
                              .arg(relNs).arg(fileNumber);
             zip.add(QStringLiteral("ppt/notesSlides/notesSlide%1.xml").arg(fileNumber), notesXml(s.notes));
+        }
+        if (s.picture && !s.pictureData.isEmpty()) {
+            slideRels += QStringLiteral("<Relationship Id=\"rId9\" Type=\"%1/image\" Target=\"../media/image%2.png\"/>")
+                             .arg(relNs).arg(fileNumber);
+            zip.add(QStringLiteral("ppt/media/image%1.png").arg(fileNumber), s.pictureData, false);
+        }
+        if (!s.logoData.isEmpty()) {
+            slideRels += QStringLiteral("<Relationship Id=\"rId8\" Type=\"%1/image\" Target=\"../media/logo.png\"/>").arg(relNs);
+            if (!logoAdded) {
+                zip.add(QStringLiteral("ppt/media/logo.png"), s.logoData, false);
+                logoAdded = true;
+            }
         }
         slideRels += QStringLiteral("</Relationships>");
         zip.add(QStringLiteral("ppt/slides/_rels/slide%1.xml.rels").arg(fileNumber), slideRels.toUtf8());

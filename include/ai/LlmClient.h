@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QList>
 #include <QMetaType>
 #include <QObject>
 #include <QString>
@@ -37,6 +38,10 @@ struct LlmRequest {
     double temperature = 0.2;
     int maxTokens = 1024;
     int timeoutMs = 120000;
+    /** Model to use for this request; empty uses the client's model. */
+    QString model;
+    /** Encoded images (PNG or JPEG) sent with the prompt to a vision-capable model. */
+    QList<QByteArray> images;
 };
 
 class LlmClient : public QObject {

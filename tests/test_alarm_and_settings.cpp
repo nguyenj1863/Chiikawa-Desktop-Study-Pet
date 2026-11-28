@@ -1,5 +1,7 @@
+#include "alarm/AlarmNotification.h"
 #include "alarm/AlarmScheduler.h"
 #include "alarm/AlarmSoundManager.h"
+#include "ui/NotificationStack.h"
 #include "app/AppSettings.h"
 #include "ui/CollapsibleSection.h"
 #include "timer/CompletionToast.h"
@@ -85,6 +87,8 @@ private slots:
     void soundManagerPreferencesAndStop();
     void collapsibleHeadersAndCompactSettingsLayout();
     void completionToastPositioningHoverTimeoutAndActions();
+    void notificationStackPlacesAndStacksWithoutOverlap();
+    void alarmAndTimerNotificationsShareOneCorner();
     void uiSoundManagerThrottlingAndUserOnlyPlayback();
     void redesignedTimerAndAlarmControls();
     void settingsPanelUsesTranslucentGlass();
@@ -614,6 +618,103 @@ void TestAlarmAndSettings::completionToastPositioningHoverTimeoutAndActions()
     QVERIFY(againBtn != nullptr);
     againBtn->click();
     QCOMPARE(againSpy.count(), 1);
+}
+
+void TestAlarmAndSettings::notificationStackPlacesAndStacksWithoutOverlap()
+{
+    const QRect area(0, 0, 1920, 1040);
+    // One notification: the timer toast's corner (20 px margins above the taskbar).
+    const QList<QPoint> one = NotificationStack::stackPositions(area, {QSize(272, 110)});
+    QCOMPARE(one.first(), QPoint(1920 - 272 - 20, 1040 - 110 - 20));
+    QCOMPARE(one.first(), NotificationStack::bottomRightPosition(area, QSize(272, 110)));
+
+    // Two: right-aligned, the older one 10 px above the newer one, no overlap.
+    const QList<QSize> sizes = {QSize(284, 130), QSize(272, 110)};
+    const QList<QPoint> two = NotificationStack::stackPositions(area, sizes);
+    const QRect newer(two.at(0), sizes.at(0));
+    const QRect older(two.at(1), sizes.at(1));
+    QCOMPARE(newer.right(), 1920 - 20 - 1);
+    QCOMPARE(older.right(), 1920 - 20 - 1);
+    QCOMPARE(newer.bottom(), 1040 - 20 - 1);
+    QCOMPARE(older.bottom(), newer.top() - NotificationStack::kGapPx - 1);
+    QVERIFY(!newer.intersects(older));
+
+    // A second monitor's offset work area.
+    const QRect second(1920, 0, 1920, 1040);
+    QCOMPARE(NotificationStack::stackPositions(second, {QSize(272, 110)}).first().x(), 1920 + 1920 - 272 - 20);
+
+    // A short work area never pushes a notification above its top edge.
+    const QRect shortArea(0, 0, 800, 200);
+    for (const QPoint& p : NotificationStack::stackPositions(shortArea, {QSize(272, 150), QSize(272, 150)})) {
+        QVERIFY(p.y() >= shortArea.top());
+        QVERIFY(p.x() + 272 <= shortArea.right() + 1);
+    }
+}
+
+void TestAlarmAndSettings::alarmAndTimerNotificationsShareOneCorner()
+{
+    NotificationStack& stack = NotificationStack::shared();
+    const QRect area(100, 50, 1600, 900);
+    stack.setWorkAreaOverride(area);
+
+    // Alone, the alarm lands exactly where the timer toast does.
+    CompletionToast toast;
+    toast.showNotification(12000);
+    QTest::qWait(CompletionToast::kFadeInMs + 80);
+    const QPoint toastAlone = toast.pos();
+    QCOMPARE(toastAlone, NotificationStack::bottomRightPosition(area, toast.size()));
+    toast.hide();
+    QVERIFY(stack.notifications().isEmpty());   // hiding leaves the stack
+
+    AlarmNotification alarm;
+    QSignalSpy snoozed(&alarm, &AlarmNotification::snoozeRequested);
+    QSignalSpy dismissed(&alarm, &AlarmNotification::dismissRequested);
+    alarm.showAlarm(QRect(10, 10, 120, 120), QTime(7, 30), 5, false);   // the pet's position no longer matters
+    QTest::qWait(AlarmNotification::kFadeInMs + 80);
+    QCOMPARE(alarm.pos(), NotificationStack::bottomRightPosition(area, alarm.size()));
+
+    // Both open: stacked in the same corner, never overlapping.
+    toast.showNotification(12000);
+    QTest::qWait(CompletionToast::kFadeInMs + 80);
+    QCOMPARE(stack.notifications().size(), 2);
+    QVERIFY(!toast.frameGeometry().intersects(alarm.frameGeometry()));
+    QCOMPARE(toast.geometry().right(), area.right() - NotificationStack::kScreenEdgeMarginPx);
+    QCOMPARE(alarm.geometry().right(), area.right() - NotificationStack::kScreenEdgeMarginPx);
+    QVERIFY(alarm.geometry().bottom() < toast.geometry().top());   // the newer one sits nearest the corner
+
+    // A work-area change (taskbar moved, resolution or DPI change) moves both together.
+    const QRect moved(0, 0, 1280, 700);
+    stack.setWorkAreaOverride(moved);
+    stack.relayout();
+    QCOMPARE(toast.geometry().right(), moved.right() - NotificationStack::kScreenEdgeMarginPx);
+    QVERIFY(!toast.geometry().intersects(alarm.geometry()));
+
+    // Closing the toast closes the gap; snooze and dismiss behave as before.
+    toast.hide();
+    QCOMPARE(alarm.pos(), NotificationStack::bottomRightPosition(moved, alarm.size()));
+    auto* snooze = alarm.findChild<QPushButton*>(QStringLiteral("primary"));
+    QVERIFY(snooze);
+    snooze->click();
+    QCOMPARE(snoozed.count(), 1);
+    QCOMPARE(snoozed.first().first().toInt(), 5);
+    QVERIFY(!alarm.isVisible());
+    QVERIFY(stack.notifications().isEmpty());
+    alarm.showAlarm(QRect(), QTime(7, 30), 5, true);
+    alarm.closeNotification();
+    QCOMPARE(dismissed.count(), 0);   // closing programmatically is not a dismissal
+
+    // Both appearing at once (timer ends as the alarm rings): the first one's slide-in must not
+    // undo the stacking.
+    toast.showNotification(12000);
+    alarm.showAlarm(QRect(), QTime(7, 30), 5, false);
+    QTest::qWait(CompletionToast::kFadeInMs + 120);
+    QVERIFY2(!toast.geometry().intersects(alarm.geometry()),
+             qPrintable(QStringLiteral("toast %1,%2 alarm %3,%4").arg(toast.y()).arg(toast.height()).arg(alarm.y()).arg(alarm.height())));
+    QCOMPARE(alarm.pos(), NotificationStack::bottomRightPosition(moved, alarm.size()));
+    toast.hide();
+    alarm.closeNotification();
+
+    stack.setWorkAreaOverride(QRect());
 }
 
 void TestAlarmAndSettings::uiSoundManagerThrottlingAndUserOnlyPlayback()

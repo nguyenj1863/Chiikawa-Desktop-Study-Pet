@@ -3,6 +3,7 @@
 #ifdef Q_OS_MACOS
 #  include "platform/MacWindowHelper.h"
 #endif
+#include "ui/NotificationStack.h"
 #include "ui/PixelTheme.h"
 #include "app/SettingsDefaults.h"
 
@@ -92,7 +93,11 @@ AlarmNotification::AlarmNotification(QWidget* parent)
     setGraphicsEffect(m_opacity);
 
     m_fade = new QPropertyAnimation(m_opacity, "opacity", this);
-    m_fade->setDuration(180);
+    m_fade->setDuration(kFadeInMs);
+
+    m_slide = new QPropertyAnimation(this, "pos", this);
+    m_slide->setDuration(kFadeInMs);
+    m_slide->setEasingCurve(QEasingCurve::OutCubic);
 
     hide();
 }
@@ -127,12 +132,10 @@ void AlarmNotification::showAlarm(const QRect& petGlobalGeometry,
             : QStringLiteral("Your %1 alarm is ringing!").arg(timeText));
     }
 
-    adjustSize();
-
-    QPoint pos(petGlobalGeometry.center().x() - width() / 2,
-               petGlobalGeometry.top() - height() - 10);
-    clampToScreen(pos);
-    move(pos);
+    Q_UNUSED(petGlobalGeometry);   // placed with the other notifications, not beside the pet
+    m_slide->stop();
+    const QPoint finalPos = NotificationStack::shared().place(this);
+    move(finalPos + QPoint(0, kEntranceSlidePx));
 
     show();
 #ifdef Q_OS_MACOS
@@ -144,26 +147,16 @@ void AlarmNotification::showAlarm(const QRect& petGlobalGeometry,
     m_fade->setStartValue(0.0);
     m_fade->setEndValue(1.0);
     m_fade->start();
+    m_slide->setStartValue(pos());
+    m_slide->setEndValue(finalPos);
+    m_slide->start();
 }
 
 void AlarmNotification::closeNotification()
 {
     m_fade->stop();
+    m_slide->stop();
     hide();
-}
-
-void AlarmNotification::clampToScreen(QPoint& pos) const
-{
-    QScreen* screen = QGuiApplication::screenAt(pos + QPoint(width() / 2, height() / 2));
-    if (!screen) {
-        screen = QGuiApplication::primaryScreen();
-    }
-    if (!screen) {
-        return;
-    }
-    const QRect avail = screen->availableGeometry();
-    pos.setX(std::clamp(pos.x(), avail.left(), std::max(avail.left(), avail.right() - width() + 1)));
-    pos.setY(std::clamp(pos.y(), avail.top(), std::max(avail.top(), avail.bottom() - height() + 1)));
 }
 
 void AlarmNotification::onSnoozeClicked()

@@ -79,6 +79,19 @@ signals:
 
 private:
     [[nodiscard]] bool cancelled() const { return m_cancel && m_cancel->load(); }
+    /** Writes figure images under the document's assets folder and records every asset. */
+    bool storeAssets(StudyDatabase& db, qint64 documentId, const QVector<ExtractedAsset>& assets);
+    /**
+     * Runs OCR on pages or slides without a text layer and adds what it reads as segments.
+     * Returns false when no OCR engine is available (the units stay unsupported).
+     */
+    bool readScannedUnits(StudyDatabase& db, qint64 documentId, DocumentKind kind, const QString& stored,
+                          ExtractionResult& extraction);
+
+    /** Long edge OCR renders scanned PDF pages at (about 250 dpi for letter-size pages). */
+    static constexpr int kOcrLongEdge = 2800;
+    /** Pages whose recognised text looks mostly like noise are left out. */
+    static constexpr double kMinOcrConfidence = 0.5;
 
     std::shared_ptr<std::atomic_bool> m_cancel;
 };

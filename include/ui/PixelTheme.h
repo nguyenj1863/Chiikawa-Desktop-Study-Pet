@@ -34,7 +34,11 @@ enum class PixelIcon {
     LeagueOfLegends,
     GenericApp,   // fallback mark for applications without a dedicated icon
     Code,         // generic code-editor mark (fallback for VS Code when it is not installed)
-    Study         // stacked flashcards
+    Study,        // stacked flashcards
+    Check,        // a correct answer
+    Partial,      // a partly correct answer (half-filled circle)
+    Document,     // a study material
+    More          // three dots: more actions
 };
 
 namespace PixelTheme {
@@ -124,7 +128,25 @@ void ensureFontsLoaded();
  * take their font from here so every window (Settings, Study, Chiikawa's bubble) matches.
  */
 inline constexpr int kBodyPx = 12;
+/** Short bold headlines inside a panel, such as a toast title or a quiz result. */
+inline constexpr int kEmphasisPx = 13;
+/** The verdict after answering ("Correct", "Not quite"): the largest text in a question. */
+inline constexpr int kVerdictPx = 16;
 [[nodiscard]] QFont uiFont(int pixelSize = kBodyPx, QFont::Weight weight = QFont::Normal);
+/**
+ * The style sheet declaration for uiFont(pixelSize, weight), for labels whose style sheet is
+ * built in code. A non-empty family (such as displayFontFamily()) goes first, then the UI faces.
+ */
+[[nodiscard]] QString fontCss(int pixelSize = kBodyPx, int weight = QFont::Normal, const QString& family = QString());
+
+/**
+ * The dropdown font: the Settings Alarm Time controls are the reference, and every QComboBox in
+ * the app (closed and open) uses the same family, size and weight through the style sheet.
+ */
+inline constexpr int kControlPx = 12;
+inline constexpr QFont::Weight kControlWeight = QFont::Bold;
+[[nodiscard]] QFont controlFont();
+[[nodiscard]] QString controlFontCss();
 
 /** Frameless, translucent drop-down list so every combo popup matches the glass windows. */
 void configureComboPopup(QComboBox* combo);

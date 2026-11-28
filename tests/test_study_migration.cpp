@@ -1,4 +1,4 @@
-#include "study/ReviewScheduler.h"
+#include "study/progress/ReviewScheduler.h"
 #include "study/Retriever.h"
 #include "study/StudyDatabase.h"
 
@@ -123,6 +123,7 @@ private slots:
     void failedUpgradeLeavesTheVersion1FileUsable();
     void freshLibrariesStartAtTheCurrentVersion();
     void upgradeSeedsReviewSchedulesFromAnswerHistory();
+    void version2LibraryDropsXpAndMarksYourOwnQuestions();
 
 private:
     QTemporaryDir* m_dir = nullptr;
@@ -175,7 +176,7 @@ void TestStudyMigration::upgradesVersion1KeepingEveryRow()
     QCOMPARE(question->setId, 1);
     QCOMPARE(question->category, QStringLiteral("Databases"));   // joined from study_sets
     QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM attempts")), 2);
-    QCOMPARE(scalar(db, QStringLiteral("SELECT SUM(xp) FROM attempts")), 20);
+    QVERIFY(!columns(db, QStringLiteral("attempts")).contains(QStringLiteral("xp")));   // XP was retired in version 3
     QCOMPARE(scalar(db, QStringLiteral("SELECT needs_review FROM concept_stats WHERE concept = 'left join'")), 1);
 
     // Full-text search still finds the migrated chunks, scoped by set.
@@ -322,6 +323,56 @@ void TestStudyMigration::upgradeSeedsReviewSchedulesFromAnswerHistory()
     QCOMPARE(scalar(db, QStringLiteral("SELECT rating FROM attempts ORDER BY answered_at LIMIT 1")), static_cast<int>(Rating::Good));
     QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM attempts WHERE rating IS NULL")), 0);
     QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM attempts")), 2);   // history is untouched
+}
+
+void TestStudyMigration::version2LibraryDropsXpAndMarksYourOwnQuestions()
+{
+    // Start from a current library, then put it back into its version 2 shape (XP column, no origin).
+    {
+        StudyDatabase db;
+        QVERIFY2(db.open(), qPrintable(db.lastError()));
+        const qint64 set = db.addStudySet(QStringLiteral("Upgrade")).value_or(0);
+        const qint64 deck = db.addDocument(set, QStringLiteral("Deck"), QStringLiteral("deck.pptx"), DocumentKind::Pptx).value_or(0);
+        const qint64 mine = db.manualDocument(set).value_or(0);
+        QVERIFY(deck > 0 && mine > 0);
+        for (const qint64 doc : {deck, mine}) {
+            Question q;
+            q.id = QStringLiteral("q-%1").arg(doc);
+            q.type = QuestionType::Written;
+            q.prompt = QStringLiteral("Prompt %1").arg(doc);
+            q.expectedAnswer = QStringLiteral("answer");
+            q.setId = set;
+            q.documentId = doc;
+            QVERIFY(db.saveQuestion(q, 0, QString()));
+            QSqlQuery a(db.connection());
+            QVERIFY(a.exec(QStringLiteral("INSERT INTO attempts(question_id, document_id, set_id, type, kind, verdict, score, answered_at)"
+                                          " VALUES ('q-%1', %1, %2, 3, 0, 0, 1, 1000)").arg(doc).arg(set)));
+        }
+    }
+    {
+        QSqlDatabase raw = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("v2_shape"));
+        raw.setDatabaseName(m_dir->filePath(QStringLiteral("library.db")));
+        QVERIFY(raw.open());
+        QSqlQuery q(raw);
+        QVERIFY(q.exec(QStringLiteral("ALTER TABLE attempts ADD COLUMN xp INTEGER NOT NULL DEFAULT 7")));
+        QVERIFY(q.exec(QStringLiteral("ALTER TABLE questions DROP COLUMN origin")));
+        QVERIFY(q.exec(QStringLiteral("ALTER TABLE questions DROP COLUMN edited_at")));
+        QVERIFY(q.exec(QStringLiteral("PRAGMA user_version = 2")));
+        raw.close();
+    }
+    QSqlDatabase::removeDatabase(QStringLiteral("v2_shape"));
+
+    StudyDatabase db;
+    QVERIFY2(db.open(), qPrintable(db.lastError()));
+    QCOMPARE(scalar(db, QStringLiteral("PRAGMA user_version")), StudyDatabase::kSchemaVersion);
+    QVERIFY(QFileInfo::exists(m_dir->filePath(QString::fromLatin1(StudyDatabase::kVersion2BackupName))));
+    QVERIFY(!columns(db, QStringLiteral("attempts")).contains(QStringLiteral("xp")));
+    QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM attempts")), 2);   // history is kept
+    QVERIFY(columns(db, QStringLiteral("questions")).contains(QStringLiteral("origin")));
+    QVERIFY(columns(db, QStringLiteral("questions")).contains(QStringLiteral("edited_at")));
+    // Questions in "My questions" are marked as written by the student, the rest as generated.
+    QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM questions WHERE origin = 1")), 1);
+    QCOMPARE(scalar(db, QStringLiteral("SELECT COUNT(*) FROM questions WHERE origin = 0")), 1);
 }
 
 QTEST_MAIN(TestStudyMigration)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "study/StudyTypes.h"
+
 #include <QMetaType>
 #include <QString>
 #include <QStringList>
@@ -21,6 +23,41 @@ struct SourceRef {
     QString excerpt;
     qint64 documentId = 0;
     qint64 chunkId = 0;
+};
+
+/**
+ * A figure, table or data snippet shown with a question. Questions that depend on a visual
+ * must carry it, so the student always sees what the question refers to.
+ */
+struct SupportRef {
+    SupportKind kind = SupportKind::Image;
+    qint64 assetId = 0;          // stored asset (images and tables); 0 for an inline data snippet
+    QString imagePath;
+    QString caption;
+    TableData table;
+    QString text;                // data snippet, or the text read from the image
+    QString interpretation;      // what the vision model saw in the image, if anything
+};
+
+/** The reference a question keeps to a stored asset (with everything needed to show it). */
+inline SupportRef supportRefFor(const SupportAsset& asset)
+{
+    SupportRef r;
+    r.kind = asset.kind;
+    r.assetId = asset.id;
+    r.imagePath = asset.path;
+    r.caption = asset.caption;
+    r.table = asset.table;
+    r.text = asset.text;
+    r.interpretation = asset.interpretation;
+    return r;
+}
+
+/** Where a question came from. Values are persisted; append only. */
+enum class QuestionOrigin {
+    Generated = 0,
+    Written = 1,   // written by the student
+    Edited = 2     // generated, then edited by the student
 };
 
 /** Answer format. Values are persisted; append only. */
@@ -64,6 +101,11 @@ struct Question {
     QStringList keyConcepts;           // Written: points a correct answer must cover
     qint64 setId = 0;
     qint64 documentId = 0;
+    qint64 chunkId = 0;                // source passage of a generated question (0 if none)
+    QVector<SupportRef> support;       // visuals shown with the question
+    QuestionOrigin origin = QuestionOrigin::Generated;
+    qint64 editedAt = 0;               // epoch ms of the student's last edit
+    bool evidenceFromVisual = false;   // the evidence quotes a table or figure, not the passage
 
     [[nodiscard]] bool isValid() const
     {

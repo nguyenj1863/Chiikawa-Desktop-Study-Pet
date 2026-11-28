@@ -1,6 +1,6 @@
 #include "study/StudyDatabase.h"
 
-#include "study/ScheduleStore.h"
+#include "study/progress/ScheduleStore.h"
 
 #include <QAtomicInteger>
 #include <QDateTime>
@@ -103,7 +103,22 @@ QJsonObject questionPayload(const Question& q)
         }
     }
     const SourceRef source = q.sources.isEmpty() ? SourceRef{} : q.sources.first();
-    return QJsonObject{
+    // Visuals: stored assets by id; data snippets inline. Resolved to full refs when read.
+    QJsonArray support;
+    for (const SupportRef& s : q.support) {
+        QJsonObject item{{QStringLiteral("kind"), static_cast<int>(s.kind)}};
+        if (s.assetId > 0) {
+            item.insert(QStringLiteral("asset"), s.assetId);
+        } else {
+            item.insert(QStringLiteral("text"), s.text);
+            item.insert(QStringLiteral("caption"), s.caption);
+            if (!s.table.isEmpty()) {
+                item.insert(QStringLiteral("table"), StudyText::tableToJson(s.table));
+            }
+        }
+        support.append(item);
+    }
+    QJsonObject payload{
         {QStringLiteral("options"), options},
         {QStringLiteral("expected"), q.expectedAnswer},
         {QStringLiteral("key_points"), QJsonArray::fromStringList(q.keyConcepts)},
@@ -112,11 +127,56 @@ QJsonObject questionPayload(const Question& q)
         {QStringLiteral("evidence"), source.excerpt},
         {QStringLiteral("location"), source.location},
     };
+    if (!support.isEmpty()) {
+        payload.insert(QStringLiteral("support"), support);
+    }
+    if (q.evidenceFromVisual) {
+        payload.insert(QStringLiteral("evidence_source"), QStringLiteral("visual"));
+    }
+    return payload;
 }
 
 const QString kQuestionColumns = QStringLiteral(
     "qn.id, qn.document_id, qn.set_id, qn.chunk_id, qn.type, qn.prompt, qn.concept, qn.difficulty, "
-    "qn.payload, d.title, co.name");
+    "qn.payload, d.title, co.name, qn.origin, qn.edited_at");
+
+const QString kAssetColumns = QStringLiteral(
+    "id, document_id, unit_kind, unit_number, kind, path, caption, width, height, table_json, text, "
+    "interpretation, interpreted_by, interpreted_at, legible");
+
+SupportAsset readAsset(const QSqlQuery& q)
+{
+    SupportAsset a;
+    a.id = q.value(0).toLongLong();
+    a.documentId = q.value(1).toLongLong();
+    a.unitKind = static_cast<SegmentKind>(q.value(2).toInt());
+    a.unitNumber = q.value(3).toInt();
+    a.kind = static_cast<SupportKind>(q.value(4).toInt());
+    a.path = q.value(5).toString();
+    a.caption = q.value(6).toString();
+    a.width = q.value(7).toInt();
+    a.height = q.value(8).toInt();
+    a.table = StudyText::tableFromJson(q.value(9).toString());
+    a.text = q.value(10).toString();
+    a.interpretation = q.value(11).toString();
+    a.interpretedBy = q.value(12).toString();
+    a.interpreted = !q.value(13).isNull();
+    a.legible = q.value(14).isNull() || q.value(14).toBool();
+    return a;
+}
+
+SupportRef refFromAsset(const SupportAsset& a)
+{
+    SupportRef r;
+    r.kind = a.kind;
+    r.assetId = a.id;
+    r.imagePath = a.path;
+    r.caption = a.caption;
+    r.table = a.table;
+    r.text = a.text;
+    r.interpretation = a.interpretation;
+    return r;
+}
 
 const QString kQuestionFrom = QStringLiteral(
     " FROM questions qn JOIN documents d ON d.id = qn.document_id JOIN study_sets co ON co.id = qn.set_id");
@@ -159,6 +219,21 @@ Question readQuestion(const QSqlQuery& q)
     source.documentId = out.documentId;
     source.chunkId = chunkId;
     out.sources.append(source);
+    out.chunkId = chunkId;
+    out.origin = static_cast<QuestionOrigin>(q.value(11).toInt());
+    out.editedAt = q.value(12).toLongLong();
+    out.evidenceFromVisual = payload.value(QStringLiteral("evidence_source")).toString() == QLatin1String("visual");
+    // Unresolved here: asset refs carry only their id until StudyDatabase::resolveSupport fills them in.
+    for (const QJsonValue& v : payload.value(QStringLiteral("support")).toArray()) {
+        const QJsonObject o = v.toObject();
+        SupportRef ref;
+        ref.kind = static_cast<SupportKind>(o.value(QStringLiteral("kind")).toInt());
+        ref.assetId = o.value(QStringLiteral("asset")).toInteger();
+        ref.text = o.value(QStringLiteral("text")).toString();
+        ref.caption = o.value(QStringLiteral("caption")).toString();
+        ref.table = StudyText::tableFromJson(o.value(QStringLiteral("table")).toString());
+        out.support.append(ref);
+    }
     return out;
 }
 
@@ -195,6 +270,11 @@ QString StudyDatabase::databasePath()
 QString StudyDatabase::filesDirectory()
 {
     return storageDirectory() + QStringLiteral("/files");
+}
+
+QString StudyDatabase::assetsDirectory(qint64 documentId)
+{
+    return filesDirectory() + QStringLiteral("/assets/%1").arg(documentId);
 }
 
 bool StudyDatabase::isOpen() const
@@ -348,10 +428,11 @@ bool StudyDatabase::migrate()
                        " PRIMARY KEY (document_id, concept))"),
     };
 
-    // Upgrading real data: keep a copy of the version 1 file before touching it.
-    if (version == 1) {
+    // Upgrading real data: keep a copy of the old file (named for its version) before touching it.
+    if (version >= 1 && version <= 3) {
         exec(QStringLiteral("PRAGMA wal_checkpoint(TRUNCATE)"));
-        const QString backup = storageDirectory() + QLatin1Char('/') + QString::fromLatin1(kVersion1BackupName);
+        const char* names[] = {kVersion1BackupName, kVersion2BackupName, kVersion3BackupName};
+        const QString backup = storageDirectory() + QLatin1Char('/') + QString::fromLatin1(names[version - 1]);
         QFile::remove(backup);
         if (!QFile::copy(databasePath(), backup)) {
             m_lastError = QStringLiteral("Could not back up the Study Library before upgrading it.");
@@ -450,6 +531,58 @@ bool StudyDatabase::migrate()
         if (!ScheduleStore::replayHistory(db)) {
             m_lastError = QStringLiteral("Could not build review schedules from earlier answers.");
             return fail();
+        }
+    }
+    if (version < 3) {
+        const QStringList upgradeV3 = {
+            // XP is gone: progress is answers, accuracy, due reviews, and concepts to review.
+            QStringLiteral("ALTER TABLE attempts DROP COLUMN xp"),
+            // Where a question came from: 0 generated, 1 written by the student, 2 generated then edited.
+            QStringLiteral("ALTER TABLE questions ADD COLUMN origin INTEGER NOT NULL DEFAULT 0"),
+            QStringLiteral("ALTER TABLE questions ADD COLUMN edited_at INTEGER"),
+            QStringLiteral("UPDATE questions SET origin = 1 WHERE document_id IN (SELECT id FROM documents WHERE kind = %1)")
+                .arg(static_cast<int>(DocumentKind::Manual)),
+        };
+        for (const QString& sql : upgradeV3) {
+            if (!exec(sql)) {
+                return fail();
+            }
+        }
+    }
+    if (version < 4) {
+        const QStringList upgradeV4 = {
+            // Figures, tables and data snippets shown beside questions. Images are files next to the
+            // library; a vision model's reading of an image is stored once and reused.
+            QStringLiteral("CREATE TABLE IF NOT EXISTS support_assets ("
+                           " id INTEGER PRIMARY KEY,"
+                           " document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,"
+                           " unit_kind INTEGER NOT NULL,"
+                           " unit_number INTEGER NOT NULL,"
+                           " kind INTEGER NOT NULL,"
+                           " path TEXT NOT NULL DEFAULT '',"
+                           " caption TEXT NOT NULL DEFAULT '',"
+                           " width INTEGER NOT NULL DEFAULT 0,"
+                           " height INTEGER NOT NULL DEFAULT 0,"
+                           " table_json TEXT NOT NULL DEFAULT '',"
+                           " text TEXT NOT NULL DEFAULT '',"
+                           " interpretation TEXT NOT NULL DEFAULT '',"
+                           " interpreted_by TEXT NOT NULL DEFAULT '',"
+                           " interpreted_at INTEGER,"
+                           " legible INTEGER,"
+                           " created_at INTEGER NOT NULL)"),
+            QStringLiteral("CREATE INDEX IF NOT EXISTS support_assets_unit ON support_assets(document_id, unit_number)"),
+            // Pages or slides whose text came from OCR, so sources can say "p. 4 (scanned)".
+            QStringLiteral("CREATE TABLE IF NOT EXISTS document_units ("
+                           " document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,"
+                           " unit_number INTEGER NOT NULL,"
+                           " ocr INTEGER NOT NULL DEFAULT 0,"
+                           " ocr_confidence REAL,"
+                           " PRIMARY KEY (document_id, unit_number))"),
+        };
+        for (const QString& sql : upgradeV4) {
+            if (!exec(sql)) {
+                return fail();
+            }
         }
     }
     if (!exec(QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion))) {
@@ -716,7 +849,8 @@ bool StudyDatabase::saveQuestion(const Question& question, qint64 chunkId, const
 {
     QSqlQuery q(connection());
     q.prepare(QStringLiteral("INSERT OR REPLACE INTO questions(id, document_id, set_id, chunk_id, type, prompt,"
-                             " concept, difficulty, payload, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+                             " concept, difficulty, payload, model, created_at, origin, edited_at)"
+                             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     q.addBindValue(question.id);
     q.addBindValue(question.documentId);
     q.addBindValue(question.setId);
@@ -728,6 +862,8 @@ bool StudyDatabase::saveQuestion(const Question& question, qint64 chunkId, const
     q.addBindValue(QString::fromUtf8(QJsonDocument(questionPayload(question)).toJson(QJsonDocument::Compact)));
     q.addBindValue(text(model));
     q.addBindValue(nowMs());
+    q.addBindValue(static_cast<int>(question.origin));
+    q.addBindValue(question.editedAt > 0 ? QVariant(question.editedAt) : QVariant(QMetaType::fromType<qint64>()));
     if (!q.exec()) {
         m_lastError = q.lastError().text();
         return false;
@@ -737,13 +873,19 @@ bool StudyDatabase::saveQuestion(const Question& question, qint64 chunkId, const
 
 std::optional<Question> StudyDatabase::question(const QString& id)
 {
-    QSqlQuery q(connection());
-    q.prepare(QStringLiteral("SELECT ") + kQuestionColumns + kQuestionFrom + QStringLiteral(" WHERE qn.id = ?"));
-    q.addBindValue(id);
-    if (q.exec() && q.next()) {
-        return readQuestion(q);
+    std::optional<Question> out;
+    {
+        QSqlQuery q(connection());
+        q.prepare(QStringLiteral("SELECT ") + kQuestionColumns + kQuestionFrom + QStringLiteral(" WHERE qn.id = ?"));
+        q.addBindValue(id);
+        if (q.exec() && q.next()) {
+            out = readQuestion(q);
+        }
     }
-    return std::nullopt;
+    if (out) {
+        resolveSupport(*out);
+    }
+    return out;
 }
 
 QVector<Question> StudyDatabase::documentQuestions(qint64 documentId)
@@ -758,6 +900,8 @@ QVector<Question> StudyDatabase::documentQuestions(qint64 documentId)
             out.append(readQuestion(q));
         }
     }
+    q.finish();
+    resolveSupport(out);
     return out;
 }
 
@@ -784,18 +928,23 @@ QVector<Question> StudyDatabase::setQuestions(qint64 setId, const QList<Question
             out.append(readQuestion(q));
         }
     }
+    q.finish();
+    resolveSupport(out);
     return out;
 }
 
 bool StudyDatabase::updateQuestion(const Question& question)
 {
     QSqlQuery q(connection());
-    q.prepare(QStringLiteral("UPDATE questions SET type = ?, prompt = ?, concept = ?, difficulty = ?, payload = ? WHERE id = ?"));
+    q.prepare(QStringLiteral("UPDATE questions SET type = ?, prompt = ?, concept = ?, difficulty = ?, payload = ?,"
+                             " origin = ?, edited_at = ? WHERE id = ?"));
     q.addBindValue(static_cast<int>(question.type));
     q.addBindValue(text(question.prompt));
     q.addBindValue(text(question.topic));
     q.addBindValue(static_cast<int>(question.difficulty));
     q.addBindValue(QString::fromUtf8(QJsonDocument(questionPayload(question)).toJson(QJsonDocument::Compact)));
+    q.addBindValue(static_cast<int>(question.origin));
+    q.addBindValue(question.editedAt > 0 ? QVariant(question.editedAt) : QVariant(QMetaType::fromType<qint64>()));
     q.addBindValue(question.id);
     if (!q.exec()) {
         m_lastError = q.lastError().text();
@@ -844,14 +993,160 @@ bool StudyDatabase::removeQuestions(qint64 documentId)
     }
     check.finish();
 
+    // Questions the student edited are theirs now: regenerating a document keeps them.
     QSqlQuery q(connection());
-    q.prepare(QStringLiteral("DELETE FROM questions WHERE document_id = ?"));
+    q.prepare(QStringLiteral("DELETE FROM questions WHERE document_id = ? AND origin = ?"));
     q.addBindValue(documentId);
+    q.addBindValue(static_cast<int>(QuestionOrigin::Generated));
     if (!q.exec()) {
         m_lastError = q.lastError().text();
         return false;
     }
     return true;
+}
+
+std::optional<qint64> StudyDatabase::addSupportAsset(const SupportAsset& a)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("INSERT INTO support_assets(document_id, unit_kind, unit_number, kind, path, caption, width, height,"
+                             " table_json, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+    q.addBindValue(a.documentId);
+    q.addBindValue(static_cast<int>(a.unitKind));
+    q.addBindValue(a.unitNumber);
+    q.addBindValue(static_cast<int>(a.kind));
+    q.addBindValue(text(a.path));
+    q.addBindValue(text(a.caption));
+    q.addBindValue(a.width);
+    q.addBindValue(a.height);
+    q.addBindValue(text(StudyText::tableToJson(a.table)));
+    q.addBindValue(text(a.text));
+    q.addBindValue(nowMs());
+    if (!q.exec()) {
+        m_lastError = q.lastError().text();
+        return std::nullopt;
+    }
+    return q.lastInsertId().toLongLong();
+}
+
+std::optional<SupportAsset> StudyDatabase::supportAsset(qint64 id)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("SELECT %1 FROM support_assets WHERE id = ?").arg(kAssetColumns));
+    q.addBindValue(id);
+    if (q.exec() && q.next()) {
+        return readAsset(q);
+    }
+    return std::nullopt;
+}
+
+QVector<SupportAsset> StudyDatabase::supportAssets(qint64 documentId, int unitNumber)
+{
+    QVector<SupportAsset> out;
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("SELECT %1 FROM support_assets WHERE document_id = ?%2 ORDER BY unit_number, id")
+                  .arg(kAssetColumns, unitNumber > 0 ? QStringLiteral(" AND unit_number = %1").arg(unitNumber) : QString()));
+    q.addBindValue(documentId);
+    if (q.exec()) {
+        while (q.next()) {
+            out.append(readAsset(q));
+        }
+    }
+    return out;
+}
+
+bool StudyDatabase::removeSupportAssets(qint64 documentId)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("DELETE FROM support_assets WHERE document_id = ?"));
+    q.addBindValue(documentId);
+    const bool ok = q.exec();
+    QDir(assetsDirectory(documentId)).removeRecursively();
+    return ok;
+}
+
+bool StudyDatabase::setAssetInterpretation(qint64 id, const QString& interpretation, const QString& model, bool legible,
+                                           const QString& readableText)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("UPDATE support_assets SET interpretation = ?, interpreted_by = ?, interpreted_at = ?, legible = ?,"
+                             " text = CASE WHEN ? = '' THEN text ELSE ? END WHERE id = ?"));
+    q.addBindValue(text(interpretation));
+    q.addBindValue(text(model));
+    q.addBindValue(nowMs());
+    q.addBindValue(legible ? 1 : 0);
+    q.addBindValue(text(readableText));
+    q.addBindValue(text(readableText));
+    q.addBindValue(id);
+    if (!q.exec()) {
+        m_lastError = q.lastError().text();
+        return false;
+    }
+    return q.numRowsAffected() == 1;
+}
+
+void StudyDatabase::resolveSupport(Question& question)
+{
+    for (SupportRef& ref : question.support) {
+        if (ref.assetId <= 0) {
+            continue;
+        }
+        if (const auto asset = supportAsset(ref.assetId)) {
+            ref = refFromAsset(*asset);
+        }
+    }
+    // An asset that no longer exists (document re-read) is dropped rather than shown empty.
+    question.support.erase(std::remove_if(question.support.begin(), question.support.end(),
+                                          [](const SupportRef& r) {
+                                              return r.kind == SupportKind::Image ? r.imagePath.isEmpty()
+                                                                                  : r.table.isEmpty() && r.text.isEmpty();
+                                          }),
+                           question.support.end());
+}
+
+void StudyDatabase::resolveSupport(QVector<Question>& questions)
+{
+    for (Question& q : questions) {
+        if (!q.support.isEmpty()) {
+            resolveSupport(q);
+        }
+    }
+}
+
+bool StudyDatabase::setUnitOcr(qint64 documentId, int unitNumber, double confidence)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("INSERT INTO document_units(document_id, unit_number, ocr, ocr_confidence) VALUES (?, ?, 1, ?)"
+                             " ON CONFLICT(document_id, unit_number) DO UPDATE SET ocr = 1, ocr_confidence = excluded.ocr_confidence"));
+    q.addBindValue(documentId);
+    q.addBindValue(unitNumber);
+    q.addBindValue(confidence);
+    if (!q.exec()) {
+        m_lastError = q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool StudyDatabase::clearOcrUnits(qint64 documentId)
+{
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("DELETE FROM document_units WHERE document_id = ?"));
+    q.addBindValue(documentId);
+    return q.exec();
+}
+
+QHash<int, double> StudyDatabase::ocrUnits(qint64 documentId)
+{
+    QHash<int, double> out;
+    QSqlQuery q(connection());
+    q.prepare(QStringLiteral("SELECT unit_number, ocr_confidence FROM document_units WHERE document_id = ? AND ocr = 1"));
+    q.addBindValue(documentId);
+    if (q.exec()) {
+        while (q.next()) {
+            out.insert(q.value(0).toInt(), q.value(1).toDouble());
+        }
+    }
+    return out;
 }
 
 QSet<qint64> StudyDatabase::usedChunkIds(qint64 documentId)

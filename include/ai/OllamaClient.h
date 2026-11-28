@@ -2,6 +2,7 @@
 
 #include "ai/LlmClient.h"
 
+#include <QHash>
 #include <QList>
 #include <QNetworkReply>
 #include <QPointer>
@@ -25,6 +26,11 @@ class OllamaClient : public LlmClient {
 
 public:
     static constexpr auto kDefaultModel = "qwen3.5:4b-q4_K_M";
+    /**
+     * Larger model offered as an optional higher-quality choice (Apache-2.0, reads images too).
+     * Needs about 8 GB of GPU memory to run fully on the GPU; slower on CPU-only computers.
+     */
+    static constexpr auto kHigherQualityModel = "qwen3.5:9b";
     static constexpr auto kDefaultBaseUrl = "http://127.0.0.1:11434";
     static constexpr auto kDownloadPage = "https://ollama.com/download";
 
@@ -65,6 +71,15 @@ public:
     void checkSetup();
     [[nodiscard]] SetupState setupState() const { return m_state; }
     [[nodiscard]] QStringList installedModels() const { return m_models; }
+    /** Whether Ollama reported the "vision" capability for an installed model (known after checkSetup). */
+    [[nodiscard]] bool supportsVision(const QString& model) const;
+    /**
+     * Model used to read figures: the chosen model if it can see images, else the preferred vision
+     * model if installed, else any installed vision model; empty when none can.
+     */
+    [[nodiscard]] QString visionModel(const QString& preferred = QString()) const;
+    /** Small vision model offered for download when no installed model can read images. */
+    static constexpr auto kSuggestedVisionModel = "qwen3-vl:4b";
     [[nodiscard]] static QString setupMessage(SetupState state, const QString& model);
     [[nodiscard]] static QString approximateDownloadSize(const QString& model);
 
@@ -85,6 +100,8 @@ signals:
     void setupStateChanged(OllamaClient::SetupState state);
     void pullProgress(qint64 completed, qint64 total, const QString& status);
     void pullFinished(bool ok, const QString& message);
+    /** Model capabilities (such as vision) were refreshed. */
+    void capabilitiesChanged();
 
 private:
     struct Pending {
@@ -98,6 +115,7 @@ private:
     void finishActive();
     void onChatReply();
     void onTagsReply(QNetworkReply* reply);
+    void fetchCapabilities();
     void setState(SetupState state);
     [[nodiscard]] QUrl endpoint(const QString& path) const;
     [[nodiscard]] bool modelInstalled(const QString& model) const;
@@ -107,6 +125,8 @@ private:
     QString m_model;
     QStringList m_executables;
     QStringList m_models;
+    QHash<QString, QStringList> m_capabilities;   // model -> Ollama capabilities
+    int m_capabilityRequests = 0;
     SetupState m_state = SetupState::Unknown;
 
     QQueue<Pending> m_queue;

@@ -99,10 +99,3 @@ bool SystemTrayManager::isVisible() const
 {
     return m_tray && m_tray->isVisible();
 }
-
-void SystemTrayManager::notify(const QString& title, const QString& message)
-{
-    if (m_tray && m_tray->isVisible()) {
-        m_tray->showMessage(title, message, QSystemTrayIcon::Information, 4000);
-    }
-}

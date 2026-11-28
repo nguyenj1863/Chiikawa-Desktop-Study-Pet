@@ -19,8 +19,6 @@ public:
     void hide();
     [[nodiscard]] bool isVisible() const;
 
-    void notify(const QString& title, const QString& message);
-
 public slots:
     void refreshTimerActions();
 

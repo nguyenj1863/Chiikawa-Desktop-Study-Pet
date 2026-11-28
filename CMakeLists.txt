@@ -101,81 +101,126 @@ set(CHIIKAWA_AI_SOURCES
     include/ai/OllamaClient.h
 )
 
-set(CHIIKAWA_STUDY_SOURCES
-    src/study/AnswerNormalizer.cpp
-    src/study/ChoiceEvaluators.cpp
-    src/study/Chunker.cpp
-    src/study/DocumentExtractor.cpp
-    src/study/ProgressTracker.cpp
-    src/study/ReviewScheduler.cpp
-    src/study/ScheduleStore.cpp
-    src/study/SetQuestionProvider.cpp
-    src/study/QuestionGenerator.cpp
-    src/study/QuestionScheduler.cpp
-    src/study/QuestionSelector.cpp
-    src/study/QuestionValidator.cpp
-    src/study/QuizController.cpp
+# Study: question model, library storage and retrieval
+set(CHIIKAWA_STUDY_CORE_SOURCES
     src/study/Retriever.cpp
     src/study/StudyDatabase.cpp
     src/study/StudyLibrary.cpp
-    src/study/WrittenAnswerEvaluator.cpp
-    src/study/ZipReader.cpp
-    include/study/AnswerNormalizer.h
-    include/study/ChoiceEvaluators.h
-    include/study/Chunker.h
-    include/study/DocumentExtractor.h
-    include/study/Evaluation.h
-    include/study/ProgressTracker.h
-    include/study/ReviewScheduler.h
-    include/study/ScheduleStore.h
-    include/study/SetQuestionProvider.h
     include/study/Question.h
-    include/study/QuestionGenerator.h
-    include/study/QuestionProvider.h
-    include/study/QuestionScheduler.h
-    include/study/QuestionSelector.h
-    include/study/QuestionValidator.h
-    include/study/QuizController.h
     include/study/Retriever.h
     include/study/StudyDatabase.h
     include/study/StudyLibrary.h
     include/study/StudyTypes.h
-    include/study/WrittenAnswerEvaluator.h
-    include/study/ZipReader.h
+)
+
+# Study: reading documents (text, OCR, figures)
+set(CHIIKAWA_STUDY_INGEST_SOURCES
+    src/study/ingest/Chunker.cpp
+    src/study/ingest/DocumentExtractor.cpp
+    src/study/ingest/FigureInterpreter.cpp
+    src/study/ingest/OcrEngine.cpp
+    src/study/ingest/ZipReader.cpp
+    include/study/ingest/Chunker.h
+    include/study/ingest/DocumentExtractor.h
+    include/study/ingest/FigureInterpreter.h
+    include/study/ingest/OcrEngine.h
+    include/study/ingest/ZipReader.h
+)
+
+# Study: writing and checking questions
+set(CHIIKAWA_STUDY_GENERATION_SOURCES
+    src/study/generation/QuestionGenerator.cpp
+    src/study/generation/QuestionValidator.cpp
+    include/study/generation/QuestionGenerator.h
+    include/study/generation/QuestionValidator.h
+)
+
+# Study: grading answers
+set(CHIIKAWA_STUDY_EVALUATION_SOURCES
+    src/study/evaluation/AnswerNormalizer.cpp
+    src/study/evaluation/ChoiceEvaluators.cpp
+    src/study/evaluation/WrittenAnswerEvaluator.cpp
+    include/study/evaluation/AnswerNormalizer.h
+    include/study/evaluation/ChoiceEvaluators.h
+    include/study/evaluation/Evaluation.h
+    include/study/evaluation/WrittenAnswerEvaluator.h
+)
+
+# Study: choosing and asking questions
+set(CHIIKAWA_STUDY_PRACTICE_SOURCES
+    src/study/practice/QuestionScheduler.cpp
+    src/study/practice/QuestionSelector.cpp
+    src/study/practice/QuizController.cpp
+    src/study/practice/SetQuestionProvider.cpp
+    include/study/practice/QuestionProvider.h
+    include/study/practice/QuestionScheduler.h
+    include/study/practice/QuestionSelector.h
+    include/study/practice/QuizController.h
+    include/study/practice/SetQuestionProvider.h
+)
+
+# Study: progress and spaced repetition
+set(CHIIKAWA_STUDY_PROGRESS_SOURCES
+    src/study/progress/ProgressTracker.cpp
+    src/study/progress/ReviewScheduler.cpp
+    src/study/progress/ScheduleStore.cpp
+    include/study/progress/ProgressTracker.h
+    include/study/progress/ReviewScheduler.h
+    include/study/progress/ScheduleStore.h
+)
+
+set(CHIIKAWA_STUDY_SOURCES
+    ${CHIIKAWA_STUDY_CORE_SOURCES}
+    ${CHIIKAWA_STUDY_INGEST_SOURCES}
+    ${CHIIKAWA_STUDY_GENERATION_SOURCES}
+    ${CHIIKAWA_STUDY_EVALUATION_SOURCES}
+    ${CHIIKAWA_STUDY_PRACTICE_SOURCES}
+    ${CHIIKAWA_STUDY_PROGRESS_SOURCES}
 )
 
 set(CHIIKAWA_UI_SOURCES
     src/ui/CollapsibleSection.cpp
+    src/ui/NotificationStack.cpp
     src/ui/OnboardingPreview.cpp
     src/ui/OnboardingWindow.cpp
     src/ui/PixelTheme.cpp
     src/ui/SettingsPanel.cpp
-    src/ui/QuizPopup.cpp
-    src/ui/StudyLibraryWindow.cpp
-    src/ui/StudyPracticeView.cpp
-    src/ui/StudyPreferencesPage.cpp
-    src/ui/StudySetList.cpp
     src/ui/PixelSegmentedControl.cpp
-    src/ui/QuestionEditor.cpp
     include/ui/CollapsibleSection.h
+    include/ui/NotificationStack.h
     include/ui/OnboardingPreview.h
     include/ui/OnboardingWindow.h
     include/ui/PixelTheme.h
     include/ui/SettingsPanel.h
-    include/ui/QuizPopup.h
-    include/ui/StudyLibraryWindow.h
-    include/ui/StudyPracticeView.h
-    include/ui/StudyPreferencesPage.h
-    include/ui/StudySetList.h
-    include/ui/StudyUiHelpers.h
     include/ui/PixelSegmentedControl.h
-    include/ui/QuestionEditor.h
+)
+
+# Study App windows and widgets (shared widgets stay in ui/)
+set(CHIIKAWA_STUDYUI_SOURCES
+    src/studyui/QuestionEditor.cpp
+    src/studyui/QuizPopup.cpp
+    src/studyui/SetQuestionsView.cpp
+    src/studyui/StudyLibraryWindow.cpp
+    src/studyui/StudyPracticeView.cpp
+    src/studyui/StudyPreferencesPage.cpp
+    src/studyui/StudySetList.cpp
+    src/studyui/SupportView.cpp
+    include/studyui/QuestionEditor.h
+    include/studyui/QuizPopup.h
+    include/studyui/SetQuestionsView.h
+    include/studyui/StudyLibraryWindow.h
+    include/studyui/StudyPracticeView.h
+    include/studyui/StudyPreferencesPage.h
+    include/studyui/StudySetList.h
+    include/studyui/StudyUiHelpers.h
+    include/studyui/SupportView.h
 )
 
 set(CHIIKAWA_PLATFORM_SOURCES
     src/platform/DesktopLayerHelper.cpp
     src/platform/StartupManager.cpp
     src/platform/windows/WindowsIdentity.cpp
+    src/platform/windows/WindowsOcr.cpp
     include/platform/DesktopLayerHelper.h
     include/platform/StartupManager.h
     include/platform/WindowsIdentity.h
@@ -185,6 +230,7 @@ set(CHIIKAWA_MACOS_SOURCES
     src/platform/macos/ExternalAppLauncher_mac.mm
     src/platform/macos/MacWindowHelper.mm
     src/platform/macos/SpotifyLauncher_mac.mm
+    src/platform/macos/VisionOcr.mm
     include/platform/MacWindowHelper.h
 )
 
@@ -200,6 +246,7 @@ add_library(chiikawa_core STATIC
     ${CHIIKAWA_AI_SOURCES}
     ${CHIIKAWA_STUDY_SOURCES}
     ${CHIIKAWA_UI_SOURCES}
+    ${CHIIKAWA_STUDYUI_SOURCES}
     ${CHIIKAWA_PLATFORM_SOURCES}
 )
 
@@ -217,10 +264,11 @@ else()
 endif()
 
 if(WIN32)
-    target_link_libraries(chiikawa_core PUBLIC user32 shell32 ole32 advapi32 version)
+    # windowsapp: Windows Runtime APIs (Windows.Media.Ocr for reading scanned pages)
+    target_link_libraries(chiikawa_core PUBLIC user32 shell32 ole32 advapi32 version windowsapp)
 elseif(APPLE)
     target_sources(chiikawa_core PRIVATE ${CHIIKAWA_MACOS_SOURCES})
-    target_link_libraries(chiikawa_core PUBLIC "-framework AppKit")
+    target_link_libraries(chiikawa_core PUBLIC "-framework AppKit" "-framework Vision")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -296,7 +344,10 @@ chiikawa_add_test(test_review_scheduler tests/test_review_scheduler.cpp)
 chiikawa_add_test(test_ollama_client tests/test_ollama_client.cpp)
 chiikawa_add_test(test_study_generation tests/test_study_generation.cpp tests/MockLlmClient.h)
 chiikawa_add_test(test_study_answers tests/test_study_answers.cpp tests/MockLlmClient.h)
-chiikawa_add_test(test_study_ui tests/test_study_ui.cpp tests/StudyTestUtils.h resources/resources.qrc)
+chiikawa_add_test(test_study_support tests/test_study_support.cpp tests/MockLlmClient.h tests/StudyTestUtils.h)
+chiikawa_add_test(test_study_ocr tests/test_study_ocr.cpp tests/MockLlmClient.h tests/StudyTestUtils.h)
+chiikawa_add_test(test_study_figures tests/test_study_figures.cpp tests/MockLlmClient.h)
+chiikawa_add_test(test_study_ui tests/test_study_ui.cpp tests/StudyTestUtils.h tests/MockLlmClient.h resources/resources.qrc)
 
 if(WIN32)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS

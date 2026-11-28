@@ -17,17 +17,17 @@
 #include "timer/TimerBubble.h"
 #include "alarm/UISoundManager.h"
 #include "app/WindowCoordinator.h"
-#include "study/QuestionScheduler.h"
-#include "study/QuizController.h"
-#include "ui/QuizPopup.h"
+#include "study/practice/QuestionScheduler.h"
+#include "study/practice/QuizController.h"
+#include "studyui/QuizPopup.h"
 #include "ai/OllamaClient.h"
 #include "app/SettingsDefaults.h"
-#include "study/ProgressTracker.h"
-#include "study/QuestionGenerator.h"
-#include "study/QuestionSelector.h"
+#include "study/progress/ProgressTracker.h"
+#include "study/generation/QuestionGenerator.h"
+#include "study/practice/QuestionSelector.h"
 #include "study/StudyLibrary.h"
-#include "study/WrittenAnswerEvaluator.h"
-#include "ui/StudyLibraryWindow.h"
+#include "study/evaluation/WrittenAnswerEvaluator.h"
+#include "studyui/StudyLibraryWindow.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -919,8 +919,8 @@ void PetWindow::setupCheckIns()
         m_questionScheduler->postpone(std::chrono::minutes(5));
     });
     connect(m_quizPopup.get(), &QuizPopup::noticeActionTriggered, this, &PetWindow::openStudy);
-    connect(m_quizController.get(), &QuizController::evaluationReady, this, [this](const Evaluation& evaluation, int xp) {
-        m_quizPopup->showEvaluation(evaluation, xp);
+    connect(m_quizController.get(), &QuizController::evaluationReady, this, [this](const Evaluation& evaluation) {
+        m_quizPopup->showEvaluation(evaluation);
         refreshStudyProgress();
     });
     connect(m_quizController.get(), &QuizController::suggestionOffered, m_quizPopup.get(), &QuizPopup::showSuggestion);
@@ -1167,22 +1167,13 @@ void PetWindow::onAlarmTriggered(const QTime& scheduledTime, bool fromSnooze)
         m_soundManager->playAlarmSequence();
     }
     if (m_alarmNotification && m_settings->alarmNotificationEnabled()) {
-        QRect anchor = frameGeometry();
-        if (!isVisible()) {
-            if (QScreen* primary = QGuiApplication::primaryScreen()) {
-                const QRect avail = primary->availableGeometry();
-                anchor = QRect(avail.center().x() - 60, avail.center().y() - 60, 120, 120);
-            }
-        }
-        m_alarmNotification->showAlarm(anchor,
+        // Shown in the same corner as the timer's completion toast (NotificationStack).
+        m_alarmNotification->showAlarm(frameGeometry(),
                                        scheduledTime,
                                        m_settings->snoozeMinutes(),
                                        fromSnooze);
     }
-    if (m_tray) {
-        m_tray->notify(QStringLiteral("Time to go!"),
-                       QStringLiteral("Your Chiikawa alarm is ringing!"));
-    }
+    // The custom alarm popup above is the only alarm surface: no OS-level toast on top of it.
 }
 
 void PetWindow::onAlarmSnoozed(int minutes)

@@ -59,6 +59,7 @@ public:
     [[nodiscard]] OnboardingWindow* onboardingWindow() const { return m_onboardingWindow.get(); }
     [[nodiscard]] QuickActionMenu* quickActionMenu() const { return m_quickActionMenu.get(); }
     [[nodiscard]] AppLaunchNoticePopup* appNotice() const { return m_appNotice.get(); }
+    [[nodiscard]] AlarmNotification* alarmNotification() const { return m_alarmNotification.get(); }
     [[nodiscard]] QuizController* quizController() const { return m_quizController.get(); }
     [[nodiscard]] QuizPopup* quizPopup() const { return m_quizPopup.get(); }
     [[nodiscard]] QuestionScheduler* questionScheduler() const { return m_questionScheduler.get(); }

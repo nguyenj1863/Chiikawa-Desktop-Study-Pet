@@ -1,13 +1,15 @@
+#include "alarm/AlarmNotification.h"
+#include "alarm/AlarmScheduler.h"
 #include "app/AppSettings.h"
 #include "app/SettingsDefaults.h"
 #include "pet/PetWindow.h"
-#include "study/QuestionScheduler.h"
-#include "study/QuizController.h"
+#include "study/practice/QuestionScheduler.h"
+#include "study/practice/QuizController.h"
 #include "study/StudyDatabase.h"
 #include "study/StudyLibrary.h"
 #include "timer/StudyTimer.h"
 #include "ui/PixelTheme.h"
-#include "ui/QuizPopup.h"
+#include "studyui/QuizPopup.h"
 #include "ui/SettingsPanel.h"
 
 #include <QApplication>
@@ -105,6 +107,7 @@ private slots:
 
     void petSchedulesOnlyWhileEnabledAndStudying();
     void petBlocksCheckInsWhileBusy();
+    void petAlarmUsesTheCustomPopupAndRespectsTheSetting();
     void petShutsDownSafelyWithOpenQuestion();
 
 private:
@@ -401,7 +404,7 @@ void TestCheckIns::popupSkipAndCloseHide()
     Evaluation e;
     e.verdict = Verdict::Correct;
     e.score = 1.0;
-    popup.showEvaluation(e, 20);
+    popup.showEvaluation(e);
     QVERIFY(popup.isShowingResult());
     popup.closeButton()->click();
     QTRY_VERIFY_WITH_TIMEOUT(!popup.isVisible(), 1000);
@@ -482,6 +485,35 @@ void TestCheckIns::petSchedulesOnlyWhileEnabledAndStudying()
     QVERIFY(scheduler->isRunning());
     pet.studyTimer()->cancel();
     QVERIFY(!scheduler->isRunning());
+}
+
+void TestCheckIns::petAlarmUsesTheCustomPopupAndRespectsTheSetting()
+{
+    {
+        AppSettings settings;
+        settings.setOnboardingCompleted(true);
+        settings.setSoundEnabled(false);
+        settings.setAlarmNotificationEnabled(true);
+        settings.save();
+    }
+    PetWindow pet;
+    pet.showPet();
+    QApplication::processEvents();
+    QVERIFY(pet.alarmNotification());
+    QVERIFY(!pet.alarmNotification()->isVisible());
+
+    // An alarm rings with the custom Chiikawa popup (snooze and dismiss are its buttons).
+    emit pet.alarmScheduler()->alarmTriggered(QTime(8, 0), false);
+    QApplication::processEvents();
+    QVERIFY(pet.alarmNotification()->isVisible());
+    pet.alarmNotification()->closeNotification();
+    QApplication::processEvents();
+
+    // With the popup switched off nothing appears, and no OS toast replaces it.
+    pet.appSettings()->setAlarmNotificationEnabled(false);
+    emit pet.alarmScheduler()->alarmTriggered(QTime(8, 1), false);
+    QApplication::processEvents();
+    QVERIFY(!pet.alarmNotification()->isVisible());
 }
 
 void TestCheckIns::petBlocksCheckInsWhileBusy()

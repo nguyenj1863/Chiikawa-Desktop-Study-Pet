@@ -1,3 +1,4 @@
+#include "MockLlmClient.h"
 #include "StudyTestUtils.h"
 
 #include "ai/OllamaClient.h"
@@ -6,28 +7,43 @@
 #include "pet/PetWindow.h"
 #include "quickactions/AnimatedQuickActionButton.h"
 #include "quickactions/QuickActionMenu.h"
-#include "study/ProgressTracker.h"
-#include "study/QuestionGenerator.h"
+#include "alarm/AlarmScheduler.h"
+#include "alarm/AlarmSoundManager.h"
+#include "study/ingest/OcrEngine.h"
+#include "study/progress/ProgressTracker.h"
+#include "study/generation/QuestionGenerator.h"
+#include "study/generation/QuestionValidator.h"
 #include "study/StudyDatabase.h"
 #include "study/StudyLibrary.h"
-#include "study/QuizController.h"
-#include "study/QuizController.h"
-#include "ui/QuizPopup.h"
+#include "study/practice/QuizController.h"
+#include "study/practice/QuizController.h"
+#include "studyui/QuizPopup.h"
 #include "ui/PixelTheme.h"
 #include "ui/CollapsibleSection.h"
-#include "ui/QuestionEditor.h"
+#include "studyui/QuestionEditor.h"
+#include "studyui/SetQuestionsView.h"
 #include "ui/PixelSegmentedControl.h"
-#include "ui/StudyLibraryWindow.h"
-#include "ui/StudyPracticeView.h"
-#include "ui/StudyPreferencesPage.h"
-#include "ui/StudySetList.h"
+#include "studyui/StudyLibraryWindow.h"
+#include "studyui/StudyPracticeView.h"
+#include "studyui/StudyPreferencesPage.h"
+#include "studyui/StudySetList.h"
+#include "ui/SettingsPanel.h"
+#include "studyui/SupportView.h"
+#include "timer/StudyTimer.h"
 
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
+#include <QAction>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMenu>
 #include <QMimeData>
 #include <QFile>
+#include <QFileInfo>
+#include <QRegularExpression>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QLineEdit>
@@ -161,7 +177,7 @@ private slots:
 
     void libraryWindowManagesSetsFormatsAndDocuments();
     void libraryListsSetsAndDrillsIntoOne();
-    void libraryHidesTheReadyBannerAndCollapsesFormats();
+    void libraryHidesTheReadyBanner();
     void libraryExplainsWhichFilesCanBeImported();
     void preferencesTabControlsCheckInsFormatsAndProgress();
     void practiceRunsASetFromItsPage();
@@ -170,6 +186,9 @@ private slots:
     void practicingEarlyKeepsTheReviewSchedule();
     void questionEditorValidatesEveryFormat();
     void ownQuestionsCanBeWrittenEditedPracticedAndDeleted();
+    void generatedQuestionsCanBeEditedRewrittenAndDeleted();
+    void librarySetsShowStatusAndQuestionsHaveTheirOwnTab();
+    void questionsNeedingContextAreFlaggedAndFixedTogether();
     void petStudyFlowWorksWithoutOllama();
     void studyShortcutOpensTheStudyWindow();
 
@@ -234,9 +253,22 @@ void TestStudyUi::singleChoiceUsesRadiosAndMarksResult()
     for (const QuestionOption& o : choiceQuestion().options) {
         e.options.append({o.id, o.id == QStringLiteral("c"), o.correct, o.explanation});
     }
-    popup.showEvaluation(e, 0);
+    popup.showEvaluation(e);
     QVERIFY(popup.isShowingResult());
     QVERIFY(popup.resultLabel()->text().startsWith(QStringLiteral("Not quite")));
+    // The verdict is a tinted card with an icon, in the largest type of the question, after the answers.
+    QVERIFY(popup.resultCard()->isVisibleTo(&popup));
+    QCOMPARE(popup.resultCard()->property("verdict").toString(), QStringLiteral("incorrect"));
+    QCOMPARE(popup.verdictIcon()->property("pixelIcon").toInt(), static_cast<int>(PixelIcon::Close));
+    QVERIFY(!popup.verdictIcon()->pixmap().isNull());
+    popup.resultLabel()->ensurePolished();
+    QCOMPARE(popup.resultLabel()->font().pixelSize(), PixelTheme::kVerdictPx);
+    QVERIFY(popup.resultLabel()->font().pixelSize() > popup.optionButtons().first()->font().pixelSize());
+    QApplication::processEvents();
+    QVERIFY(popup.resultCard()->mapTo(&popup, QPoint()).y() > options.at(3)->mapTo(&popup, QPoint()).y());
+    QVERIFY(popup.resultCard()->isAncestorOf(popup.feedbackLabel()));
+    QVERIFY(popup.submitButton()->isVisibleTo(&popup));   // the next step is always in reach, outside the scroll area
+    QVERIFY(!popup.scrollArea()->isAncestorOf(popup.submitButton()));
     QCOMPARE(options.at(1)->mark(), PixelOptionButton::Mark::Correct);
     QCOMPARE(options.at(2)->mark(), PixelOptionButton::Mark::Incorrect);
     QCOMPARE(options.at(0)->mark(), PixelOptionButton::Mark::None);
@@ -272,8 +304,12 @@ void TestStudyUi::multiSelectUsesCheckboxesAndExplainsEveryOption()
     for (const QuestionOption& o : choiceQuestion(QuestionType::MultiSelect).options) {
         e.options.append({o.id, o.id == QStringLiteral("b") || o.id == QStringLiteral("d"), o.correct, o.explanation});
     }
-    popup.showEvaluation(e, 6);
-    QVERIFY(popup.resultLabel()->text().contains(QStringLiteral("Partially correct · +6 XP")));
+    popup.showEvaluation(e);
+    QCOMPARE(popup.resultLabel()->text(), QStringLiteral("Partially correct"));
+    QCOMPARE(popup.resultCard()->property("verdict").toString(), QStringLiteral("partial"));
+    QCOMPARE(popup.verdictIcon()->property("pixelIcon").toInt(), static_cast<int>(PixelIcon::Partial));
+    QVERIFY(popup.verdictDetail()->isVisibleTo(&popup));
+    QCOMPARE(popup.verdictDetail()->text(), QStringLiteral("1 of 2 correct answers picked"));
     QCOMPARE(options.at(1)->mark(), PixelOptionButton::Mark::Correct);
     QCOMPARE(options.at(2)->mark(), PixelOptionButton::Mark::Missed);
     QCOMPARE(options.at(3)->mark(), PixelOptionButton::Mark::Incorrect);
@@ -329,6 +365,8 @@ void TestStudyUi::writtenAnswerSuggestsJudgesAndReveals()
     QCOMPARE(popup.phase(), QuizPopup::Phase::Revealed);
     QVERIFY(popup.expectedLabel()->text().contains(QStringLiteral("Expected answer: Hamlet")));
     QVERIFY(popup.expectedLabel()->text().contains(QStringLiteral("Key points:")));
+    QVERIFY(popup.resultCard()->isAncestorOf(popup.expectedLabel()));
+    QVERIFY(popup.resultCard()->property("verdict").toString().isEmpty());   // neutral until rated
     QVERIFY(popup.sourceLabel()->text().contains(QStringLiteral("English 210 · p. 14")));
     QVERIFY(popup.selfAssessButton(SelfRating::GotIt)->isVisible());
     QVERIFY(!popup.submitButton()->isVisible());
@@ -337,8 +375,13 @@ void TestStudyUi::writtenAnswerSuggestsJudgesAndReveals()
     QCOMPARE(rated.count(), 1);
     QCOMPARE(rated.first().first().toInt(), static_cast<int>(SelfRating::PartlyGotIt));
 
-    popup.showEvaluation(StudyEval::selfAssessment(SelfRating::PartlyGotIt), 2);
-    QVERIFY(popup.resultLabel()->text().contains(QStringLiteral("Partially got it · +2 XP")));
+    popup.showEvaluation(StudyEval::selfAssessment(SelfRating::PartlyGotIt));
+    QCOMPARE(popup.resultLabel()->text(), QStringLiteral("Partially got it"));
+    QVERIFY(popup.resultCard()->isVisibleTo(&popup));
+
+    // A new question starts without any result.
+    popup.showQuestion(writtenQuestion(), kPet);
+    QVERIFY(!popup.resultCard()->isVisibleTo(&popup));
 }
 
 void TestStudyUi::popupScrollsInsteadOfGrowingPastTheCap()
@@ -442,7 +485,7 @@ void TestStudyUi::libraryWindowManagesSetsFormatsAndDocuments()
     QVERIFY(!window.downloadModelButton()->isVisible());
     QVERIFY(window.setupLabel()->text().contains(QStringLiteral("ollama.com")));
 
-    // Courses
+    // Study sets
     QCOMPARE(window.currentSet(), 0);
     const qint64 studySet = window.createSet(QStringLiteral("CS 340"));
     QVERIFY(studySet > 0);
@@ -480,7 +523,8 @@ void TestStudyUi::libraryWindowManagesSetsFormatsAndDocuments()
     QTRY_COMPARE_WITH_TIMEOUT(window.documentRows().size(), 1, 2000);
     const qint64 doc = window.documentRows().first();
     QVERIFY(window.documentMeta(doc)->text().contains(QStringLiteral("1 slide")));
-    QVERIFY(window.documentMeta(doc)->text().contains(QStringLiteral("Text ready")));
+    QCOMPARE(window.documentStatus(doc)->text(), QStringLiteral("Text ready"));   // status as a pill
+    QVERIFY(!window.documentMeta(doc)->text().contains(QStringLiteral("Text ready")));
     // Without a model, generation is unavailable but the document is ready.
     QVERIFY(!window.generateButton()->isEnabled());
     window.documentCheck(doc)->setChecked(false);
@@ -579,7 +623,7 @@ void TestStudyUi::libraryListsSetsAndDrillsIntoOne()
     QVERIFY(window.setList()->ids().isEmpty());
 }
 
-void TestStudyUi::libraryHidesTheReadyBannerAndCollapsesFormats()
+void TestStudyUi::libraryHidesTheReadyBanner()
 {
     clearSettings();
     AppSettings settings;
@@ -600,25 +644,7 @@ void TestStudyUi::libraryHidesTheReadyBannerAndCollapsesFormats()
     QVERIFY(!window.setupLabel()->isVisibleTo(&window));
     emit ollama.setupStateChanged(OllamaClient::SetupState::NotRunning);
     QVERIFY(window.setupCard()->isVisibleTo(&window));
-
-    // Question formats: collapsed, multiple choice by default, expandable.
-    QCOMPARE(settings.studyFormats(), SettingsDefaults::kStudyFormatSingleChoice);
-    const qint64 id = window.createSet(QStringLiteral("Formats"));
-    QVERIFY(id > 0);
-    QVERIFY(window.isShowingSet());
-    QVERIFY(!window.formatsExpanded());
-    QVERIFY(window.formatsSection()->summaryLabel()->text().contains(QStringLiteral("Multiple choice")));
-    QVERIFY(!window.formatsSection()->summaryLabel()->text().contains(QStringLiteral("Written")));
-    QVERIFY(window.formatCheck(SettingsDefaults::kStudyFormatSingleChoice)->isChecked());
-    QVERIFY(!window.formatCheck(SettingsDefaults::kStudyFormatMultiSelect)->isChecked());
-    QVERIFY(!window.formatCheck(SettingsDefaults::kStudyFormatWritten)->isChecked());
-    window.formatsSection()->setExpanded(!window.formatsExpanded(), false);
-    QVERIFY(window.formatsExpanded());
-    window.formatCheck(SettingsDefaults::kStudyFormatWritten)->setChecked(true);
-    QVERIFY(window.formatsSection()->summaryLabel()->text().contains(QStringLiteral("Written answer")));
-    window.formatsSection()->setExpanded(!window.formatsExpanded(), false);
-    QVERIFY(!window.formatsExpanded());
-    QVERIFY(window.removeCurrentSet(true));
+    // Question formats are covered in preferencesTabControlsCheckInsFormatsAndProgress (they live there now).
 }
 
 void TestStudyUi::libraryExplainsWhichFilesCanBeImported()
@@ -636,14 +662,16 @@ void TestStudyUi::libraryExplainsWhichFilesCanBeImported()
     const qint64 id = window.createSet(QStringLiteral("Imports"));
     QVERIFY(id > 0);
 
-    const QString types = window.importTypesLabel()->text();
+    // One Add files button; the types it takes are in its tooltip, not in paragraphs on the page.
+    const QString types = window.importButton()->toolTip();
     QVERIFY(types.contains(QStringLiteral(".pptx")));
     QVERIFY(types.contains(QStringLiteral(".txt")));
     QVERIFY(types.contains(QStringLiteral(".md")));
     QVERIFY(types.contains(QStringLiteral("PDF")));
-    QCOMPARE(window.importButton()->text(), QStringLiteral("Choose files…"));
-    QVERIFY(window.importPptxButton()->isEnabled());
-    QVERIFY(window.importTextButton()->isEnabled());
+    QVERIFY(types.contains(QStringLiteral("drop files")));
+    QVERIFY(types.contains(StudyLibraryWindow::importTypesText()));
+    QCOMPARE(window.importButton()->text(), QStringLiteral("Add files"));
+    QVERIFY(window.importButton()->isEnabled());
 
     // Unsupported files are named in the message instead of being silently dropped.
     window.importFiles({QStringLiteral("C:/notes/report.docx"), QStringLiteral("C:/notes/old.ppt")});
@@ -708,12 +736,18 @@ void TestStudyUi::preferencesTabControlsCheckInsFormatsAndProgress()
 
     // Formats live here: multiple choice by default, summary follows changes.
     QVERIFY(prefs->formatsSummary().contains(QStringLiteral("Multiple choice")));
+    QVERIFY(!prefs->formatsSection()->summaryLabel()->text().contains(QStringLiteral("Written")));
+    QVERIFY(prefs->formatCheck(SettingsDefaults::kStudyFormatSingleChoice)->isChecked());
+    QVERIFY(!prefs->formatCheck(SettingsDefaults::kStudyFormatMultiSelect)->isChecked());
+    QVERIFY(!prefs->formatCheck(SettingsDefaults::kStudyFormatWritten)->isChecked());
     QVERIFY(!prefs->formatsExpanded());
     prefs->formatsSection()->setExpanded(true, false);
     QVERIFY(prefs->formatsExpanded());
     prefs->formatCheck(SettingsDefaults::kStudyFormatWritten)->setChecked(true);
     QVERIFY(prefs->formatsSection()->summaryLabel()->text().contains(QStringLiteral("Written answer")));
-    QVERIFY(window.practiceHint()->text().contains(QStringLiteral("written answer")));
+    prefs->formatsSection()->setExpanded(false, false);
+    QVERIFY(!prefs->formatsExpanded());
+    QVERIFY(window.practiceButton()->toolTip().contains(QStringLiteral("written answer")));
     prefs->formatCheck(SettingsDefaults::kStudyFormatSingleChoice)->setChecked(false);
     prefs->formatCheck(SettingsDefaults::kStudyFormatWritten)->setChecked(false);   // would leave none on
     QVERIFY(settings.studyFormats() != 0);
@@ -729,6 +763,22 @@ void TestStudyUi::preferencesTabControlsCheckInsFormatsAndProgress()
     QVERIFY(!prefs->modelCard()->isVisibleTo(prefs));
     emit ollama.setupStateChanged(OllamaClient::SetupState::ModelMissing);
     QVERIFY(prefs->modelCard()->isVisibleTo(prefs));
+    // The recommended model and the optional larger one are always on offer, with their size.
+    QVERIFY(prefs->modelCombo()->findData(QString::fromLatin1(OllamaClient::kDefaultModel)) >= 0);
+    const int larger = prefs->modelCombo()->findData(QString::fromLatin1(OllamaClient::kHigherQualityModel));
+    QVERIFY(larger >= 0);
+    QVERIFY(prefs->modelCombo()->itemText(larger).contains(QStringLiteral("higher quality")));
+    QVERIFY(prefs->modelCombo()->itemText(larger).contains(QStringLiteral("6.6 GB")));
+
+    // Scanned pages and figures are read automatically: Preferences has no technical section for them.
+    for (CollapsibleSection* section : prefs->findChildren<CollapsibleSection*>()) {
+        QVERIFY2(!section->titleLabel()->text().contains(QStringLiteral("Scans"), Qt::CaseInsensitive),
+                 qPrintable(section->titleLabel()->text()));
+    }
+    for (QLabel* label : prefs->findChildren<QLabel*>()) {
+        QVERIFY2(!label->text().contains(OcrEngine::statusText()), qPrintable(label->text()));
+        QVERIFY(!label->text().contains(QStringLiteral("vision model"), Qt::CaseInsensitive));
+    }
 
     QVERIFY(window.removeSet(a, true));
     QVERIFY(window.removeSet(b, true));
@@ -778,7 +828,7 @@ void TestStudyUi::practiceRunsASetFromItsPage()
     QVERIFY(view->showingSummary());
     QCOMPARE(view->summary().answered, 3);
     QCOMPARE(view->summary().correct, 3);
-    QVERIFY(view->summary().xp > 0);
+    QVERIFY(view->summaryLabel()->text().contains(QStringLiteral("100% right")));
     QVERIFY(view->summaryLabel()->text().contains(QStringLiteral("3 of 3")));
 
     // Every answer was recorded with a rating and moved its card out of "new".
@@ -891,7 +941,7 @@ void TestStudyUi::practicingEarlyKeepsTheReviewSchedule()
             view->againButton()->click();   // second session starts right away
         }
     }
-    // The second pass was early (cards were scheduled for tomorrow): attempts and XP are kept,
+    // The second pass was early (cards were scheduled for tomorrow): attempts are kept,
     // but each card was only scheduled once.
     QSqlQuery q(library.database()->connection());
     QVERIFY(q.exec(QStringLiteral("SELECT COUNT(*) FROM attempts")));
@@ -972,7 +1022,111 @@ void TestStudyUi::studyTypographyMatchesTheSharedTheme()
     for (QPushButton* chip : window.findChildren<QPushButton*>(QStringLiteral("chip"))) {
         check(chip, refButton, "chip");
     }
+
+    // Every other Study surface uses the same classes: set rows, the question editor, the
+    // practice page and the figure/table block under a question.
+    auto* refError = new QLabel(QStringLiteral("x"), &host);
+    refError->setObjectName(QStringLiteral("errorNote"));
+    const auto checkTree = [&](QWidget* root, const char* what) {
+        for (QLabel* label : root->findChildren<QLabel*>()) {
+            if (label->objectName() == QLatin1String("muted")) {
+                check(label, refMuted, what);
+            } else if (label->objectName() == QLatin1String("sectionTitle")) {
+                check(label, refTitle, what);
+            } else if (label->objectName() == QLatin1String("errorNote")) {
+                check(label, refError, what);
+            }
+        }
+        for (QComboBox* combo : root->findChildren<QComboBox*>()) {
+            check(combo, refCombo, what);
+        }
+        for (PixelCheckBox* box : root->findChildren<PixelCheckBox*>()) {
+            check(box, refCheck, what);
+        }
+    };
+    window.showTab(0);
+    window.showSetList();
+    QApplication::processEvents();
+    checkTree(window.setList(), "set row");
+    window.openSet(set);
+    QVERIFY(window.writeQuestionButton());
+    window.writeQuestionButton()->click();
+    QApplication::processEvents();
+    checkTree(window.questionEditor(), "question editor");
+    check(window.questionEditor()->supportCombo(), refCombo, "editor figure combo");
+    check(window.questionEditor()->errorLabel(), refMuted, "editor error size");
+    window.questionEditor()->cancelButton()->click();
+    QVERIFY(window.startPractice());
+    QApplication::processEvents();
+    checkTree(window.practiceView(), "practice view");
+
+    Question withTable = choiceQuestion();
+    SupportRef table;
+    table.kind = SupportKind::Table;
+    table.caption = QStringLiteral("Table 1: Access times");
+    table.table = {{QStringLiteral("Level"), QStringLiteral("Time")}, {{QStringLiteral("L1"), QStringLiteral("1 ns")}}};
+    withTable.support = {table};
+    QuizPopup popup;
+    popup.showQuestion(withTable, kPet);
+    QApplication::processEvents();
+    QVERIFY(!popup.supportView()->captions().isEmpty());
+    for (QLabel* caption : popup.supportView()->captions()) {
+        check(caption, refMuted, "figure caption");
+    }
+    for (QLabel* cells : popup.supportView()->tables()) {
+        check(cells, refLabel, "table");
+    }
+    popup.close();
+
+    // The Settings Alarm Time dropdowns are the reference every dropdown matches (family, size, weight).
+    StudyTimer timer;
+    AlarmScheduler scheduler(&settings);
+    AlarmSoundManager sound;
+    SettingsPanel panel(&settings, &timer, &scheduler, &sound);
+    QComboBox* alarmTime = nullptr;
+    QComboBox* otherSettingsCombo = nullptr;
+    for (QComboBox* combo : panel.findChildren<QComboBox*>()) {
+        (combo->objectName() == QLatin1String("timeSelect") ? alarmTime : otherSettingsCombo) = combo;
+    }
+    QVERIFY(alarmTime);
+    QVERIFY(otherSettingsCombo);
+    alarmTime->ensurePolished();
+    QVERIFY(same(alarmTime->font(), PixelTheme::controlFont()));
+    QCOMPARE(alarmTime->font().pixelSize(), PixelTheme::kControlPx);
+    QCOMPARE(alarmTime->font().weight(), PixelTheme::kControlWeight);
+    check(refCombo, alarmTime, "shared combo rule vs Alarm Time");
+    check(otherSettingsCombo, alarmTime, "Settings combo vs Alarm Time");
+    for (QComboBox* combo : {prefs->frequencyCombo(), prefs->sourceCombo(), prefs->focusCombo(), prefs->modelCombo()}) {
+        check(combo, alarmTime, "Study combo vs Alarm Time");
+        QCOMPARE(combo->palette().color(QPalette::ButtonText), alarmTime->palette().color(QPalette::ButtonText));
+    }
+
+    // The window's page tabs (Library, Preferences) are larger than the small chips, from the theme.
+    QPushButton* libraryTab = window.tabs()->button(0);
+    QCOMPARE(libraryTab->objectName(), QStringLiteral("navTab"));
+    libraryTab->ensurePolished();
+    QCOMPARE(libraryTab->font().pixelSize(), PixelTheme::kEmphasisPx);
+    QVERIFY(libraryTab->font().pixelSize() > refButton->font().pixelSize());
+    window.practiceView()->endButton()->click();
     QVERIFY(window.removeSet(set, true));
+
+    // No Study source file declares its own font: sizes and faces come from PixelTheme.
+    const QDir ui(QFileInfo(QStringLiteral(__FILE__)).absolutePath() + QStringLiteral("/../src/studyui"));
+    const QStringList files = ui.entryList({QStringLiteral("Study*.cpp"), QStringLiteral("QuizPopup.cpp"),
+                                            QStringLiteral("QuestionEditor.cpp"), QStringLiteral("SupportView.cpp")}, QDir::Files);
+    QVERIFY(files.size() >= 7);
+    const QRegularExpression literal(QStringLiteral(R"(font-size\s*:|font-family\s*:|font-weight\s*:|setPixelSize\(|setPointSize\(|QFont\s+\w+\()"));
+    for (const QString& name : files) {
+        QFile source(ui.filePath(name));
+        QVERIFY(source.open(QIODevice::ReadOnly | QIODevice::Text));
+        int lineNumber = 0;
+        while (!source.atEnd()) {
+            const QString line = QString::fromUtf8(source.readLine());
+            ++lineNumber;
+            QVERIFY2(!literal.match(line).hasMatch(),
+                     qPrintable(QStringLiteral("%1:%2 declares its own font: %3").arg(name).arg(lineNumber).arg(line.trimmed())));
+        }
+    }
 }
 
 void TestStudyUi::questionEditorValidatesEveryFormat()
@@ -1136,7 +1290,7 @@ void TestStudyUi::ownQuestionsCanBeWrittenEditedPracticedAndDeleted()
     Evaluation correct;
     correct.verdict = Verdict::Correct;
     correct.score = 1.0;
-    QVERIFY(tracker.record(original, correct) > 0);
+    QVERIFY(tracker.record(original, correct));
     QVERIFY(window.editOwnQuestion(id));
     QVERIFY(window.questionEditor()->isEditingExisting());
     QCOMPARE(window.questionEditor()->editingId(), id);
@@ -1168,6 +1322,351 @@ void TestStudyUi::ownQuestionsCanBeWrittenEditedPracticedAndDeleted()
     QVERIFY(q.exec(QStringLiteral("SELECT COUNT(*) FROM questions WHERE id LIKE 'm-%'")));
     QVERIFY(q.next());
     QCOMPARE(q.value(0).toInt(), 0);
+}
+
+void TestStudyUi::generatedQuestionsCanBeEditedRewrittenAndDeleted()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    StudyDatabase* db = library.database();
+
+    // A generated question from slide 2, shown with the slide's table.
+    const QString passage = QStringLiteral(
+        "A LEFT JOIN returns every row from the left table and the matching rows from the right table. "
+        "Rows without a match get NULL values for the right table's columns.");
+    const qint64 set = db->addStudySet(QStringLiteral("Joins")).value_or(0);
+    const qint64 doc = db->addDocument(set, QStringLiteral("Lecture 4"), QStringLiteral("l4.pptx"), DocumentKind::Pptx).value_or(0);
+    QVERIFY(db->replaceChunks(doc, {{0, 0, 0, SegmentKind::Slide, 2, 0, passage}}));
+    db->setDocumentStatus(doc, DocumentStatus::Ready);
+    const qint64 chunkId = db->chunks(doc).first().id;
+    SupportAsset table;
+    table.documentId = doc;
+    table.unitKind = SegmentKind::Slide;
+    table.unitNumber = 2;
+    table.kind = SupportKind::Table;
+    table.table.headers = {QStringLiteral("Join"), QStringLiteral("Keeps")};
+    table.table.rows = {{QStringLiteral("LEFT"), QStringLiteral("all left rows")}};
+    const qint64 assetId = db->addSupportAsset(table).value_or(0);
+    Question generated = choiceQuestion();
+    generated.id = QStringLiteral("gen-1");
+    generated.setId = set;
+    generated.documentId = doc;
+    generated.prompt = QStringLiteral("According to the table, what does a LEFT JOIN keep?");
+    generated.sources.first().excerpt = QStringLiteral("A LEFT JOIN returns every row from the left table");
+    generated.sources.first().location = QStringLiteral("slide 2");
+    SupportRef ref;
+    ref.kind = SupportKind::Table;
+    ref.assetId = assetId;
+    generated.support.append(ref);
+    QVERIFY(db->saveQuestion(generated, chunkId, QStringLiteral("model")));
+    Evaluation right;
+    right.verdict = Verdict::Correct;
+    right.score = 1.0;
+    QVERIFY(tracker.record(*db->question(generated.id), right));
+
+    MockLlmClient llm;
+    int rewrites = 0;
+    llm.responder = [&rewrites](const LlmRequest&) -> MockLlmClient::Reply {
+        ++rewrites;
+        QJsonArray options;
+        const QStringList texts = {QStringLiteral("Every left row"), QStringLiteral("Only matching rows"),
+                                   QStringLiteral("Only right rows"), QStringLiteral("No rows")};
+        for (int i = 0; i < 4; ++i) {
+            options.append(QJsonObject{{QStringLiteral("text"), texts.at(i)}, {QStringLiteral("correct"), i == 0},
+                                       {QStringLiteral("why"), QStringLiteral("See your notes.")}});
+        }
+        return QString::fromUtf8(QJsonDocument(QJsonObject{
+            {QStringLiteral("concept"), QStringLiteral("LEFT JOIN rows %1").arg(rewrites)},
+            {QStringLiteral("visual"), 0},
+            {QStringLiteral("evidence"), QStringLiteral("A LEFT JOIN returns every row from the left table")},
+            {QStringLiteral("question"), QStringLiteral("Which rows does a LEFT JOIN always return (version %1)?").arg(rewrites)},
+            {QStringLiteral("options"), options},
+            {QStringLiteral("explanation"), QStringLiteral("Unmatched left rows are kept with NULLs.")},
+            {QStringLiteral("difficulty"), QStringLiteral("easy")},
+        }).toJson(QJsonDocument::Compact));
+    };
+    QuestionGenerator generator(db, &llm);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+    window.openSet(set);
+
+    // Edit: the editor shows the source and offers the slide's table, already chosen.
+    QVERIFY(window.editOwnQuestion(generated.id));
+    QuestionEditor* editor = window.questionEditor();
+    QVERIFY(editor->sourceLabel()->isVisibleTo(editor));
+    QVERIFY(editor->sourceLabel()->text().contains(QStringLiteral("Lecture 4 · slide 2")));
+    QVERIFY(editor->sourceLabel()->text().contains(QStringLiteral("returns every row")));
+    QCOMPARE(editor->supportCombo()->count(), 2);
+    QCOMPARE(editor->supportCombo()->currentData().toLongLong(), assetId);
+
+    // Removing the table while the question still says "the table" is refused.
+    editor->supportCombo()->setCurrentIndex(0);
+    editor->saveButton()->click();
+    QVERIFY(editor->errorLabel()->isVisibleTo(editor));
+    QCOMPARE(db->question(generated.id)->prompt, generated.prompt);
+
+    // Keep the table and reword the question: same ID, source, passage and history; marked edited.
+    editor->supportCombo()->setCurrentIndex(1);
+    editor->promptEdit()->setPlainText(QStringLiteral("Using the table, which rows does a LEFT JOIN keep?"));
+    editor->saveButton()->click();
+    const auto edited = db->question(generated.id);
+    QVERIFY(edited);
+    QCOMPARE(edited->prompt, QStringLiteral("Using the table, which rows does a LEFT JOIN keep?"));
+    QCOMPARE(edited->origin, QuestionOrigin::Edited);
+    QVERIFY(edited->editedAt > 0);
+    QCOMPARE(edited->chunkId, chunkId);
+    QCOMPARE(edited->sources.first().excerpt, generated.sources.first().excerpt);
+    QCOMPARE(edited->support.size(), 1);
+    QCOMPARE(edited->options.at(1).explanation, generated.options.at(1).explanation);   // unchanged answers keep theirs
+    QCOMPARE(tracker.progress(set).answered(), 1);
+    QStringList rowTexts;
+    for (QLabel* l : window.findChildren<QLabel*>()) {
+        if (l->property("questionId").toString() == generated.id) {
+            rowTexts.append(l->text());
+        }
+    }
+    QCOMPARE(rowTexts.size(), 1);
+    QVERIFY(rowTexts.first().contains(QStringLiteral("table")));
+    QVERIFY(rowTexts.first().contains(QStringLiteral("Edited by you")));
+
+    // Regenerating the whole document keeps the edited question.
+    QVERIFY(db->removeQuestions(doc));
+    QVERIFY(db->question(generated.id));
+
+    // Rewrite: a new version is saved, then the student chooses. First "Keep both" ...
+    QVERIFY(window.regenerateQuestion(generated.id));
+    QTRY_VERIFY_WITH_TIMEOUT(window.regenerationPrompt()->isVisibleTo(&window), 5000);
+    QVERIFY(window.findChild<QLabel*>() != nullptr);
+    const QString firstNew = window.pendingRegeneration().second;
+    QCOMPARE(window.pendingRegeneration().first, generated.id);
+    QVERIFY(db->question(firstNew));
+    QCOMPARE(db->question(firstNew)->chunkId, chunkId);
+    QCOMPARE(db->question(firstNew)->type, generated.type);
+    QVERIFY(window.resolveRegeneration(generated.id, firstNew, 2));
+    QVERIFY(!window.regenerationPrompt()->isVisibleTo(&window));
+    QVERIFY(db->question(generated.id));
+    QVERIFY(db->question(firstNew));
+
+    // ... then "Replace": the old question and its history go, the new one stays.
+    QVERIFY(window.regenerateQuestion(generated.id));
+    QTRY_VERIFY_WITH_TIMEOUT(window.regenerationPrompt()->isVisibleTo(&window), 5000);
+    const QString secondNew = window.pendingRegeneration().second;
+    QVERIFY(secondNew != firstNew);
+    QVERIFY(window.resolveRegeneration(generated.id, secondNew, 1));
+    QVERIFY(!db->question(generated.id));
+    QVERIFY(db->question(secondNew));
+    QCOMPARE(tracker.progress(set).answered(), 0);
+
+    // Your own questions cannot be "rewritten" (there is no passage behind them).
+    QVERIFY(!generator.regenerateQuestion(QStringLiteral("no-such-question")));
+
+    // Delete a generated question.
+    QVERIFY(window.removeOwnQuestion(firstNew, true));
+    QVERIFY(!db->question(firstNew));
+    QVERIFY(window.removeSet(set, true));
+}
+
+void TestStudyUi::librarySetsShowStatusAndQuestionsHaveTheirOwnTab()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    QuestionGenerator generator(library.database(), &ollama);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    StudyDatabase* db = library.database();
+
+    const qint64 ready = seedSet(library, QStringLiteral("Ready set"), 3);
+    const qint64 empty = db->addStudySet(QStringLiteral("Empty set")).value_or(0);
+    const qint64 broken = db->addStudySet(QStringLiteral("Broken set")).value_or(0);
+    const qint64 badDoc = db->addDocument(broken, QStringLiteral("Scan"), QStringLiteral("scan.pdf"), DocumentKind::Pdf).value_or(0);
+    db->setDocumentStatus(badDoc, DocumentStatus::Failed);
+    window.showNear(kPet);
+
+    // A row is the name, two counts and a status pill; nothing else to read.
+    QCOMPARE(window.setList()->statusPill(ready)->text(), QStringLiteral("Ready"));
+    QCOMPARE(window.setList()->statusPill(ready)->property("tone").toString(), QStringLiteral("ready"));
+    QCOMPARE(window.setList()->statusPill(empty)->text(), QStringLiteral("No questions yet"));
+    QCOMPARE(window.setList()->statusPill(broken)->text(), QStringLiteral("Needs attention"));
+    QVERIFY(window.setList()->metaText(ready).contains(QStringLiteral("3 questions")));
+    for (QPushButton* b : window.setList()->findChildren<QPushButton*>()) {
+        QVERIFY2(b->text().isEmpty(), qPrintable(b->text()));   // no Rename/Delete chips on rows any more
+    }
+
+    // Rename and Delete live in the row's menu.
+    QVERIFY(window.setList()->menuButton(empty));
+    QMenu* menu = window.setList()->menuFor(empty);
+    QVERIFY(menu);
+    QStringList actions;
+    for (QAction* a : menu->actions()) {
+        if (!a->isSeparator()) {
+            actions.append(a->text());
+        }
+    }
+    QCOMPARE(actions, (QStringList{QStringLiteral("Rename"), QStringLiteral("Delete")}));
+    QSignalSpy renameAsked(window.setList(), &StudySetList::renameRequested);
+    menu->actions().first()->trigger();   // Delete asks in a dialog; Rename edits inline
+    QCOMPARE(renameAsked.count(), 1);
+    QCOMPARE(renameAsked.first().first().toLongLong(), empty);
+    menu->deleteLater();
+
+    // Opening a set: actions on top, then Materials | Questions with counts.
+    window.openSet(ready);
+    QApplication::processEvents();
+    QVERIFY(window.isShowingSet());
+    QCOMPARE(window.contentTabs()->count(), 2);
+    QCOMPARE(window.contentTabs()->button(0)->text(), QStringLiteral("Materials (1)"));
+    QCOMPARE(window.contentTabs()->button(1)->text(), QStringLiteral("Questions (3)"));
+    QCOMPARE(window.contentTabs()->currentIndex(), 0);
+    QVERIFY(window.importButton()->isVisibleTo(&window));
+    QVERIFY(!window.writeQuestionButton()->isVisibleTo(&window));
+    QVERIFY(window.practiceButton()->mapTo(&window, QPoint()).y() < window.contentTabs()->mapTo(&window, QPoint()).y());
+    window.contentTabs()->button(1)->click();
+    QVERIFY(window.questionsView()->isVisibleTo(&window));
+    QVERIFY(window.writeQuestionButton()->isVisibleTo(&window));
+    QCOMPARE(window.questionsView()->shownIds().size(), 3);
+    QVERIFY(!window.questionsView()->fixAllButton()->isVisibleTo(&window));   // nothing to fix
+
+    // A question's Edit, Rewrite and Delete are in its menu.
+    const QString first = window.questionsView()->shownIds().first();
+    QMenu* questionMenu = window.questionsView()->menuFor(first);
+    QVERIFY(questionMenu);
+    QStringList questionActions;
+    for (QAction* a : questionMenu->actions()) {
+        if (!a->isSeparator()) {
+            questionActions.append(a->text());
+        }
+    }
+    QCOMPARE(questionActions, (QStringList{QStringLiteral("Edit"), QStringLiteral("Rewrite"), QStringLiteral("Delete")}));
+    QSignalSpy edit(window.questionsView(), &SetQuestionsView::editRequested);
+    questionMenu->actions().first()->trigger();
+    QCOMPARE(edit.count(), 1);
+    QVERIFY(window.questionEditor()->isVisibleTo(&window));   // the editor opened for that question
+    window.questionEditor()->cancelButton()->click();
+    questionMenu->deleteLater();
+
+    // The set's own menu holds Regenerate, Rename and Delete.
+    QMenu* setMenu = window.setMenu();
+    QVERIFY(setMenu);
+    QStringList setActions;
+    for (QAction* a : setMenu->actions()) {
+        if (!a->isSeparator()) {
+            setActions.append(a->text());
+        }
+    }
+    QCOMPARE(setActions.size(), 3);
+    QVERIFY(setActions.first().startsWith(QStringLiteral("Regenerate")));
+    QVERIFY(!setMenu->actions().first()->isEnabled());   // no model here, nothing to regenerate with
+    setMenu->deleteLater();
+
+    for (const qint64 id : {ready, empty, broken}) {
+        QVERIFY(window.removeSet(id, true));
+    }
+}
+
+void TestStudyUi::questionsNeedingContextAreFlaggedAndFixedTogether()
+{
+    clearSettings();
+    AppSettings settings;
+    StudyLibrary library;
+    QVERIFY(library.isOpen());
+    OllamaClient ollama;
+    disconnectOllama(&ollama);
+    ProgressTracker tracker(library.database());
+    StudyDatabase* db = library.database();
+
+    const QString passage = QStringLiteral(
+        "During the benchmark, 45 of 60 requests were cache hits and the rest went to main memory. "
+        "The hit rate is the share of requests served by the cache, so a higher hit rate means fewer slow trips.");
+    const qint64 set = db->addStudySet(QStringLiteral("Caches")).value_or(0);
+    const qint64 doc = db->addDocument(set, QStringLiteral("Lecture 9"), QStringLiteral("l9.pptx"), DocumentKind::Pptx).value_or(0);
+    QVERIFY(db->replaceChunks(doc, {{0, 0, 0, SegmentKind::Slide, 4, 0, passage}}));
+    db->setDocumentStatus(doc, DocumentStatus::Ready);
+    const qint64 chunkId = db->chunks(doc).first().id;
+    // Two questions generated before the context rules: both lean on things the student cannot see.
+    for (const QString& prompt : {QStringLiteral("According to your notes, what is the correct percentage based on the observed data?"),
+                                  QStringLiteral("As mentioned earlier, what share of requests hit the cache?")}) {
+        Question q = choiceQuestion();
+        q.id = QStringLiteral("old-%1").arg(prompt.size());
+        q.setId = set;
+        q.documentId = doc;
+        q.prompt = prompt;
+        q.topic = prompt.left(20);
+        q.options.first().text = QStringLiteral("75%");
+        q.sources.first().excerpt = QStringLiteral("45 of 60 requests were cache hits");
+        QVERIFY(db->saveQuestion(q, chunkId, QStringLiteral("model")));
+    }
+    const qint64 other = seedSet(library, QStringLiteral("Other"), 1);   // unrelated set, untouched
+
+    MockLlmClient llm;
+    int calls = 0;
+    llm.responder = [&calls](const LlmRequest&) -> MockLlmClient::Reply {
+        ++calls;
+        QJsonArray options;
+        const QStringList texts = {QStringLiteral("75%"), QStringLiteral("45%"), QStringLiteral("60%"), QStringLiteral("25%")};
+        for (int i = 0; i < 4; ++i) {
+            options.append(QJsonObject{{QStringLiteral("text"), texts.at(i)}, {QStringLiteral("correct"), i == 0},
+                                       {QStringLiteral("why"), QStringLiteral("45 / 60 = 0.75.")}});
+        }
+        return QString::fromUtf8(QJsonDocument(QJsonObject{
+            {QStringLiteral("concept"), QStringLiteral("Hit rate %1").arg(calls)},
+            {QStringLiteral("evidence"), QStringLiteral("45 of 60 requests were cache hits")},
+            {QStringLiteral("data"), QStringLiteral("45 of 60 requests were cache hits")},
+            {QStringLiteral("question"), QStringLiteral("What was the cache's hit rate (version %1)?").arg(calls)},
+            {QStringLiteral("options"), options},
+            {QStringLiteral("explanation"), QStringLiteral("45 hits out of 60 requests is 75%.")},
+            {QStringLiteral("difficulty"), QStringLiteral("easy")},
+        }).toJson(QJsonDocument::Compact));
+    };
+    QuestionGenerator generator(db, &llm);
+    StudyLibraryWindow window(&settings, &library, &generator, &ollama, &tracker);
+    window.showNear(kPet);
+
+    // The set says it needs attention, and practice leaves the two questions out.
+    QCOMPARE(window.setList()->statusPill(set)->text(), QStringLiteral("Needs attention"));
+    window.openSet(set);
+    QVERIFY(!window.practiceButton()->isEnabled());
+    SetQuestionsView* view = window.questionsView();
+    QCOMPARE(view->count(), 2);
+    QCOMPARE(view->needsContextCount(), 2);
+    window.contentTabs()->button(1)->click();
+    QVERIFY(view->fixAllButton()->isVisibleTo(&window));
+    QCOMPARE(view->filterTabs()->button(1)->text(), QStringLiteral("Needs context (2)"));
+    view->setFilter(SetQuestionsView::Filter::NeedsContext);
+    QCOMPARE(view->shownIds().size(), 2);
+    for (QLabel* label : view->findChildren<QLabel*>()) {
+        if (!label->property("questionId").toString().isEmpty()) {
+            QVERIFY(label->text().startsWith(QStringLiteral("[Needs context")));
+        }
+    }
+
+    // Fix all: asked once, then every flagged question is rewritten and replaced.
+    QVERIFY(window.fixAllQuestions(true));
+    QTRY_VERIFY_WITH_TIMEOUT(!window.isFixingQuestions(), 10000);
+    QCOMPARE(calls, 2);
+    const QVector<Question> now = db->documentQuestions(doc);
+    QCOMPARE(now.size(), 2);
+    for (const Question& q : now) {
+        QVERIFY2(!QuestionValidator::needsContext(q), qPrintable(q.prompt));
+        QCOMPARE(q.support.size(), 1);   // the numbers it needs are shown with it
+        QCOMPARE(q.support.first().kind, SupportKind::Data);
+    }
+    QCOMPARE(view->needsContextCount(), 0);
+    QVERIFY(!view->fixAllButton()->isVisibleTo(&window));
+    QVERIFY(window.statusLabel()->text().contains(QStringLiteral("Rewrote 2 questions")));
+    QVERIFY(window.practiceButton()->isEnabled());
+    QCOMPARE(window.setList()->statusPill(set)->text(), QStringLiteral("Ready"));
+    QCOMPARE(db->setQuestions(other, {}, false).size(), 1);
+    QVERIFY(window.removeSet(set, true));
+    QVERIFY(window.removeSet(other, true));
 }
 
 void TestStudyUi::petStudyFlowWorksWithoutOllama()
@@ -1229,8 +1728,8 @@ void TestStudyUi::petStudyFlowWorksWithoutOllama()
     right->click();
     popup->submitButton()->click();
     QVERIFY(popup->isShowingResult());
-    QVERIFY(popup->resultLabel()->text().startsWith(QStringLiteral("Correct · +20 XP")));
-    QCOMPARE(pet.progressTracker()->progress(studySet).xp, 20);
+    QCOMPARE(popup->resultLabel()->text(), QStringLiteral("Correct"));
+    QCOMPARE(pet.progressTracker()->progress(studySet).correct, 1);
     popup->closeButton()->click();
     QTRY_COMPARE_WITH_TIMEOUT(pet.quizController()->state(), QuizController::State::Idle, 1000);
 
@@ -1248,7 +1747,7 @@ void TestStudyUi::petStudyFlowWorksWithoutOllama()
     popup->closeButton()->click();
     QTRY_COMPARE_WITH_TIMEOUT(pet.quizController()->state(), QuizController::State::Idle, 1000);
 
-    // Reveal + self-assessment is recorded separately with reduced XP.
+    // Reveal + self-assessment is recorded separately from automatic grading.
     QTest::qWait(250);   // let the closing fade finish
     pet.askQuestionNow();
     QCOMPARE(popup->question().type, QuestionType::Written);
@@ -1259,7 +1758,7 @@ void TestStudyUi::petStudyFlowWorksWithoutOllama()
     const StudyProgress progress = pet.progressTracker()->progress(studySet);
     QCOMPARE(progress.selfAssessed, 1);
     QCOMPARE(progress.selfGotIt, 1);
-    QCOMPARE(progress.selfXp, 5);   // 25% of a medium question's 20 XP
+    QCOMPARE(progress.answered(), 3);
     QCOMPARE(progress.attempted, 2);
     QCOMPARE(progress.needsReview, 1);
 }

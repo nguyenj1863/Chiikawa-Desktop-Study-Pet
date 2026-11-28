@@ -3,6 +3,7 @@
 #ifdef Q_OS_MACOS
 #  include "platform/MacWindowHelper.h"
 #endif
+#include "ui/NotificationStack.h"
 #include "ui/PixelTheme.h"
 
 #include <QEnterEvent>
@@ -103,24 +104,6 @@ CompletionToast::CompletionToast(QWidget* parent)
     connect(m_dismissBtn, &QPushButton::clicked, this, &CompletionToast::onDismissClicked);
     connect(m_againBtn, &QPushButton::clicked, this, &CompletionToast::onStartAgainClicked);
 
-    if (auto* app = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
-        connect(app, &QGuiApplication::primaryScreenChanged, this, [this](QScreen* screen) {
-            bindScreenSignals(screen);
-            if (isVisible()) {
-                repositionToPrimaryScreen();
-            }
-        });
-        connect(app, &QGuiApplication::screenRemoved, this, [this](QScreen* removed) {
-            if (removed == m_trackedScreen) {
-                bindScreenSignals(targetScreen());
-                if (isVisible()) {
-                    repositionToPrimaryScreen();
-                }
-            }
-        });
-    }
-    bindScreenSignals(targetScreen());
-
     hide();
 }
 
@@ -136,64 +119,7 @@ QPoint CompletionToast::calculateBottomRightPosition(const QRect& availableGeome
                                                      const QSize& toastSize,
                                                      int margin)
 {
-    const int safeMargin = std::max(0, margin);
-    const int rawX = availableGeometry.right() - toastSize.width() - safeMargin + 1;
-    const int rawY = availableGeometry.bottom() - toastSize.height() - safeMargin + 1;
-
-    const int maxX = std::max(availableGeometry.left(), availableGeometry.right() - toastSize.width() + 1);
-    const int maxY = std::max(availableGeometry.top(), availableGeometry.bottom() - toastSize.height() + 1);
-
-    return QPoint(
-        std::clamp(rawX, availableGeometry.left(), maxX),
-        std::clamp(rawY, availableGeometry.top(), maxY));
-}
-
-QScreen* CompletionToast::targetScreen() const
-{
-    if (QScreen* primary = QGuiApplication::primaryScreen()) {
-        return primary;
-    }
-    const auto all = QGuiApplication::screens();
-    return all.isEmpty() ? nullptr : all.first();
-}
-
-void CompletionToast::bindScreenSignals(QScreen* screen)
-{
-    if (m_trackedScreen == screen) {
-        return;
-    }
-    if (m_trackedScreen) {
-        disconnect(m_trackedScreen, nullptr, this, nullptr);
-    }
-    m_trackedScreen = screen;
-    if (m_trackedScreen) {
-        connect(m_trackedScreen, &QScreen::availableGeometryChanged,
-                this, [this](const QRect&) {
-                    if (isVisible()) {
-                        repositionToPrimaryScreen();
-                    }
-                });
-        connect(m_trackedScreen, &QScreen::geometryChanged,
-                this, [this](const QRect&) {
-                    if (isVisible()) {
-                        repositionToPrimaryScreen();
-                    }
-                });
-    }
-}
-
-void CompletionToast::repositionToPrimaryScreen()
-{
-    QScreen* screen = targetScreen();
-    bindScreenSignals(screen);
-    if (!screen) {
-        return;
-    }
-    adjustSize();
-    const QPoint target = calculateBottomRightPosition(
-        screen->availableGeometry(), size(), kScreenEdgeMarginPx);
-    m_slide->stop();
-    move(target);
+    return NotificationStack::bottomRightPosition(availableGeometry, toastSize, margin);
 }
 
 void CompletionToast::showNotification(int durationMs)
@@ -203,15 +129,9 @@ void CompletionToast::showNotification(int durationMs)
     m_autoHide.stop();
     m_remainingMs = std::max(100, durationMs);
 
-    adjustSize();
-    QScreen* screen = targetScreen();
-    bindScreenSignals(screen);
-
-    QPoint finalPos = pos();
-    if (screen) {
-        finalPos = calculateBottomRightPosition(
-            screen->availableGeometry(), size(), kScreenEdgeMarginPx);
-    }
+    // Bottom-right of the primary screen, stacked with any other open notification.
+    m_slide->stop();
+    const QPoint finalPos = NotificationStack::shared().place(this);
 
     if (m_movie && m_movie->isValid() && m_movie->state() != QMovie::Running) {
         m_movie->start();

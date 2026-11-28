@@ -1,7 +1,7 @@
-#include "study/ChoiceEvaluators.h"
-#include "study/ProgressTracker.h"
-#include "study/ReviewScheduler.h"
-#include "study/SetQuestionProvider.h"
+#include "study/evaluation/ChoiceEvaluators.h"
+#include "study/progress/ProgressTracker.h"
+#include "study/progress/ReviewScheduler.h"
+#include "study/practice/SetQuestionProvider.h"
 #include "study/StudyDatabase.h"
 
 #include <QRandomGenerator>

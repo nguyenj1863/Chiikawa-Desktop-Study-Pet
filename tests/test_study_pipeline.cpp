@@ -1,6 +1,6 @@
 #include "StudyTestUtils.h"
 
-#include "study/Chunker.h"
+#include "study/ingest/Chunker.h"
 #include "study/Retriever.h"
 #include "study/StudyDatabase.h"
 #include "study/StudyLibrary.h"
@@ -227,8 +227,8 @@ void TestStudyPipeline::removingDocumentOrSetCascades()
         QSqlQuery q(db.connection());
         QVERIFY(q.exec(QStringLiteral("INSERT INTO questions(id, document_id, set_id, type, prompt, payload, created_at)"
                                       " VALUES ('q1', %1, %2, 1, 'p', '{}', 0)").arg(doc).arg(studySet)));
-        QVERIFY(q.exec(QStringLiteral("INSERT INTO attempts(question_id, document_id, set_id, type, kind, verdict, score, xp, answered_at)"
-                                      " VALUES ('q1', %1, %2, 1, 0, 0, 1, 10, 0)").arg(doc).arg(studySet)));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO attempts(question_id, document_id, set_id, type, kind, verdict, score, answered_at)"
+                                      " VALUES ('q1', %1, %2, 1, 0, 0, 1, 0)").arg(doc).arg(studySet)));
         QVERIFY(q.exec(QStringLiteral("INSERT INTO concept_stats(document_id, set_id, concept) VALUES (%1, %2, 'bonds')").arg(doc).arg(studySet)));
     }
     FtsRetriever retriever(&db);
@@ -270,7 +270,7 @@ void TestStudyPipeline::libraryImportsTextAndSlidesOnWorkerThread()
     const QString deck = writeFile(QStringLiteral("lecture.pptx"), buildPptx({
         {QStringLiteral("Transactions"), {QStringLiteral("ACID stands for atomicity, consistency, isolation, durability")}, QString(), false},
     }));
-    const QString ignored = writeFile(QStringLiteral("photo.jpg"), "not a document");
+    const QString ignored = writeFile(QStringLiteral("talk.key"), "not a supported document");   // images are supported now
 
     QSignalSpy processed(&library, &StudyLibrary::documentProcessed);
     QSignalSpy busy(&library, &StudyLibrary::busyChanged);
@@ -321,7 +321,7 @@ void TestStudyPipeline::libraryFlagsUnsupportedDocuments()
     const auto images = library.database()->document(ids.at(0));
     QCOMPARE(images->status, DocumentStatus::Unsupported);
     QCOMPARE(images->unsupportedUnits, (QList<int>{1, 2}));
-    QVERIFY(images->error.contains(QStringLiteral("OCR")));
+    QVERIFY(images->error.contains(QStringLiteral("No readable text")));   // pictures with no image data to read
     QCOMPARE(images->chunkCount, 0);
 
     const auto bad = library.database()->document(ids.at(1));

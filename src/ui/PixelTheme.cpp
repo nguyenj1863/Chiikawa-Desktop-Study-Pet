@@ -222,6 +222,66 @@ PixelGrid gridFor(PixelIcon kind)
             ".....##.....",
             "............",
         }};
+    case PixelIcon::Check:
+        return {{
+            "............",
+            "............",
+            "..........##",
+            ".........###",
+            "........###.",
+            ".##....###..",
+            ".###..###...",
+            "..######....",
+            "...####.....",
+            "....##......",
+            "............",
+            "............",
+        }};
+    case PixelIcon::Partial:
+        return {{
+            "....####....",
+            "..##..####..",
+            ".#....#####.",
+            ".#....#####.",
+            "#.....######",
+            "#.....######",
+            "#.....######",
+            "#.....######",
+            ".#....#####.",
+            ".#....#####.",
+            "..##..####..",
+            "....####....",
+        }};
+    case PixelIcon::Document:
+        return {{
+            "............",
+            "..######....",
+            "..#....##...",
+            "..#....###..",
+            "..#......#..",
+            "..#.####.#..",
+            "..#......#..",
+            "..#.####.#..",
+            "..#......#..",
+            "..#.####.#..",
+            "..########..",
+            "............",
+        }};
+    case PixelIcon::More:
+        return {{
+            "............",
+            "............",
+            "............",
+            "............",
+            "............",
+            ".##..##..##.",
+            ".##..##..##.",
+            "............",
+            "............",
+            "............",
+            "............",
+            "............",
+        }};
     case PixelIcon::Gear:
     case PixelIcon::Spotify:
     case PixelIcon::Discord:
@@ -815,14 +875,72 @@ void paintPixelCard(QPainter& p,
     paintGlassSurface(p, bounds, GlassLevel::Primary, kRadiusWindow, margin);
 }
 
+namespace {
+// The UI faces, in the same order as the QLabel rule in styleSheet().
+const QStringList& uiFamilies()
+{
+    static const QStringList families{QStringLiteral("Segoe UI"), QStringLiteral("Yu Gothic UI")};
+    return families;
+}
+} // namespace
+
 QFont uiFont(int pixelSize, QFont::Weight weight)
 {
     QFont f;
-    f.setFamilies({QStringLiteral("Segoe UI"), QStringLiteral("Yu Gothic UI")});
+    f.setFamilies(uiFamilies());
     f.setStyleHint(QFont::SansSerif);
     f.setPixelSize(pixelSize);
     f.setWeight(weight);
     return f;
+}
+
+QString fontCss(int pixelSize, int weight, const QString& family)
+{
+    QStringList families;
+    if (!family.isEmpty()) {
+        families.append(family);
+    }
+    for (const QString& f : uiFamilies()) {
+        if (!families.contains(f)) {
+            families.append(f);
+        }
+    }
+    QString list;
+    for (const QString& f : std::as_const(families)) {
+        list += QStringLiteral("'%1', ").arg(f);
+    }
+    // Style sheets use CSS weights (400, 700), which are the same numbers as QFont::Weight.
+    return QStringLiteral("font-family: %1sans-serif; font-size: %2px; font-weight: %3;").arg(list).arg(pixelSize).arg(weight);
+}
+
+namespace {
+const QStringList& controlFamilies()
+{
+    static const QStringList families{QStringLiteral("Consolas"), QStringLiteral("Cascadia Mono"), QStringLiteral("Segoe UI")};
+    return families;
+}
+} // namespace
+
+QFont controlFont()
+{
+    QFont f;
+    f.setFamilies(controlFamilies());
+    f.setStyleHint(QFont::Monospace);
+    f.setPixelSize(kControlPx);
+    f.setWeight(kControlWeight);
+    return f;
+}
+
+QString controlFontCss()
+{
+    QString list;
+    for (const QString& f : controlFamilies()) {
+        list += QStringLiteral("'%1', ").arg(f);
+    }
+    return QStringLiteral("font-family: %1monospace; font-size: %2px; font-weight: %3;")
+        .arg(list)
+        .arg(kControlPx)
+        .arg(static_cast<int>(kControlWeight));
 }
 
 void configureComboPopup(QComboBox* combo)
@@ -839,7 +957,7 @@ void configureComboPopup(QComboBox* combo)
 
 QString styleSheet()
 {
-    return QStringLiteral(R"(
+    QString css = QStringLiteral(R"(
         QWidget#header, QWidget#scrollContent, QScrollArea#bodyScroll, QWidget#sectionBody {
             background: transparent;
         }
@@ -982,6 +1100,84 @@ QString styleSheet()
             color: #BCC7D9;
             font-size: 11px;
         }
+        QLabel#errorNote {
+            color: #F48C94;
+            font-size: 11px;
+        }
+        QFrame#resultCard {
+            background: rgba(255, 255, 255, 14);
+            border: 1px solid rgba(255, 255, 255, 14);
+            border-radius: 10px;
+        }
+        QFrame#resultCard[verdict="correct"] {
+            background: rgba(85, 150, 245, 46);
+            border-color: rgba(138, 185, 255, 80);
+        }
+        QFrame#resultCard[verdict="partial"] {
+            background: rgba(85, 150, 245, 26);
+            border-color: rgba(110, 168, 255, 56);
+        }
+        QFrame#resultCard[verdict="incorrect"] {
+            background: rgba(160, 42, 62, 58);
+            border-color: rgba(244, 140, 148, 56);
+        }
+        QLabel#statusPill {
+            color: #BCC7D9;
+            background: rgba(255, 255, 255, 18);
+            border: 1px solid rgba(255, 255, 255, 12);
+            border-radius: 8px;
+            padding: 1px 7px;
+            font-size: 10px;
+            font-weight: 700;
+        }
+        QLabel#statusPill[tone="ready"] {
+            color: #8AB9FF;
+            background: rgba(85, 150, 245, 40);
+            border-color: rgba(138, 185, 255, 60);
+        }
+        QLabel#statusPill[tone="busy"] {
+            color: #F3F6FC;
+            background: rgba(255, 255, 255, 26);
+        }
+        QLabel#statusPill[tone="attention"] {
+            color: #F48C94;
+            background: rgba(160, 42, 62, 58);
+            border-color: rgba(244, 140, 148, 50);
+        }
+        QMenu#rowMenu {
+            background: rgba(10, 12, 16, 235);
+            border: 1px solid rgba(255, 255, 255, 16);
+            border-radius: 8px;
+            padding: 3px;
+            color: #F3F6FC;
+            font-size: 12px;
+        }
+        QMenu#rowMenu::item {
+            padding: 5px 16px;
+            border-radius: 6px;
+        }
+        QMenu#rowMenu::item:selected {
+            background: rgba(85, 150, 245, 105);
+        }
+        QMenu#rowMenu::item:disabled {
+            color: #7D8798;
+        }
+        QMenu#rowMenu::separator {
+            height: 1px;
+            background: rgba(255, 255, 255, 14);
+            margin: 3px 6px;
+        }
+        QLabel#supportData {
+            color: #DCE3EE;
+            background: rgba(0, 0, 0, 72);
+            border: 1px solid rgba(255, 255, 255, 12);
+            border-radius: 8px;
+            padding: 6px 8px;
+        }
+        QScrollArea#supportTableScroll, QScrollArea#supportTableScroll > QWidget > QWidget {
+            background: transparent;
+            border: none;
+        }
         QLabel#valueBadge {
             color: #BCC7D9;
             font-size: 11px;
@@ -1077,21 +1273,10 @@ QString styleSheet()
             background: rgba(0, 0, 0, 72);
             border: 1px solid rgba(255, 255, 255, 12);
             border-radius: 8px;
-            padding: 2px 20px 2px 8px;
-            color: #F3F6FC;
-            font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
-            font-size: 11px;
-            font-weight: 600;
-            min-height: 20px;
-        }
-        QComboBox#timeSelect {
             padding: 2px 20px 2px 6px;
-            font-family: 'Consolas', 'Cascadia Mono', 'Segoe UI', monospace;
-            font-size: 12px;
-            font-weight: 700;
-        }
-        QComboBox#timeSelect::drop-down {
-            width: 20px;
+            color: #F3F6FC;
+            @CONTROL_FONT@
+            min-height: 20px;
         }
         QComboBox:hover {
             border-color: rgba(138, 185, 255, 85);
@@ -1127,9 +1312,7 @@ QString styleSheet()
             selection-color: #FFFFFF;
             outline: 0;
             padding: 3px;
-            font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
-            font-size: 12px;
-            font-weight: 600;
+            @CONTROL_FONT@
         }
         QComboBox QAbstractItemView::item {
             min-height: 24px;
@@ -1198,7 +1381,7 @@ QString styleSheet()
             color: #637289;
             border-color: rgba(255, 255, 255, 8);
         }
-        QPushButton#chip {
+        QPushButton#chip, QPushButton#navTab {
             background: rgba(0, 0, 0, 58);
             color: #C8D4E6;
             border: 1px solid rgba(255, 255, 255, 10);
@@ -1206,18 +1389,24 @@ QString styleSheet()
             padding: 3px 6px;
             min-height: 16px;
         }
-        QPushButton#chip:hover {
+        QPushButton#chip:hover, QPushButton#navTab:hover {
             background: rgba(255, 255, 255, 30);
             color: #F3F6FC;
             border-color: rgba(255, 255, 255, 20);
         }
-        QPushButton#chip[active="true"] {
+        QPushButton#chip[active="true"], QPushButton#navTab[active="true"] {
             background: rgba(85, 150, 245, 92);
             color: #FFFFFF;
             border-color: rgba(138, 185, 255, 95);
         }
-        QPushButton#chip[active="true"]:hover {
+        QPushButton#chip[active="true"]:hover, QPushButton#navTab[active="true"]:hover {
             background: rgba(105, 166, 252, 118);
+        }
+        QPushButton#navTab {
+            font-size: 13px;
+            font-weight: 600;
+            padding: 5px 10px;
+            min-height: 20px;
         }
         QPushButton#primary {
             background: rgba(85, 150, 245, 132);
@@ -1350,6 +1539,9 @@ QString styleSheet()
             background: none;
         }
     )");
+    // Every dropdown uses the Alarm Time controls' font (family, size, weight) from one definition.
+    css.replace(QStringLiteral("@CONTROL_FONT@"), controlFontCss());
+    return css;
 }
 
 void paintCheckIndicator(QPainter& p, const QRectF& box, bool checked, bool hovered, bool down, bool enabled)

@@ -1,7 +1,7 @@
 #include "StudyTestUtils.h"
 
-#include "study/DocumentExtractor.h"
-#include "study/ZipReader.h"
+#include "study/ingest/DocumentExtractor.h"
+#include "study/ingest/ZipReader.h"
 
 #include <QFile>
 #include <QImage>
@@ -30,6 +30,8 @@ private slots:
     void pdfExtractsPagesAndFlagsScannedPages();
     void extractFileDispatchesAndReportsErrors();
     void referenceLabelsAndRanges();
+    void symbolFontGlyphsBecomeRealCharacters();
+    void labelOnlyPdfPagesAreKeptAsFigures();
 };
 
 void TestStudyExtract::inflateMatchesZlibAcrossInputsAndLevels()
@@ -268,7 +270,7 @@ void TestStudyExtract::extractFileDispatchesAndReportsErrors()
     d.close();
     const ExtractionResult unsupported = DocumentExtractor::extractFile(docx);
     QVERIFY(!unsupported.ok);
-    QVERIFY(unsupported.error.contains(QStringLiteral("PDF, PPTX, TXT, or MD")));
+    QVERIFY(unsupported.error.contains(QStringLiteral("PDF, PPTX, TXT, MD, or an image")));
 
     QVERIFY(!DocumentExtractor::extractFile(dir.filePath(QStringLiteral("missing.pdf"))).ok);
 }
@@ -281,6 +283,61 @@ void TestStudyExtract::referenceLabelsAndRanges()
     QCOMPARE(StudyText::compactRanges({7, 1, 2, 3, 3, 9, 10}), QStringLiteral("1-3, 7, 9-10"));
     QCOMPARE(StudyText::kindForPath(QStringLiteral("x/Notes.MD")), DocumentKind::Text);
     QCOMPARE(StudyText::kindForPath(QStringLiteral("x/y.key")), DocumentKind::Unknown);
+}
+
+void TestStudyExtract::symbolFontGlyphsBecomeRealCharacters()
+{
+    using StudyText::normalizeSymbolFonts;
+    // As QtPdf returns a lecture slide typeset in Symbol and Wingdings (big-O definition).
+    const QString raw = QStringLiteral(" Def’n: O(g(n)) = {f(n):  c  0 and n0 such that n  n0 f(n)  cg(n)}");
+    QCOMPARE(normalizeSymbolFonts(raw),
+             QStringLiteral("• Def’n: O(g(n)) = {f(n): ∃ c ≥ 0 and n0 such that ∀n ≥ n0 f(n) ≤ cg(n)}"));
+    // Greek capitals keep their meaning, also standing alone ("Θ - notation"), and arrows map.
+    QCOMPARE(normalizeSymbolFonts(QStringLiteral(" - notation, (g(n)), Su  111")),
+             QStringLiteral("Θ - notation, Θ(g(n)), Su ⇒ 111"));
+    // Text without such glyphs is untouched.
+    const QString plain = QStringLiteral("A LEFT JOIN keeps every row ≤ n.");
+    QCOMPARE(normalizeSymbolFonts(plain), plain);
+}
+
+void TestStudyExtract::labelOnlyPdfPagesAreKeptAsFigures()
+{
+    if (!DocumentExtractor::pdfSupported()) {
+        QSKIP("QtPdf is not available in this build");
+    }
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("graph.pdf"));
+    {
+        QPdfWriter writer(path);
+        writer.setPageSize(QPageSize(QPageSize::A4));
+        writer.setResolution(72);
+        QPainter p(&writer);
+        QFont font = p.font();
+        font.setPixelSize(14);
+        p.setFont(font);
+        // Page 1: a graph, only labels (no caption): kept as a figure.
+        p.drawText(QPointF(40, 50), QStringLiteral("Example: Traveling Salesman Problem"));
+        const QList<QPair<QPointF, QString>> labels = {{{300, 120}, QStringLiteral("a")}, {{150, 400}, QStringLiteral("b")},
+                                                      {{300, 250}, QStringLiteral("c")}, {{450, 400}, QStringLiteral("d")},
+                                                      {{220, 250}, QStringLiteral("10")}, {{310, 190}, QStringLiteral("5")},
+                                                      {{230, 330}, QStringLiteral("6")}, {{380, 330}, QStringLiteral("3")},
+                                                      {{300, 430}, QStringLiteral("9")}};
+        for (const auto& l : labels) {
+            p.drawText(l.first, l.second);
+        }
+        // Page 2: ordinary prose: not a figure.
+        writer.newPage();
+        for (int i = 0; i < 8; ++i) {
+            p.drawText(QPointF(40, 60 + i * 24),
+                       QStringLiteral("Deterministic algorithms always behave the same way when given the same input data."));
+        }
+    }
+    const ExtractionResult r = DocumentExtractor::extractPdf(path);
+    QVERIFY(r.ok);
+    QCOMPARE(r.segments.size(), 2);
+    QCOMPARE(r.assets.size(), 1);
+    QCOMPARE(r.assets.first().unitNumber, 1);
+    QCOMPARE(r.assets.first().caption, QStringLiteral("Page 1"));
 }
 
 QTEST_MAIN(TestStudyExtract)

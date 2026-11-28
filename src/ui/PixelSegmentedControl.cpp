@@ -12,10 +12,33 @@ PixelSegmentedControl::PixelSegmentedControl(QWidget* parent)
     layout->setSpacing(5);
 }
 
+QString PixelSegmentedControl::buttonObjectName() const
+{
+    return m_variant == Variant::Nav ? QStringLiteral("navTab") : QStringLiteral("chip");
+}
+
+void PixelSegmentedControl::setVariant(Variant variant)
+{
+    m_variant = variant;
+    for (QPushButton* b : std::as_const(m_buttons)) {
+        b->setObjectName(buttonObjectName());
+        b->style()->unpolish(b);
+        b->style()->polish(b);
+    }
+}
+
+void PixelSegmentedControl::setTabText(int index, const QString& text)
+{
+    if (QPushButton* b = m_buttons.value(index, nullptr)) {
+        b->setText(text);
+        applyActive();   // keeps the accessible name in step
+    }
+}
+
 int PixelSegmentedControl::addTab(const QString& text)
 {
     auto* btn = new QPushButton(text, this);
-    btn->setObjectName(QStringLiteral("chip"));
+    btn->setObjectName(buttonObjectName());
     btn->setCursor(Qt::PointingHandCursor);
     btn->setCheckable(false);
     btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);

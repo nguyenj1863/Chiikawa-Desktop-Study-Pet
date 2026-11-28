@@ -1,7 +1,7 @@
 #include "MockLlmClient.h"
 
-#include "study/QuestionGenerator.h"
-#include "study/QuestionValidator.h"
+#include "study/generation/QuestionGenerator.h"
+#include "study/generation/QuestionValidator.h"
 #include "study/StudyDatabase.h"
 
 #include <QDir>

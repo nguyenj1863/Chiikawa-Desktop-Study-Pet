@@ -3,6 +3,7 @@
 #include "study/StudyTypes.h"
 #include "study/Question.h"
 
+#include <QHash>
 #include <QSet>
 #include <QSqlDatabase>
 #include <QString>
@@ -21,10 +22,14 @@ public:
     /**
      * 1: original Study Library tables (courses). 2: courses become study sets with optional
      * parent sets, and review scheduling, practice sessions, and saved filters are added.
+     * 3: XP is removed from attempts, and questions record where they came from (origin).
+     * 4: figures and tables kept beside questions (support_assets), and pages read by OCR (document_units).
      */
-    static constexpr int kSchemaVersion = 2;
-    /** Copy of the database made before upgrading from version 1, kept next to library.db. */
+    static constexpr int kSchemaVersion = 4;
+    /** Copies of the database made before upgrading from version 1, 2 or 3, kept next to library.db. */
     static constexpr auto kVersion1BackupName = "library.v1.bak";
+    static constexpr auto kVersion2BackupName = "library.v2.bak";
+    static constexpr auto kVersion3BackupName = "library.v3.bak";
 
     StudyDatabase();
     ~StudyDatabase();
@@ -39,6 +44,8 @@ public:
     [[nodiscard]] static QString storageDirectory();
     [[nodiscard]] static QString databasePath();
     [[nodiscard]] static QString filesDirectory();
+    /** Folder holding a document's figure images. */
+    [[nodiscard]] static QString assetsDirectory(qint64 documentId);
 
     /** Opens (creating and migrating if needed). Safe to call repeatedly. */
     bool open();
@@ -90,6 +97,25 @@ public:
 
     /** The set's "My questions" document, created on first use; holds questions the student wrote. */
     [[nodiscard]] std::optional<qint64> manualDocument(qint64 setId);
+
+    // Figures, tables and data shown beside questions
+    [[nodiscard]] std::optional<qint64> addSupportAsset(const SupportAsset& asset);
+    [[nodiscard]] std::optional<SupportAsset> supportAsset(qint64 id);
+    /** A document's assets; unitNumber below 1 returns all of them. */
+    [[nodiscard]] QVector<SupportAsset> supportAssets(qint64 documentId, int unitNumber = 0);
+    /** Deletes a document's asset rows and their image files. */
+    bool removeSupportAssets(qint64 documentId);
+    /** Stores what a vision model read in an image (computed once, reused for every question). */
+    bool setAssetInterpretation(qint64 id, const QString& interpretation, const QString& model, bool legible,
+                                const QString& readableText = QString());
+    /** Fills each question's asset references with the stored asset (path, table, interpretation). */
+    void resolveSupport(QVector<Question>& questions);
+    void resolveSupport(Question& question);
+
+    // Pages or slides whose text came from OCR
+    bool setUnitOcr(qint64 documentId, int unitNumber, double confidence);
+    bool clearOcrUnits(qint64 documentId);
+    [[nodiscard]] QHash<int, double> ocrUnits(qint64 documentId);
     [[nodiscard]] QSet<qint64> usedChunkIds(qint64 documentId);
 
     /** Marks documents left mid-processing by a previous run as failed so they can be retried. */
